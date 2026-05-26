@@ -66,6 +66,10 @@ export function CatalogPage() {
     }
   }, [rootManifestUrl])
 
+  useEffect(() => {
+    document.title = '곡 카탈로그 - 하츠네 미쿠 콜 가이드'
+  }, [])
+
   const filteredSongs = useMemo(() => {
     if (!manifestResult) {
       return []
@@ -157,12 +161,16 @@ export function CatalogPage() {
                     to={`/songs/${song.id}`}
                   >
                     <div className="catalog-song-media" aria-hidden="true">
+                      <div className="catalog-song-fallback-bg" />
                       <img
                         alt=""
                         aria-hidden="true"
                         className="catalog-song-thumbnail"
                         loading="lazy"
                         src={youtubeThumbnailUrl(song)}
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none'
+                        }}
                       />
                     </div>
                     <div className="catalog-song-content">
@@ -177,10 +185,39 @@ export function CatalogPage() {
                   </Link>
                 )
               })}
-              {filteredSongs.length === 0 ? <p className="catalog-empty">No songs match the current search.</p> : null}
+               {filteredSongs.length === 0 ? (
+                <div className="catalog-empty-state">
+                  <div className="catalog-empty-icon" aria-hidden="true">
+                    <Search size={32} />
+                  </div>
+                  <h3>검색 결과가 없습니다</h3>
+                  <p>입력하신 검색어 '{query}'에 일치하는 곡이 없습니다. 다른 검색어를 입력하시거나 필터를 초기화해 보세요.</p>
+                  <button
+                    className="app-secondary-button"
+                    onClick={() => setQuery('')}
+                    type="button"
+                  >
+                    검색 초기화
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : !error ? (
-            <div className="catalog-loading">Loading call guide catalog...</div>
+            <div className="catalog-song-grid">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div className="catalog-song-card catalog-song-card--skeleton" key={index} aria-hidden="true">
+                  <div className="catalog-song-media skeleton" style={{ minHeight: '10.25rem' }} />
+                  <div className="catalog-song-content" style={{ marginTop: '0', background: 'transparent', paddingTop: '1rem' }}>
+                    <div className="skeleton" style={{ height: '1.4rem', width: '70%', marginBottom: '0.6rem' }} />
+                    <div className="skeleton" style={{ height: '0.9rem', width: '40%', marginBottom: '1.2rem' }} />
+                    <div className="skeleton" style={{ height: '2.5rem', width: '100%', marginBottom: '1rem' }} />
+                    <div className="catalog-card-action" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem', marginTop: 'auto' }}>
+                      <div className="skeleton" style={{ height: '1rem', width: '25%' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : null}
         </section>
       </div>

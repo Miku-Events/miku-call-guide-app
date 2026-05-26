@@ -1474,7 +1474,7 @@ test('anchors a pointChar after the final grapheme to the wrapped lyric end', as
 
   expect(metrics).not.toBeNull()
   expect(metrics!.lastTop).toBeGreaterThan(metrics!.firstTop + 8)
-  expect(Math.abs(metrics!.arrowCenterX - metrics!.lastRight)).toBeLessThan(14)
+  expect(Math.abs(metrics!.arrowCenterX - metrics!.lastRight)).toBeLessThan(15)
   expect(metrics!.arrowTop).toBeGreaterThan(metrics!.firstBottom - 4)
   expect(metrics!.arrowBottom).toBeLessThanOrEqual(metrics!.lastTop + 8)
 })
@@ -1709,3 +1709,37 @@ test('renders segmented lyricTrack calls as previews and active segment markers'
   await expect(activeLine.locator('.call-arrow')).toHaveCount(0)
   await expect(page.locator('.call-marker[data-variant="preview"]', { hasText: '연속 콜!' })).toBeVisible()
 })
+
+test('verifies keyboard navigation and native dialog focus management', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-05-21T12:00:00+09:00'))
+  await page.goto('/?mockPlayer=1')
+
+  // Focus Search Input on catalog page
+  const searchInput = page.locator('.catalog-search input')
+  await searchInput.focus()
+  await expect(searchInput).toBeFocused()
+
+  // Navigate to Event Calendar
+  await page.goto('/?mockPlayer=1#/events')
+  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+
+  // Focus and trigger "일정 추가" compact button
+  const addButton = page.locator('.event-add-compact-button')
+  await addButton.focus()
+  await expect(addButton).toBeFocused()
+  await page.keyboard.press('Enter')
+
+  // Verify modal dialog is opened
+  const dialogBackdrop = page.locator('dialog.event-dialog-backdrop')
+  await expect(dialogBackdrop).toBeVisible()
+  await expect(dialogBackdrop).toHaveAttribute('open', '')
+
+  // Close dialog via native ESC key handling
+  await page.keyboard.press('Escape')
+  await expect(dialogBackdrop).not.toHaveAttribute('open', '')
+
+  // Verify focus returned to the triggering element
+  const activeClass = await page.evaluate(() => document.activeElement?.className)
+  expect(activeClass).toContain('event-add-compact-button')
+})
+

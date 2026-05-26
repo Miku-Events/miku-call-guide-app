@@ -576,6 +576,7 @@ export function EventCalendarPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<DialogState>(null)
+  const dialogRef = useRef<HTMLDialogElement | null>(null)
   const [session, setSession] = useState<SubmissionSession>({ authenticated: false })
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -705,6 +706,25 @@ export function EventCalendarPage() {
       cancelled = true
     }
   }, [submissionApiBaseUrl])
+
+  useEffect(() => {
+    document.title = '이벤트 캘린더 - 하츠네 미쿠 콜 가이드'
+  }, [])
+
+  useEffect(() => {
+    const dialogEl = dialogRef.current
+    if (!dialogEl) return
+
+    if (dialog) {
+      if (!dialogEl.open) {
+        dialogEl.showModal()
+      }
+    } else {
+      if (dialogEl.open) {
+        dialogEl.close()
+      }
+    }
+  }, [dialog])
 
   const eventTypePriority = useMemo(() => normalizeEventTypePriority(calendarIndex?.data.typePriority), [calendarIndex?.data.typePriority])
   const availableTypes = useMemo(() => {
@@ -1061,7 +1081,14 @@ export function EventCalendarPage() {
             </div>
 
             <div className="event-detail-list">
-              {selectedEvents.length > 0 ? (
+              {!selectedDate ? (
+                <div className="event-empty-state">
+                  <div className="event-empty-icon" aria-hidden="true">
+                    <CalendarDays size={28} />
+                  </div>
+                  <p>달력에서 날짜를 선택하여 해당 날짜의 일정을 확인하세요.</p>
+                </div>
+              ) : selectedEvents.length > 0 ? (
                 selectedEvents.map((event) => {
                   const detail = eventDetails[event.id]?.data
                   const matchingOccurrence = event.occurrences.find((occurrence) =>
@@ -1114,15 +1141,27 @@ export function EventCalendarPage() {
                   )
                 })
               ) : (
-                <p className="event-empty-detail">이 날짜에 표시할 이벤트가 없습니다.</p>
+                <div className="event-empty-state">
+                  <div className="event-empty-icon" aria-hidden="true">
+                    <CalendarDays size={28} />
+                  </div>
+                  <p>선택하신 날짜({formatDateLabel(selectedDate)})에 예정된 이벤트가 없습니다.</p>
+                  <button className="app-secondary-button" onClick={() => setDialog({ kind: 'add' })} type="button" style={{ marginTop: '0.5rem' }}>
+                    일정 제보하기
+                  </button>
+                </div>
               )}
             </div>
           </aside>
         </div>
 
-      {dialog ? (
-        <div className="event-dialog-backdrop" role="presentation">
-          <section className="event-dialog" aria-modal="true" role="dialog">
+      <dialog
+        ref={dialogRef}
+        className="event-dialog-backdrop"
+        onClose={() => setDialog(null)}
+      >
+        {dialog ? (
+          <div className="event-dialog">
             <div className="event-dialog-header">
               <div>
                 <p>{session.authenticated ? `@${session.login ?? 'github-user'}` : 'GitHub login required'}</p>
@@ -1135,7 +1174,7 @@ export function EventCalendarPage() {
 
             {!session.authenticated ? (
               <div className="event-login-panel">
-                <p>GitHub 로그인 후 요청을 제출할 수 있습니다. 제출자 확인에만 사용되고, 실제 write 권한은 서버의 GitHub App이 사용합니다.</p>
+                <p>GitHub 로그인 후 요청을 제출할 수 있습니다.</p>
                 <button className="app-primary-button" onClick={openLogin} type="button">
                   <Github size={16} aria-hidden="true" />
                   GitHub 로그인
@@ -1204,9 +1243,9 @@ export function EventCalendarPage() {
                 </button>
               </form>
             )}
-          </section>
-        </div>
-      ) : null}
+          </div>
+        ) : null}
+      </dialog>
     </AppPageShell>
   )
 }
