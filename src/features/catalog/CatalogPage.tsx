@@ -1,11 +1,32 @@
-import { AlertTriangle, ArrowRight, CalendarDays, ListMusic, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getRootManifestUrl } from '../../app/config'
 import { AppPageShell, StatusBanner } from '../../shared/layout/AppPageShell'
 import { localizedText } from '../callGuide/callPositioning'
 import { fetchCallGuideManifest } from '../data/fetchManifest'
-import type { CallGuideManifest, LoadResult, ManifestSong } from '../data/types'
+import type { CallGuideManifest, LoadResult, ManifestSong, LocalizedText } from '../data/types'
+
+const BLACKLIST_TAGS = []
+
+interface EventFolder {
+  id: string;
+  title: LocalizedText;
+  songCount: number;
+  songs: ManifestSong[];
+}
+
+function formatFallbackEventTitle(tag: string): string {
+  return tag
+    .split('-')
+    .map(word => {
+      if (word === 'miku') return 'Miku'
+      if (word === 'expo') return 'EXPO'
+      if (word === 'vr') return 'VR'
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
+}
 
 function songMatches(song: ManifestSong, query: string): boolean {
   const haystack = [
@@ -29,6 +50,8 @@ export function CatalogPage() {
   const [manifestResult, setManifestResult] = useState<LoadResult<CallGuideManifest> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [viewMode, setViewMode] = useState<'songs' | 'events'>('songs')
+  const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const rootManifestUrl = getRootManifestUrl()
 
   const load = useCallback(async () => {
@@ -92,13 +115,53 @@ export function CatalogPage() {
     }
   }, [])
 
+  const eventFolders = useMemo<EventFolder[]>(() => {
+    if (!manifestResult) return []
+
+    const tagCounts: Record<string, { tag: string; songs: ManifestSong[] }> = {}
+
+    manifestResult.data.songs.forEach(song => {
+      song.tags.forEach(tag => {
+        if (BLACKLIST_TAGS.includes(tag)) return
+
+        if (!tagCounts[tag]) {
+          tagCounts[tag] = { tag, songs: [] }
+        }
+        tagCounts[tag].songs.push(song)
+      })
+    })
+
+    const eventRegistry = manifestResult.data.eventRegistry ?? {}
+
+    return Object.entries(tagCounts)
+      .filter(([_, folder]) => folder.songs.length >= 2)
+      .map(([tag, folder]) => {
+        const registryEntry = eventRegistry[tag]
+        const title = registryEntry
+          ? registryEntry.title
+          : { ko: formatFallbackEventTitle(tag), en: formatFallbackEventTitle(tag), ja: formatFallbackEventTitle(tag) }
+        return {
+          id: tag,
+          title,
+          songCount: folder.songs.length,
+          songs: folder.songs,
+        }
+      })
+      .sort((a, b) => b.songCount - a.songCount)
+  }, [manifestResult])
+
   const filteredSongs = useMemo(() => {
     if (!manifestResult) {
       return []
     }
 
-    return manifestResult.data.songs.filter((song) => songMatches(song, query))
-  }, [manifestResult, query])
+    let list = manifestResult.data.songs
+    if (selectedTag) {
+      list = list.filter((song) => song.tags.includes(selectedTag))
+    }
+
+    return list.filter((song) => songMatches(song, query))
+  }, [manifestResult, selectedTag, query])
 
   const songCount = manifestResult?.data.songs.length ?? 0
   const resultCount = filteredSongs.length
@@ -126,14 +189,28 @@ export function CatalogPage() {
             />
           </label>
           <div className="catalog-segmented" aria-label="Catalog view">
-            <button className="catalog-segment-button" data-active="true" aria-pressed="true" type="button">
+            <button
+              className="catalog-segment-button"
+              data-active={viewMode === 'songs' ? 'true' : 'false'}
+              aria-pressed={viewMode === 'songs'}
+              onClick={() => {
+                setViewMode('songs')
+              }}
+              type="button"
+            >
               <ListMusic size={16} aria-hidden="true" />
               전체
             </button>
-            <Link className="catalog-segment-button" data-active="false" aria-pressed="false" to="/events">
+            <button
+              className="catalog-segment-button"
+              data-active={viewMode === 'events' ? 'true' : 'false'}
+              aria-pressed={viewMode === 'events'}
+              onClick={() => setViewMode('events')}
+              type="button"
+            >
               <CalendarDays size={16} aria-hidden="true" />
               Events
-            </Link>
+            </button>
           </div>
         </>
       }
@@ -169,12 +246,54 @@ export function CatalogPage() {
         </StatusBanner>
       ) : null}
 
+      {selectedTag && viewMode === 'songs' ? (
+        <div className="catalog-active-filter-banner">
+          <div className="catalog-active-filter-banner-text">
+            이벤트 <strong>{localizedText((manifestResult?.data.eventRegistry ?? {})[selectedTag]?.title ?? { ko: formatFallbackEventTitle(selectedTag), en: formatFallbackEventTitle(selectedTag), ja: formatFallbackEventTitle(selectedTag) }, 'ko', ['ja', 'en'])}</strong>의 수록곡을 보고 있습니다.
+          </div>
+          <button
+            className="catalog-active-filter-reset"
+            onClick={() => {
+              setSelectedTag(null)
+              setViewMode('events')
+            }}
+            type="button"
+          >
+            <X size={16} />
+            필터 해제
+          </button>
+        </div>
+      ) : null}
+
       <div className="catalog-content-layout">
         <div className="sr-only" aria-live="polite">
           {query ? `검색 결과가 ${resultCount}개 있습니다.` : `전체 ${songCount}개의 곡이 있습니다.`}
         </div>
         <section className="catalog-content-panel" aria-label="Call guide songs">
-          {manifestResult ? (
+          {manifestResult && viewMode === 'events' ? (
+            <div className="catalog-event-grid">
+              {eventFolders.map((folder) => {
+                const folderTitle = localizedText(folder.title, 'ko', ['ja', 'en'])
+                return (
+                  <button
+                    className="catalog-event-folder-card"
+                    key={folder.id}
+                    onClick={() => {
+                      setSelectedTag(folder.id)
+                      setViewMode('songs')
+                    }}
+                    type="button"
+                  >
+                    <h3>{folderTitle}</h3>
+                    <div className="catalog-event-count-badge">
+                      <FolderOpen size={14} style={{ marginRight: '0.35rem', display: 'inline-block', verticalAlign: 'middle' }} />
+                      <span style={{ verticalAlign: 'middle' }}>{folder.songCount}곡 수록</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : manifestResult && viewMode === 'songs' ? (
             <div className="catalog-song-grid">
               {filteredSongs.map((song) => {
                 const callSummary = localizedText(song.callSummary, 'ko', ['ja', 'en'])
@@ -220,7 +339,10 @@ export function CatalogPage() {
                   <p>입력하신 검색어 '{query}'에 일치하는 곡이 없습니다. 다른 검색어를 입력하시거나 필터를 초기화해 보세요.</p>
                   <button
                     className="app-secondary-button"
-                    onClick={() => setQuery('')}
+                    onClick={() => {
+                      setQuery('')
+                      setSelectedTag(null)
+                    }}
                     type="button"
                   >
                     검색 초기화
@@ -250,3 +372,4 @@ export function CatalogPage() {
     </AppPageShell>
   )
 }
+
