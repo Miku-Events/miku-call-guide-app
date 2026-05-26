@@ -48,6 +48,7 @@ import {
   submitEventSubmission,
   type SubmissionSession,
 } from './submissionClient'
+import { TurnstileWidget } from '../../components/TurnstileWidget'
 import {
   buildCalendarBarSegments,
   buildEventsByDate,
@@ -578,6 +579,7 @@ export function EventCalendarPage() {
   const [dialog, setDialog] = useState<DialogState>(null)
   const dialogRef = useRef<HTMLDialogElement | null>(null)
   const [session, setSession] = useState<SubmissionSession>({ authenticated: false })
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const {
@@ -829,11 +831,14 @@ export function EventCalendarPage() {
         snsUrl: String(form.get('snsUrl') ?? ''),
         sourceUrl: String(form.get('sourceUrl') ?? '') || undefined,
         note: String(form.get('note') ?? '') || undefined,
+        turnstileToken: turnstileToken || '',
       })
       setSubmissionMessage(result.url ? `PR 생성 요청이 접수되었습니다: ${result.url}` : 'PR 생성 요청이 접수되었습니다.')
       setDialog(null)
+      setTurnstileToken(null)
     } catch (submitError) {
       setSubmissionMessage(submitError instanceof Error ? submitError.message : '일정 추가 요청에 실패했습니다.')
+      setTurnstileToken(null)
     } finally {
       setSubmitting(false)
     }
@@ -854,11 +859,14 @@ export function EventCalendarPage() {
         occurrenceId: dialog.occurrence?.id,
         message: String(form.get('message') ?? ''),
         sourceUrl: String(form.get('sourceUrl') ?? '') || undefined,
+        turnstileToken: turnstileToken || '',
       })
       setSubmissionMessage(result.url ? `수정 요청 이슈가 생성되었습니다: ${result.url}` : '수정 요청 이슈가 생성되었습니다.')
       setDialog(null)
+      setTurnstileToken(null)
     } catch (submitError) {
       setSubmissionMessage(submitError instanceof Error ? submitError.message : '수정 요청에 실패했습니다.')
+      setTurnstileToken(null)
     } finally {
       setSubmitting(false)
     }
@@ -1218,7 +1226,8 @@ export function EventCalendarPage() {
                   메모
                   <textarea name="note" rows={4} />
                 </label>
-                <button className="app-primary-button" disabled={submitting} type="submit">
+                <TurnstileWidget onVerify={setTurnstileToken} />
+                <button className="app-primary-button" disabled={submitting || !turnstileToken} type="submit">
                   <Send size={16} aria-hidden="true" />
                   PR 요청
                 </button>
@@ -1237,7 +1246,8 @@ export function EventCalendarPage() {
                   근거 링크
                   <input name="sourceUrl" placeholder="https://..." />
                 </label>
-                <button className="app-primary-button" disabled={submitting} type="submit">
+                <TurnstileWidget onVerify={setTurnstileToken} />
+                <button className="app-primary-button" disabled={submitting || !turnstileToken} type="submit">
                   <Send size={16} aria-hidden="true" />
                   Issue 생성
                 </button>

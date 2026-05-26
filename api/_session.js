@@ -69,5 +69,11 @@ export function readSession(req) {
     return null
   }
 
-  return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
+  const session = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
+  const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+  if (!session.ts || Date.now() - session.ts > MAX_AGE_MS) {
+    return null
+  }
+
+  return session
 }

@@ -1,13 +1,6 @@
 import { loadCache, removeCache, saveCache } from './cacheStore'
+import { isRecord, resolveDataUrl } from './fetchManifest'
 import type { LoadResult, SongGuide } from './types'
-
-function resolveDataUrl(manifestUrl: string, relativePath: string): string {
-  return new URL(relativePath, manifestUrl).toString()
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
 
 function assertLocalizedText(value: unknown, path: string): asserts value is Record<string, string> {
   if (!isRecord(value)) {

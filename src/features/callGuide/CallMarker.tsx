@@ -147,9 +147,8 @@ function railRangeTop(
   targetRect: DOMRect,
   stackOffset: number,
 ): number {
-  const laneHeight = laneRect.height
   if (lane === 'above') {
-    return Math.max(0, laneHeight - rangeAboveClearancePx - stackOffset)
+    return Math.max(0, targetRect.top - laneRect.top - rangeAboveClearancePx - stackOffset)
   }
 
   return targetRect.bottom - laneRect.top + rangeBelowClearancePx + stackOffset
@@ -161,9 +160,8 @@ function railEndPointTop(
   targetRect: DOMRect,
   stackOffset: number,
 ): number {
-  const laneHeight = laneRect.height
   if (lane === 'above') {
-    return Math.max(0, laneHeight - endArrowAboveClearancePx - stackOffset)
+    return Math.max(0, targetRect.top - laneRect.top - endArrowAboveClearancePx - stackOffset)
   }
 
   return targetRect.bottom - laneRect.top + endArrowBelowClearancePx + stackOffset
