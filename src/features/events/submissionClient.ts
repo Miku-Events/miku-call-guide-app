@@ -12,6 +12,7 @@ export interface EventSubmissionPayload {
   snsUrl: string
   sourceUrl?: string
   note?: string
+  turnstileToken: string
 }
 
 export interface EditRequestPayload {
@@ -19,6 +20,7 @@ export interface EditRequestPayload {
   occurrenceId?: string
   message: string
   sourceUrl?: string
+  turnstileToken: string
 }
 
 function apiUrl(apiBaseUrl: string, path: string): string {

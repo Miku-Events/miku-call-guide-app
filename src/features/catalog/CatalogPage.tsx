@@ -70,6 +70,28 @@ export function CatalogPage() {
     document.title = '곡 카탈로그 - 하츠네 미쿠 콜 가이드'
   }, [])
 
+  useEffect(() => {
+    const main = document.querySelector('.catalog-shell .app-main')
+    if (!main) return
+
+    const sentinel = document.createElement('div')
+    sentinel.style.cssText = 'height:1px;pointer-events:none;'
+    main.prepend(sentinel)
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        main.setAttribute('data-scrolled', entry.isIntersecting ? 'false' : 'true')
+      },
+      { root: main, threshold: 0 }
+    )
+    observer.observe(sentinel)
+
+    return () => {
+      observer.disconnect()
+      sentinel.remove()
+    }
+  }, [])
+
   const filteredSongs = useMemo(() => {
     if (!manifestResult) {
       return []
@@ -100,14 +122,15 @@ export function CatalogPage() {
               placeholder="Search title, artist, call summary, tag"
               type="search"
               value={query}
+              aria-label="곡 검색"
             />
           </label>
           <div className="catalog-segmented" aria-label="Catalog view">
-            <button className="catalog-segment-button" data-active="true" type="button">
+            <button className="catalog-segment-button" data-active="true" aria-pressed="true" type="button">
               <ListMusic size={16} aria-hidden="true" />
               전체
             </button>
-            <Link className="catalog-segment-button" data-active="false" to="/events">
+            <Link className="catalog-segment-button" data-active="false" aria-pressed="false" to="/events">
               <CalendarDays size={16} aria-hidden="true" />
               Events
             </Link>
@@ -147,6 +170,9 @@ export function CatalogPage() {
       ) : null}
 
       <div className="catalog-content-layout">
+        <div className="sr-only" aria-live="polite">
+          {query ? `검색 결과가 ${resultCount}개 있습니다.` : `전체 ${songCount}개의 곡이 있습니다.`}
+        </div>
         <section className="catalog-content-panel" aria-label="Call guide songs">
           {manifestResult ? (
             <div className="catalog-song-grid">

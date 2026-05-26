@@ -1,6 +1,7 @@
 import { createEventPullRequest } from '../../_github.js'
 import { handleOptions, json, readBody, requireMethod, setCors } from '../../_http.js'
 import { readSession } from '../../_session.js'
+import { verifyTurnstileToken } from '../../_turnstile.js'
 
 const supportedTypes = new Set([
   'concert',
@@ -110,6 +111,13 @@ export default async function handler(req, res) {
 
   try {
     const body = readBody(req)
+
+    const isValidToken = await verifyTurnstileToken(body.turnstileToken, req)
+    if (!isValidToken) {
+      json(res, 400, { error: 'invalid_bot_token', message: '보안 검증에 실패했습니다. 새로고침 후 다시 시도해 주세요.' })
+      return
+    }
+
     const errors = validateBody(body)
     if (errors.length > 0) {
       json(res, 400, { error: 'invalid_event_submission', errors })
@@ -117,12 +125,21 @@ export default async function handler(req, res) {
     }
 
     const datePart = String(body.startsAt).slice(0, 10)
+    const year = datePart.slice(0, 4)
+    const month = datePart.slice(5, 7)
+
+    if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
+      json(res, 400, { error: 'invalid_event_date_format', errors: ['startsAt must have a valid YYYY-MM prefix'] })
+      return
+    }
+
     const eventId = slugify(`${body.title}-${datePart}`) || `submitted-event-${Date.now()}`
+    const targetFilePath = `events/${year}/${month}/${eventId}.yaml`
     const branchName = `submissions/events/${eventId}-${Date.now()}`
     const pullRequest = await createEventPullRequest({
       branchName,
       content: eventYaml({ eventId, body, submitter: session.login }),
-      eventId,
+      filePath: targetFilePath,
       submitter: session.login,
       title: String(body.title),
     })

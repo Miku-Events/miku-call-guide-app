@@ -90,7 +90,7 @@ export function repoConfig() {
   }
 }
 
-export async function createEventPullRequest({ branchName, content, eventId, title, submitter }) {
+export async function createEventPullRequest({ branchName, content, filePath, title, submitter }) {
   const token = await installationToken()
   const { owner, repo, baseBranch } = repoConfig()
   const headers = { authorization: `Bearer ${token}` }
@@ -105,7 +105,7 @@ export async function createEventPullRequest({ branchName, content, eventId, tit
     method: 'POST',
   })
 
-  await githubFetch(`/repos/${owner}/${repo}/contents/events/${eventId}.yaml`, {
+  await githubFetch(`/repos/${owner}/${repo}/contents/${filePath}`, {
     body: JSON.stringify({
       branch: branchName,
       content: Buffer.from(content, 'utf8').toString('base64'),

@@ -20,7 +20,7 @@ export function saveCache<T>(key: string, value: T): void {
   window.localStorage.setItem(keyFor(key), JSON.stringify(envelope))
 }
 
-export function loadCache<T>(key: string): CacheEnvelope<T> | null {
+export function loadCache<T>(key: string, maxAgeMs?: number): CacheEnvelope<T> | null {
   if (typeof window === 'undefined') {
     return null
   }
@@ -31,7 +31,12 @@ export function loadCache<T>(key: string): CacheEnvelope<T> | null {
   }
 
   try {
-    return JSON.parse(raw) as CacheEnvelope<T>
+    const envelope = JSON.parse(raw) as CacheEnvelope<T>
+    if (maxAgeMs && Date.now() - new Date(envelope.savedAt).getTime() > maxAgeMs) {
+      window.localStorage.removeItem(keyFor(key))
+      return null
+    }
+    return envelope
   } catch {
     window.localStorage.removeItem(keyFor(key))
     return null
