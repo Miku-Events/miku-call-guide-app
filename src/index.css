@@ -3783,3 +3783,105 @@ dialog.event-dialog-backdrop::backdrop {
   padding: 0.4rem 0.5rem;
 }
 
+/* Event Folder Catalog UI */
+.catalog-event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+}
+
+.catalog-event-folder-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--catalog-surface);
+  border: 1px solid var(--catalog-outline);
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-height: 9rem;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  text-decoration: none !important;
+}
+
+.catalog-event-folder-card:hover {
+  background: rgba(57, 197, 187, 0.04);
+  border-color: var(--catalog-teal);
+  box-shadow: 0 0 16px rgba(57, 197, 187, 0.16);
+  transform: translateY(-2px);
+}
+
+.catalog-event-folder-card h3 {
+  font-size: 1.28rem;
+  font-weight: 850;
+  color: var(--catalog-text);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.25;
+}
+
+.catalog-event-folder-card p {
+  font-size: 0.84rem;
+  color: var(--catalog-text-muted);
+  margin: 0;
+  margin-bottom: 1.5rem;
+}
+
+.catalog-event-count-badge {
+  align-self: flex-start;
+  font-size: 0.76rem;
+  font-weight: 750;
+  color: var(--catalog-teal);
+  background: rgba(57, 197, 187, 0.08);
+  padding: 0.22rem 0.65rem;
+  border-radius: 20px;
+  border: 1px solid rgba(57, 197, 187, 0.2);
+  margin-top: auto;
+}
+
+/* Active Event Filter Banner */
+.catalog-active-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  border-radius: 8px;
+  border: 1px solid rgba(57, 197, 187, 0.28);
+  background: rgba(57, 197, 187, 0.05);
+  padding: 0.75rem 1rem;
+  color: var(--catalog-text);
+}
+
+.catalog-active-filter-banner-text {
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.catalog-active-filter-banner-text strong {
+  color: var(--catalog-teal);
+  font-weight: 850;
+}
+
+.catalog-active-filter-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: 0;
+  color: var(--catalog-text-secondary);
+  font-size: 0.84rem;
+  font-weight: 750;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.catalog-active-filter-reset:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--catalog-text);
+}
+
+

@@ -38,6 +38,7 @@ export interface CallGuideManifest {
   generatedAt: string
   dataVersion: string
   songs: ManifestSong[]
+  eventRegistry?: Record<string, { title: LocalizedText }>
 }
 
 export type Manifest = CallGuideManifest
