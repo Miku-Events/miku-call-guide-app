@@ -67,6 +67,17 @@ export function CallGuidePage() {
   }, [rootManifestUrl, songId])
 
   const song = songResult?.data
+
+  useEffect(() => {
+    if (song) {
+      const title = localizedText(song.metadata.title, 'ko', ['ja', 'en'])
+      const artist = localizedText(song.metadata.artist, 'ko', ['ja', 'en'])
+      document.title = `${title} (${artist}) - 콜 가이드 - 하츠네 미쿠 콜 가이드`
+    } else {
+      document.title = '곡 상세 - 하츠네 미쿠 콜 가이드'
+    }
+  }, [song])
+
   const activeLine = useMemo(() => (song ? findActiveLyric(song.lyrics, currentMs) : null), [currentMs, song])
   const globalCalls = useMemo(() => (song ? activeGlobalCalls(song.callEvents, currentMs) : []), [currentMs, song])
   const callLegendKinds = useMemo(() => (song ? callKindsInSong(song.callEvents) : []), [song])
@@ -195,7 +206,34 @@ export function CallGuidePage() {
             </div>
           </>
         ) : !error ? (
-          <div className="surface player-loading">Loading call guide...</div>
+          <div className="player-grid">
+            <section className="player-video-panel">
+              <div className="player-video-stack">
+                <div className="player-title-block">
+                  <div className="skeleton skeleton-text" style={{ width: '30%', height: '0.8rem', marginBottom: '0.4rem' }} />
+                  <div className="skeleton skeleton-text" style={{ width: '70%', height: '2rem', marginBottom: '0.4rem' }} />
+                  <div className="skeleton skeleton-text" style={{ width: '40%', height: '1rem' }} />
+                </div>
+                <div className="video-frame skeleton skeleton-video" style={{ background: 'rgba(255, 255, 255, 0.03)' }} />
+                <div className="player-active-meta" style={{ display: 'none' }}>
+                  <div className="skeleton skeleton-text" style={{ width: '20%', height: '1rem' }} />
+                </div>
+              </div>
+            </section>
+
+            <section className="live-lyrics-panel">
+              <div className="call-kind-legend" style={{ height: '2.2rem', border: '0', background: 'rgba(255, 255, 255, 0.03)', marginBottom: '0.65rem', borderRadius: '0.5rem' }} />
+              <div className="skeleton-lyric-list">
+                <div className="skeleton-lyric-line" style={{ opacity: 0.15 }}><div className="skeleton skeleton-text" style={{ width: '50%', height: '1.4rem' }} /></div>
+                <div className="skeleton-lyric-line" style={{ opacity: 0.35 }}><div className="skeleton skeleton-text" style={{ width: '75%', height: '1.4rem' }} /></div>
+                <div className="skeleton-lyric-line" style={{ opacity: 0.55 }}><div className="skeleton skeleton-text" style={{ width: '60%', height: '1.4rem' }} /></div>
+                <div className="skeleton-lyric-line" style={{ opacity: 1 }}><div className="skeleton skeleton-text" style={{ width: '85%', height: '2rem' }} /></div>
+                <div className="skeleton-lyric-line" style={{ opacity: 0.55 }}><div className="skeleton skeleton-text" style={{ width: '65%', height: '1.4rem' }} /></div>
+                <div className="skeleton-lyric-line" style={{ opacity: 0.35 }}><div className="skeleton skeleton-text" style={{ width: '80%', height: '1.4rem' }} /></div>
+                <div className="skeleton-lyric-line" style={{ opacity: 0.15 }}><div className="skeleton skeleton-text" style={{ width: '55%', height: '1.4rem' }} /></div>
+              </div>
+            </section>
+          </div>
         ) : null}
       </section>
     </main>
