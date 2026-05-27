@@ -87,36 +87,49 @@ function assertEventGuide(value: unknown): asserts value is EventGuide {
   }
 }
 
+const promiseCache = new Map<string, Promise<LoadResult<unknown>>>()
+
 async function fetchJsonWithCache<T>(
   url: string,
   cacheKey: string,
   assertValue: AssertFn<T>,
   fallbackWarning: (savedAt: string) => string,
 ): Promise<LoadResult<T>> {
-  try {
-    const response = await fetch(url, { cache: 'no-cache' })
-    if (!response.ok) {
-      throw new Error(`Request failed with ${response.status}.`)
-    }
+  // Find or trigger background request
+  let pending = promiseCache.get(url)
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const response = await fetch(url, { cache: 'no-cache' })
+        if (!response.ok) {
+          throw new Error(`Request failed with ${response.status}.`)
+        }
 
-    const data = await response.json()
-    assertValue(data)
-    saveCache(cacheKey, data)
-    return { data, source: 'network' }
-  } catch (error) {
-    const cached = loadCache<unknown>(cacheKey)
-    if (cached) {
-      assertValue(cached.value)
-      return {
-        data: cached.value,
-        source: 'cache',
-        warning: fallbackWarning(cached.savedAt),
+        const data = await response.json()
+        assertValue(data)
+        saveCache(cacheKey, data)
+        return { data, source: 'network' as const }
+      } catch (error) {
+        const cached = loadCache<unknown>(cacheKey)
+        if (cached) {
+          assertValue(cached.value)
+          return {
+            data: cached.value as T,
+            source: 'cache' as const,
+            warning: fallbackWarning(cached.savedAt),
+          }
+        }
+        throw error
+      } finally {
+        promiseCache.delete(url)
       }
-    }
-
-    throw error
+    })()
+    promiseCache.set(url, pending)
   }
+
+  return pending as Promise<LoadResult<T>>
 }
+
 
 function mergeWarning(...warnings: Array<string | undefined>): string | undefined {
   return warnings.filter(Boolean).join(' ') || undefined

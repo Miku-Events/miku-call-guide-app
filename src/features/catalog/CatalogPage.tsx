@@ -7,7 +7,7 @@ import { localizedText } from '../callGuide/callPositioning'
 import { fetchCallGuideManifest } from '../data/fetchManifest'
 import type { CallGuideManifest, LoadResult, ManifestSong, LocalizedText } from '../data/types'
 
-const BLACKLIST_TAGS = []
+const BLACKLIST_TAGS: string[] = []
 
 interface EventFolder {
   id: string;
@@ -134,7 +134,7 @@ export function CatalogPage() {
     const eventRegistry = manifestResult.data.eventRegistry ?? {}
 
     return Object.entries(tagCounts)
-      .filter(([_, folder]) => folder.songs.length >= 2)
+      .filter(([, folder]) => folder.songs.length >= 2)
       .map(([tag, folder]) => {
         const registryEntry = eventRegistry[tag]
         const title = registryEntry

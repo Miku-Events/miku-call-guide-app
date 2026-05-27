@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import type { LyricLine as LyricLineType } from '../data/types'
 import { callKindPriority, localizedText, normalizedCallKind, splitGraphemeTokens } from './callPositioning'
 import { CallMarker } from './CallMarker'
@@ -103,7 +103,7 @@ function renderLyricTokens(tokens: GraphemeToken[]) {
   return nodes
 }
 
-export function LyricLine({
+function LyricLineComponent({
   line,
   calls,
   active,
@@ -194,3 +194,16 @@ export function LyricLine({
     </article>
   )
 }
+
+export const LyricLine = memo(LyricLineComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.active === nextProps.active &&
+    prevProps.position === nextProps.position &&
+    prevProps.lyricsLanguage === nextProps.lyricsLanguage &&
+    prevProps.pronunciationLanguage === nextProps.pronunciationLanguage &&
+    prevProps.callLanguage === nextProps.callLanguage &&
+    prevProps.calls === nextProps.calls &&
+    prevProps.line.id === nextProps.line.id
+  )
+})
+

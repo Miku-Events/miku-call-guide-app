@@ -1,7 +1,7 @@
 import { LocateFixed } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import type { LyricLine as LyricLineType, SongGuide } from '../data/types'
-import { callsForLine, findActiveLyric } from './callPositioning'
+import { callsForLine, findActiveLyric, type RenderableCall } from './callPositioning'
 import { LyricLine } from './LyricLine'
 
 interface LyricListProps {
@@ -33,16 +33,24 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
     [activeLine, song.lyrics],
   )
 
-  const clearProgrammaticScrollAfterAnimation = () => {
+  const callsByLineId = useMemo(() => {
+    const map = new Map<string, RenderableCall[]>()
+    song.lyrics.forEach((line) => {
+      map.set(line.id, callsForLine(song.callEvents, line.id))
+    })
+    return map
+  }, [song.lyrics, song.callEvents])
+
+  const clearProgrammaticScrollAfterAnimation = useCallback(() => {
     if (programmaticScrollTimerRef.current) {
       window.clearTimeout(programmaticScrollTimerRef.current)
     }
     programmaticScrollTimerRef.current = window.setTimeout(() => {
       programmaticScrollRef.current = false
     }, programmaticScrollTimeoutMs)
-  }
+  }, [])
 
-  const scrollLineIntoListCenter = (lineId: string, behavior: ScrollBehavior = 'smooth') => {
+  const scrollLineIntoListCenter = useCallback((lineId: string, behavior: ScrollBehavior = 'smooth') => {
     const listElement = listRef.current
     const lineElement = lineElementsRef.current.get(lineId)
     if (!listElement || !lineElement) {
@@ -62,7 +70,7 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
       listElement.scrollTop = nextScrollTop
     }
     clearProgrammaticScrollAfterAnimation()
-  }
+  }, [clearProgrammaticScrollAfterAnimation])
 
   useEffect(() => {
     if (!autoFollow || !activeLine) {
@@ -70,7 +78,7 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
     }
 
     scrollLineIntoListCenter(activeLine.id)
-  }, [activeLine, autoFollow])
+  }, [activeLine, autoFollow, scrollLineIntoListCenter])
 
   useEffect(() => () => {
     if (programmaticScrollTimerRef.current) {
@@ -195,7 +203,7 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
               key={line.id}
               line={line}
               active={activeLine?.id === line.id}
-              calls={callsForLine(song.callEvents, line.id)}
+              calls={callsByLineId.get(line.id) ?? []}
               lyricsLanguage={song.display.defaultLyricsLanguage}
               pronunciationLanguage={song.display.defaultPronunciationLanguage}
               callLanguage={song.display.defaultCallLanguage}
@@ -206,6 +214,7 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
           )
         })}
       </div>
+
     </div>
   )
 }
