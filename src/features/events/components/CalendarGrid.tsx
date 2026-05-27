@@ -1,0 +1,149 @@
+import { type CSSProperties } from 'react'
+import { localizedText } from '../../callGuide/callPositioning'
+import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
+
+type DayKind = 'weekday' | 'saturday' | 'sunday'
+
+function dayKindFromDateKey(dateKey: string): DayKind {
+  const [year, month, date] = dateKey.split('-').map(Number)
+  const day = new Date(year, month - 1, date).getDay()
+  if (day === 0) {
+    return 'sunday'
+  }
+  if (day === 6) {
+    return 'saturday'
+  }
+  return 'weekday'
+}
+
+function formatDateLabel(dateKey: string): string {
+  const [year, month, date] = dateKey.split('-').map(Number)
+  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date(year, month - 1, date))
+}
+
+interface CalendarGridProps {
+  weeks: string[][]
+  visibleMonth: string
+  selectedDate: string | null
+  todayKey: string
+  openDateDetail: (dateKey: string) => void
+  barsByWeek: Map<number, Array<{
+    event: CalendarEventSummary
+    occurrence: EventOccurrence
+    rowIndex: number
+    lane: number
+    columnStart: number
+    columnEnd: number
+    continuesBefore: boolean
+    continuesAfter: boolean
+    dateKeys: string[]
+    dateKeyStart: string
+    dateKeyEnd: string
+  }>>
+  calendarIsDragging: boolean
+}
+
+export function CalendarGrid({
+  weeks,
+  visibleMonth,
+  selectedDate,
+  todayKey,
+  openDateDetail,
+  barsByWeek,
+  calendarIsDragging,
+}: CalendarGridProps) {
+  return (
+    <>
+      <div className="event-weekdays" aria-hidden="true">
+        {[
+          ['Sun', 'sunday'],
+          ['Mon', 'weekday'],
+          ['Tue', 'weekday'],
+          ['Wed', 'weekday'],
+          ['Thu', 'weekday'],
+          ['Fri', 'weekday'],
+          ['Sat', 'saturday'],
+        ].map(([day, dayKind]) => (
+          <span data-day-kind={dayKind} key={day}>
+            {day}
+          </span>
+        ))}
+      </div>
+      <div className="event-calendar-grid">
+        {weeks.map((week, rowIndex) => {
+          const weekBars = barsByWeek.get(rowIndex) ?? []
+          const barLaneCount = weekBars.reduce((maxLane, segment) => Math.max(maxLane, segment.lane + 1), 0)
+          const weekStyle = {
+            '--event-week-bar-lanes': barLaneCount,
+          } as CSSProperties
+
+          return (
+            <div className="event-week-row" data-has-bars={weekBars.length > 0} key={week[0]} style={weekStyle}>
+              {week.map((dateKey) => {
+                const inMonth = dateKey.startsWith(visibleMonth)
+                const dayKind = dayKindFromDateKey(dateKey)
+                return (
+                  <button
+                    className="event-day-cell"
+                    data-day-kind={dayKind}
+                    data-in-month={inMonth}
+                    data-selected={selectedDate === dateKey}
+                    data-today={todayKey === dateKey}
+                    key={dateKey}
+                    onClick={() => openDateDetail(dateKey)}
+                    type="button"
+                  >
+                    <span className="event-day-number">{Number(dateKey.slice(-2))}</span>
+                  </button>
+                )
+              })}
+              {weekBars.length > 0 ? (
+                <div className="event-span-bars" aria-label="Calendar events">
+                  {weekBars.map((segment) => {
+                    const title = localizedText(segment.event.title, 'ko', ['ja', 'en'])
+                    const barStyle = {
+                      gridColumn: `${segment.columnStart} / ${segment.columnEnd}`,
+                      '--event-bar-lane': segment.lane,
+                    } as CSSProperties
+
+                    return (
+                      <button
+                        aria-label={`${title}: ${formatDateLabel(segment.dateKeyStart)} - ${formatDateLabel(segment.dateKeyEnd)}`}
+                        className="event-span-bar"
+                        data-continues-after={segment.continuesAfter}
+                        data-continues-before={segment.continuesBefore}
+                        data-event-id={segment.event.id}
+                        data-event-type={segment.event.type}
+                        data-occurrence-id={segment.occurrence.id}
+                        data-selected={selectedDate ? segment.dateKeys.includes(selectedDate) : false}
+                        key={`${segment.event.id}-${segment.occurrence.id}-${segment.rowIndex}`}
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          openDateDetail(segment.dateKeyStart)
+                        }}
+                        onMouseUp={() => {
+                          if (!calendarIsDragging) {
+                            openDateDetail(segment.dateKeyStart)
+                          }
+                        }}
+                        onPointerUp={(pointerEvent) => {
+                          if (!calendarIsDragging && pointerEvent.pointerType !== 'mouse') {
+                            openDateDetail(segment.dateKeyStart)
+                          }
+                        }}
+                        style={barStyle}
+                        type="button"
+                      >
+                        <span>{title}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}

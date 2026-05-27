@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --spacing-touch-target: 2.75rem;
+  --app-touch-target: 2.75rem;
+
+  /* Global Semantic Theme Tokens (Dark Mode base) */
+  --color-bg: #09090b;
+  --color-surface: #111113;
+  --color-surface-raised: #18181b;
+  --color-panel: #1f1f23;
+  --color-text: #f4f4f5;
+  --color-text-secondary: rgba(244, 244, 245, 0.68);
+  --color-text-muted: rgba(244, 244, 245, 0.46);
+  --color-outline: rgba(255, 255, 255, 0.1);
+  --color-outline-strong: rgba(57, 197, 187, 0.34);
+  --color-accent: #39c5bb;
+}
+
 :root {
   color: #142021;
   background: #f6f3ed;
@@ -10,9 +29,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  --font-display: "Outfit", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -27,21 +43,6 @@ h1, h2, h3, h4, h5, h6,
   font-family: var(--font-mono);
 }
 
-:root {
-  --app-touch-target: 2.75rem; /* 44px 터치 규격 충족 */
-
-  /* Global Semantic Theme Tokens (Dark Mode base) */
-  --color-bg: #09090b;
-  --color-surface: #111113;
-  --color-surface-raised: #18181b;
-  --color-panel: #1f1f23;
-  --color-text: #f4f4f5;
-  --color-text-secondary: rgba(244, 244, 245, 0.68);
-  --color-text-muted: rgba(244, 244, 245, 0.46);
-  --color-outline: rgba(255, 255, 255, 0.1);
-  --color-outline-strong: rgba(57, 197, 187, 0.34);
-  --color-accent: #39c5bb;
-}
 
 * {
   box-sizing: border-box;
@@ -1139,7 +1140,7 @@ button {
 }
 
 .lyric-line[role="button"]:focus-visible {
-  outline: 2px solid #39c5bb;
+  outline: 2px solid var(--color-accent);
   outline-offset: 4px;
 }
 
@@ -1612,7 +1613,7 @@ button {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 999px;
-  background: #39c5bb;
+  background: var(--color-accent);
   box-shadow: 0 0 0 6px rgba(57, 197, 187, 0.12);
   animation: live-pulse 2s ease-in-out infinite;
 }
@@ -1729,7 +1730,7 @@ button {
 }
 
 .player-shell .mock-player input {
-  accent-color: #39c5bb;
+  accent-color: var(--color-accent);
 }
 
 .player-active-meta {
@@ -1859,7 +1860,7 @@ button {
 .player-shell .lyric-line[data-active="true"] {
   border-color: transparent;
   background: rgba(57, 197, 187, 0.04);
-  box-shadow: inset 4px 0 0 0 #39c5bb;
+  box-shadow: inset 4px 0 0 0 var(--color-accent);
 }
 
 .player-shell .lyric-original {
