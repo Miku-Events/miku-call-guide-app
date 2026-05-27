@@ -46,7 +46,7 @@ const eventTypeLabels: Record<string, string> = {
   concert: 'Concert',
   dj: 'DJ',
   popup: 'Popup',
-  ticketApplication: 'Ticket apply',
+  ticketApplication: 'Ticket',
   ticketGeneralSale: 'General sale',
   livestream: 'Livestream',
   exhibition: 'Exhibition',
