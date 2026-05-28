@@ -1,0 +1,36 @@
+name: Deploy Web App to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # GitHub Actions 대시보드에서 수동 실행(Run workflow) 버튼을 제공합니다.
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend React app
+        run: npm run build
+        env:
+          VITE_DATA_MANIFEST_URL: ${{ secrets.VITE_DATA_MANIFEST_URL }}
+          VITE_CLOUDFLARE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3 # 🌟 최신 공식 wrangler-action@v3로 교체
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=miku-call-guide-app --branch=main # 🌟 표준 배포 명령어로 현대화
