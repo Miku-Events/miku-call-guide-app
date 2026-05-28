@@ -1,3 +1,4 @@
+name = "miku-call-guide-app"
+pages_build_output_dir = "dist"
 compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
-pages_build_output_dir = "dist" # 🌟 Cloudflare Pages 빌드 결과물 폴더 지정 (Vite 빌드 폴더)
