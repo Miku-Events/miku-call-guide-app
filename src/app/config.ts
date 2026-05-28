@@ -9,7 +9,7 @@ export function getManifestUrl(): string {
 }
 
 export function getSubmissionApiBaseUrl(): string {
-  return import.meta.env.VITE_SUBMISSION_API_URL ?? ''
+  return import.meta.env.VITE_SUBMISSION_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')
 }
 
 export function shouldUseMockPlayer(): boolean {
