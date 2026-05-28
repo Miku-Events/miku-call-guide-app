@@ -53,11 +53,16 @@ async function appJwt() {
   // Format the PKCS#8 private key
   const pem = requiredEnv('GITHUB_APP_PRIVATE_KEY').replace(/\\n/g, '\n')
   const cleanPem = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s+/g, '')
+    .replace(/-----[^-]+-----/g, '') // Strip headers and footers (BEGIN/END PRIVATE KEY)
+    .replace(/[^A-Za-z0-9+/=]/g, '')  // Strip all non-base64 characters (quotes, newlines, spaces)
   
-  const binaryKey = base64ToArrayBuffer(cleanPem)
+  // Pad the base64 string to be a multiple of 4 if needed
+  let paddedB64 = cleanPem
+  while (paddedB64.length % 4 !== 0) {
+    paddedB64 += '='
+  }
+  
+  const binaryKey = base64ToArrayBuffer(paddedB64)
   
   // Import the RSA private key using standard Web Crypto API
   const cryptoKey = await crypto.subtle.importKey(
