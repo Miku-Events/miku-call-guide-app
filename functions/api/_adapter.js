@@ -68,7 +68,11 @@ export function cloudflareAdapter(vercelHandler) {
 
     // 5. Cloudflare 표준 Response 객체로 전환 리턴
     if (redirectUrl) {
-      return Response.redirect(redirectUrl, 302)
+      resHeaders.set('location', redirectUrl)
+      return new Response(null, {
+        status: 302,
+        headers: resHeaders,
+      })
     }
     return new Response(responseBody, {
       status: statusCode,
