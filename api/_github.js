@@ -1,7 +1,5 @@
-import { createSign } from 'node:crypto'
-
 const apiBase = 'https://api.github.com'
-
+ 
 function requiredEnv(name) {
   const value = process.env[name]
   if (!value) {
@@ -9,12 +7,40 @@ function requiredEnv(name) {
   }
   return value
 }
-
+ 
 function base64UrlJson(value) {
   return Buffer.from(JSON.stringify(value)).toString('base64url')
 }
 
-function appJwt() {
+// Convert base64 string to ArrayBuffer
+function base64ToArrayBuffer(b64) {
+  const byteString = atob(b64)
+  const byteArray = new Uint8Array(byteString.length)
+  for (let i = 0; i < byteString.length; i++) {
+    byteArray[i] = byteString.charCodeAt(i)
+  }
+  return byteArray.buffer
+}
+
+// Convert ArrayBuffer to base64url string
+function arrayBufferToBase64Url(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  const base64 = btoa(binary)
+  return base64
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+/**
+ * Creates a JWT for GitHub App authentication using standard Web Crypto API.
+ * This runs flawlessly on Cloudflare Pages Functions, Node, and Vercel Edge.
+ */
+async function appJwt() {
   const now = Math.floor(Date.now() / 1000)
   const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' })
   const payload = base64UrlJson({
@@ -23,8 +49,38 @@ function appJwt() {
     iss: requiredEnv('GITHUB_APP_ID'),
   })
   const content = `${header}.${payload}`
-  const privateKey = requiredEnv('GITHUB_APP_PRIVATE_KEY').replace(/\\n/g, '\n')
-  const signature = createSign('RSA-SHA256').update(content).sign(privateKey, 'base64url')
+  
+  // Format the PKCS#8 private key
+  const pem = requiredEnv('GITHUB_APP_PRIVATE_KEY').replace(/\\n/g, '\n')
+  const cleanPem = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s+/g, '')
+  
+  const binaryKey = base64ToArrayBuffer(cleanPem)
+  
+  // Import the RSA private key using standard Web Crypto API
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryKey,
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: { name: 'SHA-256' },
+    },
+    false,
+    ['sign']
+  )
+  
+  // Sign the content
+  const encoder = new TextEncoder()
+  const contentBuffer = encoder.encode(content)
+  const signatureBuffer = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    contentBuffer
+  )
+  
+  const signature = arrayBufferToBase64Url(signatureBuffer)
   return `${content}.${signature}`
 }
 
@@ -51,7 +107,7 @@ export async function installationToken() {
   const installationId = requiredEnv('GITHUB_APP_INSTALLATION_ID')
   const result = await githubFetch(`/app/installations/${installationId}/access_tokens`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${appJwt()}` },
+    headers: { authorization: `Bearer ${await appJwt()}` },
   })
   return result.token
 }
