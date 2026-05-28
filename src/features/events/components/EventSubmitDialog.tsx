@@ -4,6 +4,7 @@ import { TurnstileWidget } from '../../../components/TurnstileWidget'
 import type { SubmissionSession } from '../submissionClient'
 import { submitEditRequest, submitEventSubmission, githubLoginUrl } from '../submissionClient'
 import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
+import { COMBINED_TIMEZONES, formatIsoWithOffset } from '../utils/timezone'
 
 const eventTypeLabels: Record<string, string> = {
   concert: 'Concert',
@@ -69,14 +70,21 @@ export function EventSubmitDialog({
 
   // React 19 Action State for adding event
   const [, addAction, addPending] = useActionState(
-    async (_prevState: any, formData: FormData) => {
+    async (_prevState: unknown, formData: FormData) => {
       try {
+        const rawStartsAt = String(formData.get('startsAt') ?? '')
+        const rawEndsAt = String(formData.get('endsAt') ?? '')
+        const timezone = String(formData.get('timezone') ?? '')
+
+        const startsAt = formatIsoWithOffset(rawStartsAt, timezone)
+        const endsAt = rawEndsAt ? formatIsoWithOffset(rawEndsAt, timezone) : undefined
+
         const result = await submitEventSubmission(submissionApiBaseUrl, {
           title: String(formData.get('title') ?? ''),
           type: String(formData.get('type') ?? ''),
-          startsAt: String(formData.get('startsAt') ?? ''),
-          endsAt: String(formData.get('endsAt') ?? '') || undefined,
-          timezone: String(formData.get('timezone') ?? ''),
+          startsAt,
+          endsAt,
+          timezone,
           snsUrl: String(formData.get('snsUrl') ?? ''),
           sourceUrl: String(formData.get('sourceUrl') ?? '') || undefined,
           note: String(formData.get('note') ?? '') || undefined,
@@ -86,10 +94,11 @@ export function EventSubmitDialog({
         setDialog(null)
         setTurnstileToken(null)
         return { success: true }
-      } catch (err: any) {
-        setSubmissionMessage(err.message || '일정 추가 요청에 실패했습니다.')
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : '일정 추가 요청에 실패했습니다.'
+        setSubmissionMessage(errorMsg)
         setTurnstileToken(null)
-        return { success: false, error: err.message }
+        return { success: false, error: errorMsg }
       }
     },
     null
@@ -97,7 +106,7 @@ export function EventSubmitDialog({
 
   // React 19 Action State for editing event
   const [, editAction, editPending] = useActionState(
-    async (_prevState: any, formData: FormData) => {
+    async (_prevState: unknown, formData: FormData) => {
       if (!dialog || dialog.kind !== 'edit') return null
 
       try {
@@ -112,10 +121,11 @@ export function EventSubmitDialog({
         setDialog(null)
         setTurnstileToken(null)
         return { success: true }
-      } catch (err: any) {
-        setSubmissionMessage(err.message || '수정 요청에 실패했습니다.')
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : '수정 요청에 실패했습니다.'
+        setSubmissionMessage(errorMsg)
         setTurnstileToken(null)
-        return { success: false, error: err.message }
+        return { success: false, error: errorMsg }
       }
     },
     null
@@ -165,15 +175,25 @@ export function EventSubmitDialog({
               </label>
               <label>
                 시작 시간
-                <input name="startsAt" placeholder="2026-08-15T18:00:00+09:00" required />
+                <input type="datetime-local" name="startsAt" required />
               </label>
               <label>
                 종료 시간
-                <input name="endsAt" placeholder="2026-08-15T20:30:00+09:00" />
+                <input type="datetime-local" name="endsAt" />
               </label>
               <label>
                 타임존
-                <input defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone} name="timezone" required />
+                <input
+                  defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
+                  name="timezone"
+                  list="timezone-list"
+                  required
+                />
+                <datalist id="timezone-list">
+                  {COMBINED_TIMEZONES.map((tz) => (
+                    <option key={tz} value={tz} />
+                  ))}
+                </datalist>
               </label>
               <label>
                 SNS 링크
