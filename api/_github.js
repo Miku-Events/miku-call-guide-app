@@ -34,6 +34,7 @@ async function githubFetch(path, options = {}) {
     headers: {
       accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
+      'User-Agent': 'miku-call-guide-app',
       ...options.headers,
     },
   })
@@ -62,7 +63,11 @@ export async function exchangeOAuthCode(code) {
       client_secret: requiredEnv('GITHUB_OAUTH_CLIENT_SECRET'),
       code,
     }),
-    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    headers: { 
+      accept: 'application/json', 
+      'content-type': 'application/json',
+      'User-Agent': 'miku-call-guide-app'
+    },
     method: 'POST',
   })
   if (!response.ok) {
