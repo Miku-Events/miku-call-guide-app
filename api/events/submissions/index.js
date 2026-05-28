@@ -32,12 +32,27 @@ function yamlString(value) {
 function eventYaml({ eventId, body, submitter }) {
   const title = String(body.title)
   const type = String(body.type)
-  const startsAt = String(body.startsAt)
+  const startsAt = body.startsAt ? String(body.startsAt) : ''
   const endsAt = body.endsAt ? String(body.endsAt) : ''
+  const startsOn = body.startsOn ? String(body.startsOn) : ''
+  const endsOn = body.endsOn ? String(body.endsOn) : ''
   const timezone = String(body.timezone)
   const snsUrl = String(body.snsUrl)
-  const sourceUrl = body.sourceUrl ? String(body.sourceUrl) : snsUrl
+  const sourceUrl = body.sourceUrl ? String(body.sourceUrl) : ''
   const note = body.note ? String(body.note) : ''
+
+  const occurrenceLines = []
+  if (startsAt) {
+    occurrenceLines.push(`    startsAt: ${yamlString(startsAt)}`)
+    if (endsAt) {
+      occurrenceLines.push(`    endsAt: ${yamlString(endsAt)}`)
+    }
+  } else {
+    occurrenceLines.push(`    startsOn: ${yamlString(startsOn)}`)
+    if (endsOn) {
+      occurrenceLines.push(`    endsOn: ${yamlString(endsOn)}`)
+    }
+  }
 
   return `schemaVersion: 1
 id: ${eventId}
@@ -50,17 +65,14 @@ type: ${type}
 
 occurrences:
   - id: main
-    startsAt: ${yamlString(startsAt)}
-${endsAt ? `    endsAt: ${yamlString(endsAt)}\n` : ''}    timezone: ${yamlString(timezone)}
+${occurrenceLines.join('\n')}
+    timezone: ${yamlString(timezone)}
 
 links:
-  sns:
+${sourceUrl ? `  official: ${yamlString(sourceUrl)}\n` : ''}  sns:
     - platform: x
       url: ${yamlString(snsUrl)}
       embed: true
-  source:
-    url: ${yamlString(sourceUrl)}
-    checkedAt: ${yamlString(new Date().toISOString())}
 
 tags:
   - submitted
@@ -71,10 +83,13 @@ ${note ? `# note: ${note.replace(/\r?\n/g, ' ')}\n` : ''}`
 
 function validateBody(body) {
   const errors = []
-  for (const key of ['title', 'type', 'startsAt', 'timezone', 'snsUrl']) {
+  for (const key of ['title', 'type', 'timezone', 'snsUrl']) {
     if (!body[key]) {
       errors.push(`${key} is required`)
     }
+  }
+  if (!body.startsAt && !body.startsOn) {
+    errors.push('either startsAt or startsOn is required')
   }
   if (body.type && !supportedTypes.has(String(body.type))) {
     errors.push('type is not supported')
@@ -84,6 +99,12 @@ function validateBody(body) {
   }
   if (body.endsAt && Number.isNaN(Date.parse(String(body.endsAt)))) {
     errors.push('endsAt must be an ISO date-time')
+  }
+  if (body.startsOn && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.startsOn))) {
+    errors.push('startsOn must be a date in YYYY-MM-DD format')
+  }
+  if (body.endsOn && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.endsOn))) {
+    errors.push('endsOn must be a date in YYYY-MM-DD format')
   }
   if (body.snsUrl && !/^https?:\/\//.test(String(body.snsUrl))) {
     errors.push('snsUrl must be an HTTP URL')
@@ -124,12 +145,12 @@ export default async function handler(req, res) {
       return
     }
 
-    const datePart = String(body.startsAt).slice(0, 10)
+    const datePart = String(body.startsAt || body.startsOn || '').slice(0, 10)
     const year = datePart.slice(0, 4)
     const month = datePart.slice(5, 7)
 
     if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
-      json(res, 400, { error: 'invalid_event_date_format', errors: ['startsAt must have a valid YYYY-MM prefix'] })
+      json(res, 400, { error: 'invalid_event_date_format', errors: ['date must have a valid YYYY-MM prefix'] })
       return
     }
 

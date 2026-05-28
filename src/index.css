@@ -2876,6 +2876,12 @@ dialog.event-dialog-backdrop::backdrop {
   margin-top: 1rem;
 }
 
+.event-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
 .event-login-panel p {
   margin: 0;
   color: var(--event-text-secondary);
