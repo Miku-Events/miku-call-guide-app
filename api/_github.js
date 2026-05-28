@@ -9,7 +9,26 @@ function requiredEnv(name) {
 }
  
 function base64UrlJson(value) {
-  return Buffer.from(JSON.stringify(value)).toString('base64url')
+  const jsonStr = JSON.stringify(value)
+  const bytes = new TextEncoder().encode(jsonStr)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  const b64 = btoa(binary)
+  return b64
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+function base64Encode(str) {
+  const bytes = new TextEncoder().encode(str)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
 }
 
 // Convert base64 string to ArrayBuffer
@@ -174,7 +193,7 @@ export async function createEventPullRequest({ branchName, content, filePath, ti
   await githubFetch(`/repos/${owner}/${repo}/contents/${filePath}`, {
     body: JSON.stringify({
       branch: branchName,
-      content: Buffer.from(content, 'utf8').toString('base64'),
+      content: base64Encode(content),
       message: `Add event: ${title}`,
     }),
     headers,
