@@ -72,18 +72,36 @@ export function EventSubmitDialog({
   const [, addAction, addPending] = useActionState(
     async (_prevState: unknown, formData: FormData) => {
       try {
-        const rawStartsAt = String(formData.get('startsAt') ?? '')
-        const rawEndsAt = String(formData.get('endsAt') ?? '')
+        const startDate = String(formData.get('startDate') ?? '')
+        const startTime = String(formData.get('startTime') ?? '')
+        const endDate = String(formData.get('endDate') ?? '')
+        const endTime = String(formData.get('endTime') ?? '')
         const timezone = String(formData.get('timezone') ?? '')
 
-        const startsAt = formatIsoWithOffset(rawStartsAt, timezone)
-        const endsAt = rawEndsAt ? formatIsoWithOffset(rawEndsAt, timezone) : undefined
+        let startsAt: string | undefined = undefined
+        let endsAt: string | undefined = undefined
+        let startsOn: string | undefined = undefined
+        let endsOn: string | undefined = undefined
+
+        if (startTime) {
+          startsAt = formatIsoWithOffset(`${startDate}T${startTime}`, timezone)
+          if (endDate && endTime) {
+            endsAt = formatIsoWithOffset(`${endDate}T${endTime}`, timezone)
+          }
+        } else {
+          startsOn = startDate
+          if (endDate) {
+            endsOn = endDate
+          }
+        }
 
         const result = await submitEventSubmission(submissionApiBaseUrl, {
           title: String(formData.get('title') ?? ''),
           type: String(formData.get('type') ?? ''),
           startsAt,
           endsAt,
+          startsOn,
+          endsOn,
           timezone,
           snsUrl: String(formData.get('snsUrl') ?? ''),
           sourceUrl: String(formData.get('sourceUrl') ?? '') || undefined,
@@ -173,14 +191,26 @@ export function EventSubmitDialog({
                   ))}
                 </select>
               </label>
-              <label>
-                시작 시간
-                <input type="datetime-local" name="startsAt" required />
-              </label>
-              <label>
-                종료 시간
-                <input type="datetime-local" name="endsAt" />
-              </label>
+              <div className="event-form-row">
+                <label>
+                  시작일
+                  <input type="date" name="startDate" required />
+                </label>
+                <label>
+                  시작 시간 (선택)
+                  <input type="time" name="startTime" />
+                </label>
+              </div>
+              <div className="event-form-row">
+                <label>
+                  종료일 (선택)
+                  <input type="date" name="endDate" />
+                </label>
+                <label>
+                  종료 시간 (선택)
+                  <input type="time" name="endTime" />
+                </label>
+              </div>
               <label>
                 타임존
                 <input
@@ -200,7 +230,7 @@ export function EventSubmitDialog({
                 <input name="snsUrl" placeholder="https://x.com/..." required />
               </label>
               <label>
-                근거 링크
+                공식 홈페이지 (선택)
                 <input name="sourceUrl" placeholder="https://..." />
               </label>
               <label>
@@ -224,7 +254,7 @@ export function EventSubmitDialog({
                 <textarea name="message" required rows={5} />
               </label>
               <label>
-                근거 링크
+                공식 홈페이지 (선택)
                 <input name="sourceUrl" placeholder="https://..." />
               </label>
               <TurnstileWidget onVerify={setTurnstileToken} />

@@ -6,8 +6,10 @@ export interface SubmissionSession {
 export interface EventSubmissionPayload {
   title: string
   type: string
-  startsAt: string
+  startsAt?: string
   endsAt?: string
+  startsOn?: string
+  endsOn?: string
   timezone: string
   snsUrl: string
   sourceUrl?: string
