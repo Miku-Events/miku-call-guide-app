@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom'
-import { Github } from 'lucide-react'
 
 export function PageShellSkeleton() {
   return (
@@ -14,18 +13,6 @@ export function PageShellSkeleton() {
             <span className="opacity-50">Catalog</span>
             <span className="opacity-50">Events</span>
           </nav>
-          <div className="app-top-bar-action" style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
-            <a
-              href="https://github.com/Miku-Events/miku-call-guide-app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="app-github-link"
-              title="GitHub Repository"
-              aria-label="GitHub Repository"
-            >
-              <Github size={20} />
-            </a>
-          </div>
         </div>
       </header>
 
