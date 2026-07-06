@@ -3940,4 +3940,53 @@ dialog.event-dialog-backdrop::backdrop {
   color: var(--catalog-text);
 }
 
+.app-github-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--app-outline);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.app-github-link:hover {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+  background: rgba(57, 197, 187, 0.08);
+  transform: translateY(-1px);
+}
+
+.app-github-link:active {
+  transform: translateY(0);
+}
+
+.player-github-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--player-outline-soft, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--player-text-muted, rgba(244, 244, 245, 0.68));
+  transition: all 0.2s ease;
+}
+
+.player-github-link:hover {
+  border-color: #8af5ff;
+  color: #8af5ff;
+  background: rgba(138, 245, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.player-github-link:active {
+  transform: translateY(0);
+}
+
+
 

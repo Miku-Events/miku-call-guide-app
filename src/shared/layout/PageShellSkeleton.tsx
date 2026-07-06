@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Github } from 'lucide-react'
 
 export function PageShellSkeleton() {
   return (
@@ -13,6 +14,18 @@ export function PageShellSkeleton() {
             <span className="opacity-50">Catalog</span>
             <span className="opacity-50">Events</span>
           </nav>
+          <div className="app-top-bar-action" style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+            <a
+              href="https://github.com/Miku-Events/miku-call-guide-app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="app-github-link"
+              title="GitHub Repository"
+              aria-label="GitHub Repository"
+            >
+              <Github size={20} />
+            </a>
+          </div>
         </div>
       </header>
 
@@ -38,7 +51,7 @@ export function PageShellSkeleton() {
             {Array.from({ length: 6 }).map((_, index) => (
               <div className="catalog-song-card catalog-song-card--skeleton" key={index} aria-hidden="true">
                 <div className="catalog-song-media skeleton" style={{ minHeight: '10.25rem' }} />
-                <div className="catalog-song-content" style={{ marginTop: '0', background: 'transparent', paddingTop: '1rem' }}>
+                 <div className="catalog-song-content" style={{ marginTop: '0', background: 'transparent', paddingTop: '1rem' }}>
                   <div className="skeleton" style={{ height: '1.4rem', width: '70%', marginBottom: '0.6rem' }} />
                   <div className="skeleton" style={{ height: '0.9rem', width: '40%', marginBottom: '1.2rem' }} />
                   <div className="skeleton" style={{ height: '2.5rem', width: '100%', marginBottom: '1rem' }} />

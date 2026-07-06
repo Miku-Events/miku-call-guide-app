@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { Github } from 'lucide-react'
 
 export type AppNavKey = 'catalog' | 'events'
 
@@ -71,7 +72,19 @@ export function AppPageShell({
               </Link>
             ))}
           </nav>
-          {primaryAction ? <div className="app-top-bar-action">{primaryAction}</div> : null}
+          <div className="app-top-bar-action" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {primaryAction}
+            <a
+              href="https://github.com/Miku-Events/miku-call-guide-app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="app-github-link"
+              title="GitHub Repository"
+              aria-label="GitHub Repository"
+            >
+              <Github size={20} />
+            </a>
+          </div>
         </div>
       </header>
 
