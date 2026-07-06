@@ -14,6 +14,7 @@ export interface EventSubmissionPayload {
   snsUrl: string
   sourceUrl?: string
   note?: string
+  slug?: string
   turnstileToken: string
 }
 

@@ -215,6 +215,29 @@ button {
   border: 0;
 }
 
+.app-skip-link {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 9999;
+  border: 1px solid var(--app-outline-strong);
+  border-radius: 8px;
+  background: var(--app-accent);
+  color: #050506;
+  padding: 0.6rem 1.2rem;
+  font-weight: 800;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  transform: translateY(-200%);
+  opacity: 0;
+  text-decoration: none;
+}
+
+.app-skip-link:focus-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
 .app-brand {
   display: inline-flex;
   min-width: max-content;
@@ -382,11 +405,16 @@ button {
   margin: 0;
 }
 
-.app-status-banner[data-variant="warning"],
+.app-status-banner[data-variant="warning"] {
+  border-color: rgba(244, 179, 93, 0.45);
+  background: rgba(244, 179, 93, 0.15);
+  color: #ffe0b2;
+}
+
 .app-status-banner[data-variant="error"] {
-  border-color: rgba(244, 179, 93, 0.34);
-  background: rgba(244, 179, 93, 0.12);
-  color: #ffdda8;
+  border-color: rgba(218, 60, 94, 0.45);
+  background: rgba(218, 60, 94, 0.15);
+  color: #ffd2d9;
 }
 
 .app-status-banner[data-variant="info"] {
@@ -797,9 +825,9 @@ button {
 .catalog-status-banner {
   flex-wrap: wrap;
   gap: 0.55rem;
-  border-color: rgba(244, 179, 93, 0.34);
-  background: rgba(244, 179, 93, 0.12);
-  color: #ffdda8;
+  border-color: rgba(244, 179, 93, 0.45);
+  background: rgba(244, 179, 93, 0.15);
+  color: #ffe0b2;
 }
 
 .catalog-status-banner p {
@@ -931,7 +959,7 @@ button {
   border-radius: 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
-  color: var(--catalog-text-secondary);
+  color: rgba(244, 244, 245, 0.82);
   padding: 0.72rem;
   font-size: 0.82rem;
   font-weight: 650;
@@ -1113,6 +1141,12 @@ button {
   font-weight: 780;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(12px);
+}
+
+.lyric-row-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
 }
 
 .lyric-line {
@@ -1995,9 +2029,9 @@ button {
 }
 
 .player-shell .status-banner {
-  border-color: rgba(255, 183, 134, 0.32);
-  background: rgba(255, 247, 236, 0.1);
-  color: #ffdcc6;
+  border-color: rgba(255, 183, 134, 0.45);
+  background: rgba(255, 247, 236, 0.12);
+  color: #ffe0cc;
 }
 
 .player-loading {

@@ -1,8 +1,13 @@
-import { memo, useCallback, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import type { LyricLine as LyricLineType } from '../data/types'
 import { callKindPriority, localizedText, normalizedCallKind, splitGraphemeTokens } from './callPositioning'
 import { CallMarker } from './CallMarker'
 import type { GraphemeToken, RenderableCall, StreamingLyricPosition } from './callPositioning'
+
+interface RowSplit {
+  startIdx: number
+  endIdx: number
+}
 
 interface LyricLineProps {
   line: LyricLineType
@@ -53,10 +58,19 @@ function isLineBreakGrapheme(value: string): boolean {
   return value === '\n' || value === '\r'
 }
 
-function renderLyricTokens(tokens: GraphemeToken[]) {
+
+function renderLyricTokensForRow(tokens: GraphemeToken[], startIdx: number, endIdx: number) {
   const nodes: ReactNode[] = []
 
   tokens.forEach((token, tokenIndex) => {
+    const rowGraphemes = token.graphemes.filter(
+      (g) => g.index >= startIdx && g.index <= endIdx
+    )
+
+    if (rowGraphemes.length === 0) {
+      return
+    }
+
     let chunk: GraphemeToken['graphemes'] = []
 
     const flushChunk = () => {
@@ -80,7 +94,7 @@ function renderLyricTokens(tokens: GraphemeToken[]) {
       chunk = []
     }
 
-    token.graphemes.forEach((grapheme) => {
+    rowGraphemes.forEach((grapheme) => {
       if (isLineBreakGrapheme(grapheme.value)) {
         flushChunk()
         nodes.push(
@@ -128,11 +142,86 @@ function LyricLineComponent({
   const interactive = Boolean(onSeek)
   const markerVariant = active ? 'active' : 'preview'
 
+  const [rowSplits, setRowSplits] = useState<RowSplit[] | null>(null)
+
   const setLineRef = useCallback((element: HTMLElement | null) => {
     lineRef.current = element
     setLineElement(element)
     registerLine?.(element)
   }, [registerLine])
+
+  useLayoutEffect(() => {
+    if (!lineElement || graphemeCount === 0) {
+      setRowSplits(null)
+      return
+    }
+
+    const updateSplits = () => {
+      const graphemeElements = Array.from(lineElement.querySelectorAll<HTMLElement>('.grapheme'))
+      if (graphemeElements.length === 0) {
+        setRowSplits(null)
+        return
+      }
+
+      const sortedElements = graphemeElements
+        .map((el) => {
+          const idxAttr = el.getAttribute('data-grapheme-index')
+          return {
+            element: el,
+            index: idxAttr ? parseInt(idxAttr, 10) : -1,
+          }
+        })
+        .filter((item) => item.index !== -1)
+        .sort((a, b) => a.index - b.index)
+
+      if (sortedElements.length === 0) {
+        setRowSplits(null)
+        return
+      }
+
+      const lineRect = lineElement.getBoundingClientRect()
+      const splits: RowSplit[] = []
+      let currentStart = sortedElements[0].index
+      let lastTop = sortedElements[0].element.getBoundingClientRect().top - lineRect.top
+
+      for (let i = 1; i < sortedElements.length; i++) {
+        const item = sortedElements[i]
+        const currentTop = item.element.getBoundingClientRect().top - lineRect.top
+        
+        if (Math.abs(currentTop - lastTop) > 6) {
+          splits.push({
+            startIdx: currentStart,
+            endIdx: item.index - 1,
+          })
+          currentStart = item.index
+          lastTop = currentTop
+        }
+      }
+
+      splits.push({
+        startIdx: currentStart,
+        endIdx: graphemeCount,
+      })
+
+      setRowSplits((prev) => {
+        if (!prev) return splits
+        if (prev.length !== splits.length) return splits
+        const hasDifference = prev.some((s, idx) => s.startIdx !== splits[idx].startIdx || s.endIdx !== splits[idx].endIdx)
+        return hasDifference ? splits : prev
+      })
+    }
+
+    updateSplits()
+
+    const resizeObserver = new ResizeObserver(updateSplits)
+    resizeObserver.observe(lineElement)
+    window.addEventListener('resize', updateSplits)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updateSplits)
+    }
+  }, [lineElement, graphemeCount])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!interactive || (event.key !== 'Enter' && event.key !== ' ')) {
@@ -172,6 +261,8 @@ function LyricLineComponent({
     )
   }
 
+  const activeSplits = rowSplits || [{ startIdx: 1, endIdx: graphemeCount }]
+
   return (
     <article
       aria-current={active ? 'true' : undefined}
@@ -185,12 +276,28 @@ function LyricLineComponent({
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
     >
-      {renderCallLane('above', aboveCalls)}
-      <p className="lyric-original" aria-label={lyrics}>
-        {renderLyricTokens(lyricTokens)}
-      </p>
-      <p className="lyric-pronunciation">{pronunciation}</p>
-      {renderCallLane('below', belowCalls)}
+      {activeSplits.map((row, rowIdx) => {
+        const isLastRow = rowIdx === activeSplits.length - 1
+        const inRowRange = (charIdx: number) => {
+          if (charIdx >= row.startIdx && charIdx <= row.endIdx) return true
+          if (isLastRow && charIdx > row.endIdx) return true
+          return false
+        }
+
+        const rowAboveCalls = aboveCalls.filter((call) => inRowRange(call.anchor.pointChar))
+        const rowBelowCalls = belowCalls.filter((call) => inRowRange(call.anchor.pointChar))
+
+        return (
+          <div className="lyric-row-wrap" key={rowIdx}>
+            {renderCallLane('above', rowAboveCalls)}
+            <p className="lyric-original" aria-label={lyrics}>
+              {renderLyricTokensForRow(lyricTokens, row.startIdx, row.endIdx)}
+            </p>
+            {renderCallLane('below', rowBelowCalls)}
+          </div>
+        )
+      })}
+      {pronunciation ? <p className="lyric-pronunciation">{pronunciation}</p> : null}
     </article>
   )
 }

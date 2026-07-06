@@ -18,6 +18,9 @@ Always run verification locally before submitting any pull requests:
 
 ## Strict Coding Guidelines
 
+### 0. Build & Lint Guarantee (MANDATORY)
+- **Always Verify Build**: After modifying any files, you MUST run both `npm run test` and `npm run build` to verify that all unit tests pass and compilation/bundler outputs build successfully without any TS or linter errors.
+
 ### 1. Tailwind CSS v4 Styling Spec
 - **CSS-First Config**: Tailwind CSS v4 is used with `@tailwindcss/vite`. Configurations are defined in `src/index.css` via modern CSS directives. Do not look for or create a `tailwind.config.js` file.
 - **Theme Binding**: Strictly use class utility rules rather than ad-hoc inline styles. Keep colors and layout spacing consistent with the premium glassmorphism system defined in `src/index.css`.

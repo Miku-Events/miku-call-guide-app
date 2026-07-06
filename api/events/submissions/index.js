@@ -29,7 +29,7 @@ function yamlString(value) {
   return JSON.stringify(String(value))
 }
 
-function eventYaml({ eventId, body, submitter }) {
+function eventYaml({ body, submitter }) {
   const title = String(body.title)
   const type = String(body.type)
   const startsAt = body.startsAt ? String(body.startsAt) : ''
@@ -55,7 +55,6 @@ function eventYaml({ eventId, body, submitter }) {
   }
 
   return `schemaVersion: 1
-id: ${eventId}
 status: published
 
 title:
@@ -112,6 +111,9 @@ function validateBody(body) {
   if (body.sourceUrl && !/^https?:\/\//.test(String(body.sourceUrl))) {
     errors.push('sourceUrl must be an HTTP URL')
   }
+  if (body.slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(String(body.slug))) {
+    errors.push('slug must contain only lowercase letters, numbers, and hyphens')
+  }
   return errors
 }
 
@@ -154,12 +156,14 @@ export default async function handler(req, res) {
       return
     }
 
-    const eventId = slugify(`${body.title}-${datePart}`) || `submitted-event-${Date.now()}`
+    const eventId = (body.slug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(String(body.slug)))
+      ? String(body.slug)
+      : slugify(`${body.title}-${datePart}`) || `submitted-event-${Date.now()}`
     const targetFilePath = `events/${year}/${month}/${eventId}.yaml`
     const branchName = `submissions/events/${eventId}-${Date.now()}`
     const pullRequest = await createEventPullRequest({
       branchName,
-      content: eventYaml({ eventId, body, submitter: session.login }),
+      content: eventYaml({ body, submitter: session.login }),
       filePath: targetFilePath,
       submitter: session.login,
       title: String(body.title),
