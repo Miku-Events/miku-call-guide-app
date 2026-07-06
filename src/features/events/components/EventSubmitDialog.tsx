@@ -106,6 +106,7 @@ export function EventSubmitDialog({
           snsUrl: String(formData.get('snsUrl') ?? ''),
           sourceUrl: String(formData.get('sourceUrl') ?? '') || undefined,
           note: String(formData.get('note') ?? '') || undefined,
+          slug: String(formData.get('slug') ?? '') || undefined,
           turnstileToken: turnstileToken || '',
         })
         setSubmissionMessage(result.url ? `PR 생성 요청이 접수되었습니다: ${result.url}` : 'PR 생성 요청이 접수되었습니다.')
@@ -182,6 +183,15 @@ export function EventSubmitDialog({
               <label>
                 이벤트 제목
                 <input name="title" required />
+              </label>
+              <label>
+                영문 식별자 (URL ID / Slug) (선택)
+                <input
+                  name="slug"
+                  pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  placeholder="예: magical-mirai-2026-hamamatsu"
+                  title="영문 소문자, 숫자, 하이픈(-)만 사용 가능하며 앞뒤 하이픈은 사용할 수 없습니다."
+                />
               </label>
               <label>
                 종류

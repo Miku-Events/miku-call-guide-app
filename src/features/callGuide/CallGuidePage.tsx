@@ -90,6 +90,9 @@ export function CallGuidePage() {
 
   return (
     <main className="app-shell player-shell">
+      <a className="app-skip-link" href="#lyrics-practice-section">
+        본문 가사로 바로가기
+      </a>
       <header className="top-bar player-top-bar sticky top-0 z-10">
         <div className="player-top-bar-inner">
           <div className="player-brand-group">
@@ -167,7 +170,7 @@ export function CallGuidePage() {
                 </div>
               </section>
 
-              <section className="live-lyrics-panel">
+              <section className="live-lyrics-panel" id="lyrics-practice-section" tabIndex={-1}>
                 {callLegendKinds.length > 0 ? (
                   <aside aria-label="콜 타입 안내" className="call-kind-legend">
                     <span className="call-kind-legend-title">Legend</span>
