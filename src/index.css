@@ -853,7 +853,7 @@ button {
   isolation: isolate;
   display: flex;
   min-width: 0;
-  min-height: 25rem;
+  min-height: 18rem;
   flex-direction: column;
   overflow: hidden;
   border-radius: 0.5rem;

@@ -113,7 +113,7 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(catalogGrid, 'grid-template-columns', 'repeat(auto-fill, minmax(min(100%, 22rem), 1fr))')
 
     const catalogCard = getBlock(css, '.catalog-song-card {')
-    expectDeclaration(catalogCard, 'min-height', '25rem')
+    expectDeclaration(catalogCard, 'min-height', '18rem')
     expectDeclaration(catalogCard, 'border-radius', '0.5rem')
     expectDeclaration(catalogCard, 'background', 'var(--catalog-surface)')
   })

@@ -296,7 +296,6 @@ export function CatalogPage() {
           ) : manifestResult && viewMode === 'songs' ? (
             <div className="catalog-song-grid">
               {filteredSongs.map((song) => {
-                const callSummary = localizedText(song.callSummary, 'ko', ['ja', 'en'])
                 const usesOriginalArtwork = Boolean(song.originalSongId)
 
                 return (
@@ -321,7 +320,6 @@ export function CatalogPage() {
                     <div className="catalog-song-content">
                       <h2>{localizedText(song.title, 'ko', ['ja', 'en'])}</h2>
                       <p>{localizedText(song.artist, 'ko', ['ja', 'en'])}</p>
-                      {callSummary ? <p className="catalog-call-summary">{callSummary}</p> : null}
                       <div className="catalog-card-action">
                         <span>Practice</span>
                         <ArrowRight size={16} aria-hidden="true" />
@@ -358,7 +356,6 @@ export function CatalogPage() {
                   <div className="catalog-song-content" style={{ marginTop: '0', background: 'transparent', paddingTop: '1rem' }}>
                     <div className="skeleton" style={{ height: '1.4rem', width: '70%', marginBottom: '0.6rem' }} />
                     <div className="skeleton" style={{ height: '0.9rem', width: '40%', marginBottom: '1.2rem' }} />
-                    <div className="skeleton" style={{ height: '2.5rem', width: '100%', marginBottom: '1rem' }} />
                     <div className="catalog-card-action" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem', marginTop: 'auto' }}>
                       <div className="skeleton" style={{ height: '1rem', width: '25%' }} />
                     </div>
