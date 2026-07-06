@@ -1254,7 +1254,9 @@ button {
 .lyric-line[role="button"] .lyric-original,
 .lyric-line[role="button"] .lyric-pronunciation,
 .lyric-line[role="button"] .lyric-token,
-.lyric-line[role="button"] .grapheme {
+.lyric-line[role="button"] .lyric-token-measure,
+.lyric-line[role="button"] .grapheme,
+.lyric-line[role="button"] .grapheme-measure {
   pointer-events: none;
 }
 
@@ -1357,6 +1359,14 @@ button {
   white-space: nowrap;
 }
 
+.lyric-token-measure {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .lyric-line-break {
   flex: 0 0 100%;
   width: 100%;
@@ -1364,6 +1374,11 @@ button {
 }
 
 .grapheme {
+  display: inline-block;
+  min-width: 0.35em;
+}
+
+.grapheme-measure {
   display: inline-block;
   min-width: 0.35em;
 }

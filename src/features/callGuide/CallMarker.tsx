@@ -99,6 +99,36 @@ function resolvePointMeasurement(lineElement: HTMLElement, pointChar: number, gr
   const point = lineElement.querySelector<HTMLElement>(indexSelector(pointChar))
   if (point) {
     const anchorRect = point.getBoundingClientRect()
+
+    // Check if it is a whitespace character that wrapped/collapsed in the browser
+    if (point.textContent && /^\s+$/u.test(point.textContent)) {
+      let prevIdx = pointChar - 1
+      let prevPoint = null
+      while (prevIdx >= 1) {
+        const el = lineElement.querySelector<HTMLElement>(indexSelector(prevIdx))
+        if (el && el.textContent && !/^\s+$/u.test(el.textContent)) {
+          prevPoint = el
+          break
+        }
+        prevIdx--
+      }
+
+      if (prevPoint) {
+        const prevRect = prevPoint.getBoundingClientRect()
+        // If the space's left is to the left of the preceding character's left,
+        // it means the space wrapped or collapsed!
+        if (anchorRect.left < prevRect.left) {
+          return {
+            anchorRect: prevRect,
+            verticalRect: isVisibleGraphemeRect(prevRect)
+              ? prevRect
+              : nearestVisibleGraphemeRect(lineElement, prevIdx, prevRect),
+            anchorsAfterFinalGrapheme: true,
+          }
+        }
+      }
+    }
+
     return {
       anchorRect,
       verticalRect: isVisibleGraphemeRect(anchorRect)
