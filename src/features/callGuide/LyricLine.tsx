@@ -59,6 +59,56 @@ function isLineBreakGrapheme(value: string): boolean {
 }
 
 
+function renderLyricTokensForMeasure(tokens: GraphemeToken[]) {
+  const nodes: ReactNode[] = []
+
+  tokens.forEach((token, tokenIndex) => {
+    let chunk: GraphemeToken['graphemes'] = []
+
+    const flushChunk = () => {
+      if (chunk.length === 0) {
+        return
+      }
+
+      nodes.push(
+        <span
+          className="lyric-token-measure"
+          data-whitespace={token.isWhitespaceOnly}
+          key={`measure-${token.text}-${tokenIndex}-${chunk[0].index}`}
+        >
+          {chunk.map((grapheme) => (
+            <span className="grapheme-measure" data-grapheme-index-measure={grapheme.index} key={`measure-${grapheme.value}-${grapheme.index}`}>
+              {grapheme.value}
+            </span>
+          ))}
+        </span>,
+      )
+      chunk = []
+    }
+
+    token.graphemes.forEach((grapheme) => {
+      if (isLineBreakGrapheme(grapheme.value)) {
+        flushChunk()
+        nodes.push(
+          <span
+            aria-hidden="true"
+            className="lyric-line-break"
+            data-grapheme-index-measure={grapheme.index}
+            key={`measure-line-break-${grapheme.index}`}
+          />,
+        )
+        return
+      }
+
+      chunk.push(grapheme)
+    })
+
+    flushChunk()
+  })
+
+  return nodes
+}
+
 function renderLyricTokensForRow(tokens: GraphemeToken[], startIdx: number, endIdx: number) {
   const nodes: ReactNode[] = []
 
@@ -157,43 +207,34 @@ function LyricLineComponent({
     }
 
     const updateSplits = () => {
-      const graphemeElements = Array.from(lineElement.querySelectorAll<HTMLElement>('.grapheme'))
-      if (graphemeElements.length === 0) {
-        setRowSplits(null)
-        return
-      }
-
-      const sortedElements = graphemeElements
-        .map((el) => {
-          const idxAttr = el.getAttribute('data-grapheme-index')
-          return {
-            element: el,
-            index: idxAttr ? parseInt(idxAttr, 10) : -1,
-          }
-        })
-        .filter((item) => item.index !== -1)
-        .sort((a, b) => a.index - b.index)
-
-      if (sortedElements.length === 0) {
+      const tokenElements = Array.from(lineElement.querySelectorAll<HTMLElement>('.lyric-token-measure'))
+      if (tokenElements.length === 0 || lyricTokens.length === 0) {
         setRowSplits(null)
         return
       }
 
       const lineRect = lineElement.getBoundingClientRect()
       const splits: RowSplit[] = []
-      let currentStart = sortedElements[0].index
-      let lastTop = sortedElements[0].element.getBoundingClientRect().top - lineRect.top
+      let currentStart = 1
+      let lastTop = tokenElements[0].getBoundingClientRect().top - lineRect.top
 
-      for (let i = 1; i < sortedElements.length; i++) {
-        const item = sortedElements[i]
-        const currentTop = item.element.getBoundingClientRect().top - lineRect.top
+      for (let i = 1; i < tokenElements.length; i++) {
+        const el = tokenElements[i]
+        const currentTop = el.getBoundingClientRect().top - lineRect.top
         
-        if (Math.abs(currentTop - lastTop) > 6) {
+        // A threshold of 10px is very safe for line height differences (which are > 24px)
+        // while ignoring minor baseline/character metric variations (usually < 5px for token containers)
+        if (Math.abs(currentTop - lastTop) > 10) {
+          const prevToken = lyricTokens[i - 1]
+          const prevEndIdx = prevToken.graphemes[prevToken.graphemes.length - 1].index
+          
           splits.push({
             startIdx: currentStart,
-            endIdx: item.index - 1,
+            endIdx: prevEndIdx,
           })
-          currentStart = item.index
+          
+          const currentToken = lyricTokens[i]
+          currentStart = currentToken.graphemes[0].index
           lastTop = currentTop
         }
       }
@@ -261,7 +302,41 @@ function LyricLineComponent({
     )
   }
 
+  const graphemeValues = useMemo(() => {
+    const list: string[] = []
+    lyricTokens.forEach((token) => {
+      token.graphemes.forEach((g) => {
+        list[g.index] = g.value
+      })
+    })
+    return list
+  }, [lyricTokens])
+
+  const isWhitespaceGraphemeIndex = useCallback((idx: number) => {
+    const val = graphemeValues[idx]
+    return val ? /^\s+$/u.test(val) : false
+  }, [graphemeValues])
+
   const activeSplits = rowSplits || [{ startIdx: 1, endIdx: graphemeCount }]
+
+  const getCallRowIndex = useCallback((pointChar: number) => {
+    let matchedRowIdx = activeSplits.findIndex(
+      (row) => pointChar >= row.startIdx && pointChar <= row.endIdx
+    )
+
+    if (matchedRowIdx === -1) {
+      matchedRowIdx = activeSplits.length - 1
+    }
+
+    if (matchedRowIdx > 0) {
+      const row = activeSplits[matchedRowIdx]
+      if (pointChar === row.startIdx && isWhitespaceGraphemeIndex(pointChar)) {
+        return matchedRowIdx - 1
+      }
+    }
+
+    return matchedRowIdx
+  }, [activeSplits, isWhitespaceGraphemeIndex])
 
   return (
     <article
@@ -277,15 +352,8 @@ function LyricLineComponent({
       tabIndex={interactive ? 0 : undefined}
     >
       {activeSplits.map((row, rowIdx) => {
-        const isLastRow = rowIdx === activeSplits.length - 1
-        const inRowRange = (charIdx: number) => {
-          if (charIdx >= row.startIdx && charIdx <= row.endIdx) return true
-          if (isLastRow && charIdx > row.endIdx) return true
-          return false
-        }
-
-        const rowAboveCalls = aboveCalls.filter((call) => inRowRange(call.anchor.pointChar))
-        const rowBelowCalls = belowCalls.filter((call) => inRowRange(call.anchor.pointChar))
+        const rowAboveCalls = aboveCalls.filter((call) => getCallRowIndex(call.anchor.pointChar) === rowIdx)
+        const rowBelowCalls = belowCalls.filter((call) => getCallRowIndex(call.anchor.pointChar) === rowIdx)
 
         return (
           <div className="lyric-row-wrap" key={rowIdx}>
@@ -297,6 +365,10 @@ function LyricLineComponent({
           </div>
         )
       })}
+      {/* Hidden measuring container to determine natural flow wrapping without lockups */}
+      <p className="lyric-original lyric-original-measure" aria-hidden="true" style={{ position: 'absolute', top: 0, left: 0, width: '100%', visibility: 'hidden', pointerEvents: 'none', zIndex: -1 }}>
+        {renderLyricTokensForMeasure(lyricTokens)}
+      </p>
       {pronunciation ? <p className="lyric-pronunciation">{pronunciation}</p> : null}
     </article>
   )
