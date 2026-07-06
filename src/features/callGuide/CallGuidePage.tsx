@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, CalendarDays, Circle, ListMusic, Github } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarDays, Circle, ListMusic } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getRootManifestUrl, shouldUseMockPlayer } from '../../app/config'
@@ -116,17 +116,6 @@ export function CallGuidePage() {
             </nav>
           </div>
           <div className="player-status-cluster">
-            <a
-              href="https://github.com/Miku-Events/miku-call-guide-app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="player-github-link"
-              title="GitHub Repository"
-              aria-label="GitHub Repository"
-              style={{ marginRight: '0.4rem' }}
-            >
-              <Github size={18} />
-            </a>
             <span className="player-live-dot" aria-hidden="true" />
             <div className="player-clock">
               <p>{song ? formatMs(currentMs) : '0:00.0'}</p>
