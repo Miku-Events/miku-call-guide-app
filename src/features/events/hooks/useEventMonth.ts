@@ -29,17 +29,19 @@ export function useEventMonth(
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    const index = calendarIndex
-    if (!index) {
-      setData(null)
+    if (!calendarIndex) {
       return
     }
 
     const controller = new AbortController()
-    setIsLoading(true)
+    Promise.resolve().then(() => {
+      if (!controller.signal.aborted) {
+        setIsLoading(true)
+      }
+    })
 
-    const availableMonths = index.data.availableMonths
-    const indexUrl = index.url
+    const availableMonths = calendarIndex.data.availableMonths
+    const indexUrl = calendarIndex.url
 
     async function execute() {
       try {
@@ -64,10 +66,10 @@ export function useEventMonth(
         setData(result)
         onReset()
         setError(null)
-      } catch (err: any) {
-        if (err.name === 'AbortError') return
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return
         setData(null)
-        setError(err.message || 'Event calendar month load failed.')
+        setError(err instanceof Error ? err.message : 'Event calendar month load failed.')
       } finally {
         setIsLoading(false)
       }
@@ -78,7 +80,11 @@ export function useEventMonth(
     return () => {
       controller.abort()
     }
-  }, [calendarIndex, visibleMonth])
+  }, [calendarIndex, visibleMonth, onReset])
 
-  return { data, error, isLoading }
+  return {
+    data: calendarIndex ? data : null,
+    error,
+    isLoading
+  }
 }

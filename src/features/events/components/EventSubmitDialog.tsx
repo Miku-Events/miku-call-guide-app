@@ -1,10 +1,16 @@
-import { useActionState, useEffect, useRef } from 'react'
-import { X, Github, Send } from 'lucide-react'
+import { useActionState, useState } from 'react'
+import { Github, Send } from 'lucide-react'
 import { TurnstileWidget } from '../../../components/TurnstileWidget'
 import type { SubmissionSession } from '../submissionClient'
 import { submitEditRequest, submitEventSubmission, githubLoginUrl } from '../submissionClient'
 import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
 import { COMBINED_TIMEZONES, formatIsoWithOffset } from '../utils/timezone'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { TextInput } from '@astryxdesign/core/TextInput'
+import { TextArea } from '@astryxdesign/core/TextArea'
+import { Selector } from '@astryxdesign/core/Selector'
+import { Button } from '@astryxdesign/core/Button'
+import { EmptyState } from '@astryxdesign/core/EmptyState'
 
 const eventTypeLabels: Record<string, string> = {
   concert: 'Concert',
@@ -18,6 +24,11 @@ const eventTypeLabels: Record<string, string> = {
   announcement: 'Notice',
   other: 'Other',
 }
+
+const selectorOptions = Object.entries(eventTypeLabels).map(([value, label]) => ({
+  value,
+  label,
+}))
 
 type DialogState =
   | { kind: 'add' }
@@ -43,22 +54,24 @@ export function EventSubmitDialog({
   submissionApiBaseUrl,
   setSubmissionMessage,
 }: EventSubmitDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement | null>(null)
+  const [addForm, setAddForm] = useState(() => ({
+    title: '',
+    slug: '',
+    type: 'concert',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    snsUrl: '',
+    sourceUrl: '',
+    note: '',
+  }))
 
-  useEffect(() => {
-    const dialogEl = dialogRef.current
-    if (!dialogEl) return
-
-    if (dialog) {
-      if (!dialogEl.open) {
-        dialogEl.showModal()
-      }
-    } else {
-      if (dialogEl.open) {
-        dialogEl.close()
-      }
-    }
-  }, [dialog])
+  const [editForm, setEditForm] = useState(() => ({
+    message: '',
+    sourceUrl: '',
+  }))
 
   const openLogin = () => {
     if (!submissionApiBaseUrl) {
@@ -153,129 +166,206 @@ export function EventSubmitDialog({
   const isSubmitting = addPending || editPending
 
   return (
-    <dialog
-      ref={dialogRef}
+    <Dialog
+      isOpen={Boolean(dialog)}
+      onOpenChange={(open) => {
+        if (!open) setDialog(null)
+      }}
+      purpose="form"
+      width={540}
       className="event-dialog-backdrop"
-      onClose={() => setDialog(null)}
     >
       {dialog ? (
-        <div className="event-dialog">
-          <div className="event-dialog-header">
-            <div>
-              <p>{session.authenticated ? `@${session.login ?? 'github-user'}` : 'GitHub login required'}</p>
-              <h2>{dialog.kind === 'add' ? '일정 추가' : '수정 요청'}</h2>
-            </div>
-            <button aria-label="Close dialog" onClick={() => setDialog(null)} type="button">
-              <X size={18} aria-hidden="true" />
-            </button>
-          </div>
+        <div className="p-1" key={dialog.kind + (dialog.kind === 'edit' ? dialog.event.id : '')}>
+          <DialogHeader
+            title={dialog.kind === 'add' ? '일정 추가' : '수정 요청'}
+            subtitle={session.authenticated ? `@${session.login ?? 'github-user'}` : 'GitHub 로그인 필요'}
+            onOpenChange={() => setDialog(null)}
+          />
 
-          {!session.authenticated ? (
-            <div className="event-login-panel">
-              <p>GitHub 로그인 후 요청을 제출할 수 있습니다.</p>
-              <button className="app-primary-button" onClick={openLogin} type="button">
-                <Github size={16} aria-hidden="true" />
-                GitHub 로그인
-              </button>
-            </div>
-          ) : dialog.kind === 'add' ? (
-            <form className="event-form" action={addAction}>
-              <label>
-                이벤트 제목
-                <input name="title" required />
-              </label>
-              <label>
-                영문 식별자 (URL ID / Slug) (선택)
-                <input
-                  name="slug"
-                  pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$"
-                  placeholder="예: magical-mirai-2026-hamamatsu"
-                  title="영문 소문자, 숫자, 하이픈(-)만 사용 가능하며 앞뒤 하이픈은 사용할 수 없습니다."
+          <div className="mt-4">
+            {!session.authenticated ? (
+              <EmptyState
+                title="GitHub 로그인 필요"
+                description="GitHub 로그인 후 요청을 제출할 수 있습니다."
+                icon={<Github size={28} />}
+                actions={
+                  <Button
+                    label="GitHub 로그인"
+                    icon={<Github size={16} />}
+                    onClick={openLogin}
+                    variant="primary"
+                  />
+                }
+              />
+            ) : dialog.kind === 'add' ? (
+              <form className="flex flex-col gap-4" action={addAction}>
+                <TextInput
+                  label="이벤트 제목"
+                  value={addForm.title}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, title: val }))}
+                  htmlName="title"
+                  isRequired
                 />
-              </label>
-              <label>
-                종류
-                <select name="type" required>
-                  {Object.keys(eventTypeLabels).map((type) => (
-                    <option key={type} value={type}>{eventTypeLabels[type]}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="event-form-row">
-                <label>
-                  시작일
-                  <input type="date" name="startDate" required />
-                </label>
-                <label>
-                  시작 시간 (선택)
-                  <input type="time" name="startTime" />
-                </label>
-              </div>
-              <div className="event-form-row">
-                <label>
-                  종료일 (선택)
-                  <input type="date" name="endDate" />
-                </label>
-                <label>
-                  종료 시간 (선택)
-                  <input type="time" name="endTime" />
-                </label>
-              </div>
-              <label>
-                타임존
-                <input
-                  defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
-                  name="timezone"
-                  list="timezone-list"
-                  required
+                <TextInput
+                  label="영문 식별자 (URL ID / Slug)"
+                  description="영문 소문자, 숫자, 하이픈(-)만 사용 가능하며 앞뒤 하이픈은 사용할 수 없습니다."
+                  placeholder="예: magical-mirai-2026-hamamatsu"
+                  value={addForm.slug}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, slug: val }))}
+                  htmlName="slug"
+                  isOptional
+                />
+                <Selector
+                  label="종류"
+                  options={selectorOptions}
+                  value={addForm.type}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, type: val }))}
+                  isRequired
+                />
+                <input type="hidden" name="type" value={addForm.type} />
+                
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <TextInput
+                      label="시작일"
+                      type={"date" as "text"}
+                      value={addForm.startDate}
+                      onChange={(val) => setAddForm((prev) => ({ ...prev, startDate: val }))}
+                      htmlName="startDate"
+                      isRequired
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <TextInput
+                      label="시작 시간"
+                      type={"time" as "text"}
+                      value={addForm.startTime}
+                      onChange={(val) => setAddForm((prev) => ({ ...prev, startTime: val }))}
+                      htmlName="startTime"
+                      isOptional
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <TextInput
+                      label="종료일"
+                      type={"date" as "text"}
+                      value={addForm.endDate}
+                      onChange={(val) => setAddForm((prev) => ({ ...prev, endDate: val }))}
+                      htmlName="endDate"
+                      isOptional
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <TextInput
+                      label="종료 시간"
+                      type={"time" as "text"}
+                      value={addForm.endTime}
+                      onChange={(val) => setAddForm((prev) => ({ ...prev, endTime: val }))}
+                      htmlName="endTime"
+                      isOptional
+                    />
+                  </div>
+                </div>
+
+                <TextInput
+                  label="타임존"
+                  value={addForm.timezone}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, timezone: val }))}
+                  htmlName="timezone"
+                  isRequired
+                  {...({ list: 'timezone-list' } as Record<string, string>)}
                 />
                 <datalist id="timezone-list">
                   {COMBINED_TIMEZONES.map((tz) => (
                     <option key={tz} value={tz} />
                   ))}
                 </datalist>
-              </label>
-              <label>
-                SNS 링크
-                <input name="snsUrl" placeholder="https://x.com/..." required />
-              </label>
-              <label>
-                공식 홈페이지 (선택)
-                <input name="sourceUrl" placeholder="https://..." />
-              </label>
-              <label>
-                메모
-                <textarea name="note" rows={4} />
-              </label>
-              <TurnstileWidget onVerify={setTurnstileToken} />
-              <button className="app-primary-button" disabled={isSubmitting || !turnstileToken} type="submit">
-                <Send size={16} aria-hidden="true" />
-                PR 요청
-              </button>
-            </form>
-          ) : (
-            <form className="event-form" action={editAction}>
-              <label>
-                대상 이벤트
-                <input readOnly value={dialog.event.id} />
-              </label>
-              <label>
-                수정 요청 내용
-                <textarea name="message" required rows={5} />
-              </label>
-              <label>
-                공식 홈페이지 (선택)
-                <input name="sourceUrl" placeholder="https://..." />
-              </label>
-              <TurnstileWidget onVerify={setTurnstileToken} />
-              <button className="app-primary-button" disabled={isSubmitting || !turnstileToken} type="submit">
-                <Send size={16} aria-hidden="true" />
-                Issue 생성
-              </button>
-            </form>
-          )}
+
+                <TextInput
+                  label="SNS 링크"
+                  placeholder="https://x.com/..."
+                  value={addForm.snsUrl}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, snsUrl: val }))}
+                  htmlName="snsUrl"
+                  isRequired
+                />
+                <TextInput
+                  label="공식 홈페이지"
+                  placeholder="https://..."
+                  value={addForm.sourceUrl}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, sourceUrl: val }))}
+                  htmlName="sourceUrl"
+                  isOptional
+                />
+                <TextArea
+                  label="메모"
+                  value={addForm.note}
+                  onChange={(val) => setAddForm((prev) => ({ ...prev, note: val }))}
+                  htmlName="note"
+                  isOptional
+                  rows={4}
+                />
+                <div className="mt-4 flex flex-col gap-4">
+                  <TurnstileWidget onVerify={setTurnstileToken} />
+                  <Button
+                    label="PR 요청"
+                    icon={<Send size={16} aria-hidden="true" />}
+                    type="submit"
+                    variant="primary"
+                    isDisabled={isSubmitting || !turnstileToken}
+                    isLoading={isSubmitting}
+                  />
+                </div>
+              </form>
+            ) : (
+              <form className="flex flex-col gap-4" action={editAction}>
+                <TextInput
+                  label="대상 이벤트"
+                  value={dialog.event.id}
+                  onChange={() => {}}
+                  isDisabled
+                  htmlName="eventId"
+                />
+                <input type="hidden" name="eventId" value={dialog.event.id} />
+                {dialog.occurrence?.id && (
+                  <input type="hidden" name="occurrenceId" value={dialog.occurrence.id} />
+                )}
+                <TextArea
+                  label="수정 요청 내용"
+                  value={editForm.message}
+                  onChange={(val) => setEditForm((prev) => ({ ...prev, message: val }))}
+                  htmlName="message"
+                  isRequired
+                  rows={5}
+                />
+                <TextInput
+                  label="공식 홈페이지"
+                  placeholder="https://..."
+                  value={editForm.sourceUrl}
+                  onChange={(val) => setEditForm((prev) => ({ ...prev, sourceUrl: val }))}
+                  htmlName="sourceUrl"
+                  isOptional
+                />
+                <div className="mt-4 flex flex-col gap-4">
+                  <TurnstileWidget onVerify={setTurnstileToken} />
+                  <Button
+                    label="Issue 생성"
+                    icon={<Send size={16} aria-hidden="true" />}
+                    type="submit"
+                    variant="primary"
+                    isDisabled={isSubmitting || !turnstileToken}
+                    isLoading={isSubmitting}
+                  />
+                </div>
+              </form>
+            )}
+          </div>
         </div>
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }

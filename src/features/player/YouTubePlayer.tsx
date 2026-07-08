@@ -1,6 +1,8 @@
 import { Pause, Play, StepForward } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
 import { formatMs } from '../../shared/time/formatTime'
+import { Button } from '@astryxdesign/core/Button'
+import { ButtonGroup } from '@astryxdesign/core/ButtonGroup'
 
 type YouTubePlayerInstance = {
   getCurrentTime: () => number
@@ -48,6 +50,16 @@ function loadYouTubeApi(): Promise<void> {
         const script = document.createElement('script')
         script.src = 'https://www.youtube.com/iframe_api'
         document.head.appendChild(script)
+      } else if (window.YT?.Player) {
+        resolve()
+      } else {
+        // Fallback for hot reloading / pre-existing script tag
+        const interval = window.setInterval(() => {
+          if (window.YT?.Player) {
+            window.clearInterval(interval)
+            resolve()
+          }
+        }, 50)
       }
     })
   }
@@ -82,6 +94,7 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
 }, ref) {
   const playerId = `youtube-player-${useId().replace(/:/g, '')}`
   const playerRef = useRef<YouTubePlayerInstance | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const [mockPlaying, setMockPlaying] = useState(false)
   const [mockTimeMs, setMockTimeMs] = useState(() => clampTime(startOffsetMs, durationMs))
   const initialTimeMs = clampTime(startOffsetMs, durationMs)
@@ -143,6 +156,13 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
         return
       }
 
+      if (wrapperRef.current) {
+        wrapperRef.current.innerHTML = ''
+        const container = document.createElement('div')
+        container.id = playerId
+        wrapperRef.current.appendChild(container)
+      }
+
       playerRef.current = new window.YT.Player(playerId, {
         videoId,
         playerVars: {
@@ -170,6 +190,9 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
       window.clearInterval(intervalId)
       playerRef.current?.destroy()
       playerRef.current = null
+      if (wrapperRef.current) {
+        wrapperRef.current.innerHTML = ''
+      }
     }
   }, [initialTimeMs, mock, onTimeUpdate, playerId, videoId])
 
@@ -189,19 +212,25 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
           type="range"
           value={mockTimeMs}
         />
-        <div className="flex flex-wrap gap-2">
-          <button className="control-button" onClick={() => setMockPlaying((value) => !value)} type="button">
-            {mockPlaying ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
-            {mockPlaying ? 'Pause' : 'Play'}
-          </button>
-          <button className="control-button" onClick={() => setMockTimeMs((value) => Math.min(durationMs, value + 6000))} type="button">
-            <StepForward size={16} aria-hidden="true" />
-            +6s
-          </button>
+        <div>
+          <ButtonGroup label="Player controls" size="sm">
+            <Button
+              label={mockPlaying ? 'Pause' : 'Play'}
+              icon={mockPlaying ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+              onClick={() => setMockPlaying((value) => !value)}
+              variant="secondary"
+            />
+            <Button
+              label="+6s"
+              icon={<StepForward size={16} aria-hidden="true" />}
+              onClick={() => setMockTimeMs((value) => Math.min(durationMs, value + 6000))}
+              variant="secondary"
+            />
+          </ButtonGroup>
         </div>
       </div>
     )
   }
 
-  return <div id={playerId} title="YouTube player" />
+  return <div ref={wrapperRef} className="youtube-player-wrapper" style={{ display: 'contents' }} />
 })

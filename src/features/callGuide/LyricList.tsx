@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } 
 import type { LyricLine as LyricLineType, SongGuide } from '../data/types'
 import { callsForLine, findActiveLyric, type RenderableCall } from './callPositioning'
 import { LyricLine } from './LyricLine'
+import { Button } from '@astryxdesign/core/Button'
 
 interface LyricListProps {
   song: SongGuide
@@ -124,7 +125,7 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
   }
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !listRef.current) {
+    if (event.button !== 0 || !listRef.current || event.pointerType === 'touch') {
       return
     }
 
@@ -178,10 +179,12 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
   return (
     <div className="lyric-list-shell" onWheel={setManualExploreFromWheel}>
       {!autoFollow ? (
-        <button className="follow-active-button" onClick={restoreAutoFollow} type="button">
-          <LocateFixed size={16} aria-hidden="true" />
-          현재 가사
-        </button>
+        <Button
+          label="현재 가사"
+          onClick={restoreAutoFollow}
+          icon={<LocateFixed size={16} aria-hidden="true" />}
+          className="follow-active-button"
+        />
       ) : null}
       <div
         aria-live="polite"

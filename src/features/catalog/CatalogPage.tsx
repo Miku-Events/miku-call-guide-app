@@ -1,8 +1,12 @@
-import { AlertTriangle, ArrowRight, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X, ArrowRight } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getRootManifestUrl } from '../../app/config'
 import { AppPageShell, StatusBanner } from '../../shared/layout/AppPageShell'
+import { TextInput } from '@astryxdesign/core/TextInput'
+import { Button } from '@astryxdesign/core/Button'
+import { Banner } from '@astryxdesign/core/Banner'
+import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { localizedText } from '../callGuide/callPositioning'
 import { fetchCallGuideManifest } from '../data/fetchManifest'
 import type { CallGuideManifest, LoadResult, ManifestSong, LocalizedText } from '../data/types'
@@ -177,51 +181,60 @@ export function CatalogPage() {
       ]}
       title="콜 가이드"
       toolbar={
-        <>
-          <label className="catalog-search">
-            <Search size={18} aria-hidden="true" />
-            <input
-              onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search title, artist, call summary, tag"
-              type="search"
+        <div className="flex items-center gap-4 w-full flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <TextInput
+              label="곡 검색"
+              className="catalog-search"
+              isLabelHidden
               value={query}
-              aria-label="곡 검색"
+              onChange={(val) => setQuery(val)}
+              placeholder="Search title, artist, call summary, tag"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              startIcon={Search as any}
+              hasClear
             />
-          </label>
-          <div className="catalog-segmented" aria-label="Catalog view">
+          </div>
+          <div className="flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]" aria-label="Catalog view">
             <button
-              className="catalog-segment-button"
-              data-active={viewMode === 'songs' ? 'true' : 'false'}
-              aria-pressed={viewMode === 'songs'}
-              onClick={() => {
-                setViewMode('songs')
-              }}
               type="button"
+              data-active={viewMode === 'songs' ? 'true' : 'false'}
+              onClick={() => setViewMode('songs')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
+                viewMode === 'songs'
+                  ? 'bg-[var(--color-background-primary)] text-[var(--color-text-primary-on-blend)] shadow-sm'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
+              }`}
             >
               <ListMusic size={16} aria-hidden="true" />
-              전체
+              <span>전체</span>
             </button>
             <button
-              className="catalog-segment-button"
-              data-active={viewMode === 'events' ? 'true' : 'false'}
-              aria-pressed={viewMode === 'events'}
-              onClick={() => setViewMode('events')}
               type="button"
+              data-active={viewMode === 'events' ? 'true' : 'false'}
+              onClick={() => setViewMode('events')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
+                viewMode === 'events'
+                  ? 'bg-[var(--color-background-primary)] text-[var(--color-text-primary-on-blend)] shadow-sm'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
+              }`}
             >
               <CalendarDays size={16} aria-hidden="true" />
-              Events
+              <span>Events</span>
             </button>
           </div>
-        </>
+        </div>
       }
     >
       {manifestResult?.warning ? (
         <StatusBanner
           action={(
-            <button className="catalog-retry-button" onClick={load} type="button">
-              <RefreshCw size={16} aria-hidden="true" />
-              다시 시도
-            </button>
+            <Button
+              label="다시 시도"
+              variant="secondary"
+              onClick={load}
+              icon={<RefreshCw size={16} aria-hidden="true" />}
+            />
           )}
           icon={<AlertTriangle size={18} aria-hidden="true" />}
           variant="warning"
@@ -233,10 +246,12 @@ export function CatalogPage() {
       {error ? (
         <StatusBanner
           action={(
-            <button className="catalog-retry-button" onClick={load} type="button">
-              <RefreshCw size={16} aria-hidden="true" />
-              다시 시도
-            </button>
+            <Button
+              label="다시 시도"
+              variant="secondary"
+              onClick={load}
+              icon={<RefreshCw size={16} aria-hidden="true" />}
+            />
           )}
           icon={<AlertTriangle size={18} aria-hidden="true" />}
           role="alert"
@@ -247,21 +262,27 @@ export function CatalogPage() {
       ) : null}
 
       {selectedTag && viewMode === 'songs' ? (
-        <div className="catalog-active-filter-banner">
-          <div className="catalog-active-filter-banner-text">
-            이벤트 <strong>{localizedText((manifestResult?.data.eventRegistry ?? {})[selectedTag]?.title ?? { ko: formatFallbackEventTitle(selectedTag), en: formatFallbackEventTitle(selectedTag), ja: formatFallbackEventTitle(selectedTag) }, 'ko', ['ja', 'en'])}</strong>의 수록곡을 보고 있습니다.
-          </div>
-          <button
-            className="catalog-active-filter-reset"
-            onClick={() => {
-              setSelectedTag(null)
-              setViewMode('events')
-            }}
-            type="button"
-          >
-            <X size={16} />
-            필터 해제
-          </button>
+        <div className="mb-4">
+          <Banner
+            status="info"
+            container="card"
+            title={
+              <span>
+                이벤트 <strong>{localizedText((manifestResult?.data.eventRegistry ?? {})[selectedTag]?.title ?? { ko: formatFallbackEventTitle(selectedTag), en: formatFallbackEventTitle(selectedTag), ja: formatFallbackEventTitle(selectedTag) }, 'ko', ['ja', 'en'])}</strong>의 수록곡을 보고 있습니다.
+              </span>
+            }
+            endContent={
+              <Button
+                label="필터 해제"
+                variant="ghost"
+                icon={<X size={16} />}
+                onClick={() => {
+                  setSelectedTag(null)
+                  setViewMode('events')
+                }}
+              />
+            }
+          />
         </div>
       ) : null}
 
@@ -294,60 +315,60 @@ export function CatalogPage() {
               })}
             </div>
           ) : manifestResult && viewMode === 'songs' ? (
-            <div className="catalog-song-grid">
-              {filteredSongs.map((song) => {
-                const usesOriginalArtwork = Boolean(song.originalSongId)
+            <>
+              <div className="catalog-song-grid">
+                {filteredSongs.map((song) => {
+                  const usesOriginalArtwork = Boolean(song.originalSongId)
 
-                return (
-                  <Link
-                    className={`catalog-song-card${usesOriginalArtwork ? ' catalog-song-card--original-art' : ''}`}
-                    key={song.id}
-                    to={`/songs/${song.id}`}
-                  >
-                    <div className="catalog-song-media" aria-hidden="true">
-                      <div className="catalog-song-fallback-bg" />
-                      <img
-                        alt=""
-                        aria-hidden="true"
-                        className="catalog-song-thumbnail"
-                        loading="lazy"
-                        src={youtubeThumbnailUrl(song)}
-                        onError={(event) => {
-                          event.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    </div>
-                    <div className="catalog-song-content">
-                      <h2>{localizedText(song.title, 'ko', ['ja', 'en'])}</h2>
-                      <p>{localizedText(song.artist, 'ko', ['ja', 'en'])}</p>
-                      <div className="catalog-card-action">
-                        <span>Practice</span>
-                        <ArrowRight size={16} aria-hidden="true" />
+                  return (
+                    <Link
+                      className={`catalog-song-card${usesOriginalArtwork ? ' catalog-song-card--original-art' : ''}`}
+                      key={song.id}
+                      to={`/songs/${song.id}`}
+                    >
+                      <div className="catalog-song-media" aria-hidden="true">
+                        <div className="catalog-song-fallback-bg" />
+                        <img
+                          alt=""
+                          aria-hidden="true"
+                          className="catalog-song-thumbnail"
+                          loading="lazy"
+                          src={youtubeThumbnailUrl(song)}
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none'
+                          }}
+                        />
                       </div>
-                    </div>
-                  </Link>
-                )
-              })}
-               {filteredSongs.length === 0 ? (
-                <div className="catalog-empty-state">
-                  <div className="catalog-empty-icon" aria-hidden="true">
-                    <Search size={32} />
-                  </div>
-                  <h3>검색 결과가 없습니다</h3>
-                  <p>입력하신 검색어 '{query}'에 일치하는 곡이 없습니다. 다른 검색어를 입력하시거나 필터를 초기화해 보세요.</p>
-                  <button
-                    className="app-secondary-button"
-                    onClick={() => {
-                      setQuery('')
-                      setSelectedTag(null)
-                    }}
-                    type="button"
-                  >
-                    검색 초기화
-                  </button>
-                </div>
+                      <div className="catalog-song-content">
+                        <h2>{localizedText(song.title, 'ko', ['ja', 'en'])}</h2>
+                        <p>{localizedText(song.artist, 'ko', ['ja', 'en'])}</p>
+                        <div className="catalog-card-action">
+                          <span>Practice</span>
+                          <ArrowRight size={16} aria-hidden="true" />
+                        </div>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+              {filteredSongs.length === 0 ? (
+                <EmptyState
+                  title="검색 결과가 없습니다"
+                  description={`입력하신 검색어 '${query}'에 일치하는 곡이 없습니다. 다른 검색어를 입력하시거나 필터를 초기화해 보세요.`}
+                  icon={<Search size={32} />}
+                  actions={
+                    <Button
+                      label="검색 초기화"
+                      variant="secondary"
+                      onClick={() => {
+                        setQuery('')
+                        setSelectedTag(null)
+                      }}
+                    />
+                  }
+                />
               ) : null}
-            </div>
+            </>
           ) : !error ? (
             <div className="catalog-song-grid">
               {Array.from({ length: 6 }).map((_, index) => (
@@ -369,4 +390,3 @@ export function CatalogPage() {
     </AppPageShell>
   )
 }
-

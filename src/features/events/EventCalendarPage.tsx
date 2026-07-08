@@ -41,6 +41,7 @@ import { useEventMonth } from './hooks/useEventMonth'
 import { CalendarGrid } from './components/CalendarGrid'
 import { EventDetailSheet } from './components/EventDetailSheet'
 import { EventSubmitDialog } from './components/EventSubmitDialog'
+import { Button } from '@astryxdesign/core/Button'
 
 const eventTypeLabels: Record<string, string> = {
   concert: 'Concert',
@@ -171,13 +172,6 @@ export function EventCalendarPage() {
     isDragging: calendarIsDragging,
     ref: calendarRef,
   } = useOverflowDragScroll<HTMLElement>()
-
-  const {
-    canDrag: filterCanDrag,
-    dragScrollProps: filterDragScrollProps,
-    isDragging: filterIsDragging,
-    ref: filterRef,
-  } = useOverflowDragScroll<HTMLDivElement>()
 
   const {
     canDrag: detailCanDrag,
@@ -331,38 +325,63 @@ export function EventCalendarPage() {
       ]}
       title="Event Calendar"
       toolbar={
-        <>
-          <div className="event-month-controls">
-            <button aria-label="Previous month" onClick={() => setVisibleMonth((month) => addMonths(month, -1))} type="button">
-              <ChevronLeft size={18} aria-hidden="true" />
-            </button>
-            <strong>{formatMonthLabel(visibleMonth)}</strong>
-            <button aria-label="Next month" onClick={() => setVisibleMonth((month) => addMonths(month, 1))} type="button">
-              <ChevronRight size={18} aria-hidden="true" />
-            </button>
+        <div className="flex items-center justify-between w-full flex-wrap gap-4">
+          <div className="event-month-controls flex items-center gap-2">
+            <Button
+              label="Previous month"
+              isIconOnly
+              onClick={() => setVisibleMonth((month) => addMonths(month, -1))}
+              icon={<ChevronLeft size={18} aria-hidden="true" />}
+              variant="ghost"
+            />
+            <strong className="text-md min-w-[7rem] text-center">{formatMonthLabel(visibleMonth)}</strong>
+            <Button
+              label="Next month"
+              isIconOnly
+              onClick={() => setVisibleMonth((month) => addMonths(month, 1))}
+              icon={<ChevronRight size={18} aria-hidden="true" />}
+              variant="ghost"
+            />
           </div>
-          <div className="event-toolbar-trailing">
-            <div
-              className="event-type-filters"
-              aria-label="Event type filter"
-              data-dragging={filterIsDragging}
-              data-scrollable={filterCanDrag}
-              ref={filterRef}
-              {...filterDragScrollProps}
-            >
-              <button data-active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} type="button">All</button>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="event-type-filters flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]">
+              <button
+                type="button"
+                data-active={typeFilter === 'all' ? 'true' : 'false'}
+                onClick={() => setTypeFilter('all')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
+                  typeFilter === 'all'
+                    ? 'bg-[var(--color-background-primary)] text-[var(--color-text-primary-on-blend)] shadow-sm'
+                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
+                }`}
+              >
+                <span>All</span>
+              </button>
               {availableTypes.map((type) => (
-                <button data-active={typeFilter === type} data-event-type={type} key={type} onClick={() => setTypeFilter(type)} type="button">
-                  {eventTypeLabels[type]}
+                <button
+                  type="button"
+                  key={type}
+                  data-active={typeFilter === type ? 'true' : 'false'}
+                  onClick={() => setTypeFilter(type)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
+                    typeFilter === type
+                      ? 'bg-[var(--color-background-primary)] text-[var(--color-text-primary-on-blend)] shadow-sm'
+                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
+                  }`}
+                >
+                  <span>{eventTypeLabels[type]}</span>
                 </button>
               ))}
             </div>
-            <button className="event-add-compact-button" onClick={() => setDialog({ kind: 'add' })} type="button">
-              <Plus size={14} aria-hidden="true" />
-              일정 추가
-            </button>
+            <Button
+              label="일정 추가"
+              onClick={() => setDialog({ kind: 'add' })}
+              icon={<Plus size={14} aria-hidden="true" />}
+              variant="primary"
+              className="event-add-compact-button"
+            />
           </div>
-        </>
+        </div>
       }
     >
       {warning ? (
@@ -380,10 +399,12 @@ export function EventCalendarPage() {
       {activeError ? (
         <StatusBanner
           action={(
-            <button className="app-secondary-button" onClick={loadIndex} type="button">
-              <RefreshCw size={15} aria-hidden="true" />
-              다시 시도
-            </button>
+            <Button
+              label="다시 시도"
+              onClick={loadIndex}
+              icon={<RefreshCw size={15} aria-hidden="true" />}
+              variant="secondary"
+            />
           )}
           icon={<AlertTriangle size={18} aria-hidden="true" />}
           role="alert"

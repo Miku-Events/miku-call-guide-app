@@ -1,6 +1,6 @@
-import { AlertTriangle, ArrowLeft, CalendarDays, Circle, ListMusic } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { ListMusic } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useParams } from 'react-router-dom'
 import { getRootManifestUrl, shouldUseMockPlayer } from '../../app/config'
 import { formatMs } from '../../shared/time/formatTime'
 import { fetchCallGuideManifest } from '../data/fetchManifest'
@@ -16,6 +16,14 @@ import {
   normalizedCallKind,
 } from './callPositioning'
 import { LyricList } from './LyricList'
+import { AppShell } from '@astryxdesign/core/AppShell'
+import { AppHeader } from '../../shared/layout/AppHeader'
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout'
+import { Banner } from '@astryxdesign/core/Banner'
+import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { StatusDot } from '@astryxdesign/core/StatusDot'
+import { Theme } from '@astryxdesign/core/theme'
+import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 
 export function CallGuidePage() {
   const { songId } = useParams()
@@ -81,76 +89,68 @@ export function CallGuidePage() {
   const activeLine = useMemo(() => (song ? findActiveLyric(song.lyrics, currentMs) : null), [currentMs, song])
   const globalCalls = useMemo(() => (song ? activeGlobalCalls(song.callEvents, currentMs) : []), [currentMs, song])
   const callLegendKinds = useMemo(() => (song ? callKindsInSong(song.callEvents) : []), [song])
-  const seekToLine = (line: LyricLine) => {
+  
+  const seekToLine = useCallback((line: LyricLine) => {
     seekRequestIdRef.current += 1
     setCurrentMs(line.startMs)
     setSeekRequest({ id: seekRequestIdRef.current, timeMs: line.startMs })
     playerRef.current?.seekTo(line.startMs)
-  }
+  }, [])
 
   return (
-    <main className="app-shell player-shell">
-      <a className="app-skip-link" href="#lyrics-practice-section">
-        본문 가사로 바로가기
-      </a>
-      <header className="top-bar player-top-bar sticky top-0 z-10">
-        <div className="player-top-bar-inner">
-          <div className="player-brand-group">
-            <Link className="player-brand-link" to="/">
-              <ArrowLeft size={17} aria-hidden="true" />
-              Miku Call Guide
-            </Link>
-            <nav className="player-nav" aria-label="Player navigation">
-              <Link className="player-nav-link" to="/">
-                <ListMusic size={18} aria-hidden="true" />
-                Catalog
-              </Link>
-              <Link className="player-nav-link" to="/events">
-                <CalendarDays size={18} aria-hidden="true" />
-                Events
-              </Link>
-              <span className="player-nav-link" data-active="true">
-                <Circle size={10} aria-hidden="true" fill="currentColor" />
-                Practice
-              </span>
-            </nav>
-          </div>
-          <div className="player-status-cluster">
-            <span className="player-live-dot" aria-hidden="true" />
-            <div className="player-clock">
-              <p>{song ? formatMs(currentMs) : '0:00.0'}</p>
-              <span>
-              {manifestResult?.source === 'cache' || songResult?.source === 'cache' ? 'cached data' : 'live data'}
-              </span>
+    <Theme theme={neutralTheme} mode="dark">
+      <AppShell
+        height="fill"
+        variant="elevated"
+        contentPadding={0}
+        className="player-shell"
+      topNav={
+        <AppHeader
+          activeNav="practice"
+          endContent={
+            <div className="flex items-center gap-3">
+              <StatusDot
+                variant={manifestResult?.source === 'cache' || songResult?.source === 'cache' ? 'accent' : 'success'}
+                label={manifestResult?.source === 'cache' || songResult?.source === 'cache' ? 'cached' : 'live'}
+              />
+              <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
+                <p className="m-0">{song ? formatMs(currentMs) : '0:00.0'}</p>
+              </div>
             </div>
-          </div>
-        </div>
-      </header>
-
-      <section className="player-main">
+          }
+        />
+      }
+    >
+      <Layout className="player-main">
         {manifestResult?.warning || songResult?.warning ? (
-          <div className="status-banner flex items-start gap-2">
-            <AlertTriangle size={18} aria-hidden="true" />
-            <p>{manifestResult?.warning ?? songResult?.warning}</p>
+          <div className="mx-4 my-2">
+            <Banner
+              status="warning"
+              title={manifestResult?.warning ?? songResult?.warning ?? ''}
+              container="card"
+            />
           </div>
         ) : null}
 
         {error ? (
-          <div className="status-banner flex items-start gap-2" role="alert">
-            <AlertTriangle size={18} aria-hidden="true" />
-            <p>{error}</p>
+          <div className="mx-4 my-2">
+            <Banner
+              status="error"
+              title={error}
+              container="card"
+            />
           </div>
         ) : null}
 
-        {song ? (
-          <>
+        <LayoutContent className="px-0">
+          {song ? (
             <div className="player-grid">
               <section className="player-video-panel">
-                <div className="player-video-stack">
+                <div className="player-video-stack flex flex-col gap-4">
                   <div className="player-title-block">
-                    <p>Call Guide Practice</p>
-                    <h1>{localizedText(song.metadata.title, 'ko', ['ja', 'en'])}</h1>
-                    <span>{localizedText(song.metadata.artist, 'ko', ['ja', 'en'])}</span>
+                    <p className="app-kicker">Call Guide Practice</p>
+                    <h1 className="text-2xl font-bold m-0">{localizedText(song.metadata.title, 'ko', ['ja', 'en'])}</h1>
+                    <span className="text-sm text-[var(--color-text-secondary)]">{localizedText(song.metadata.artist, 'ko', ['ja', 'en'])}</span>
                   </div>
                   <div className="video-frame">
                     <YouTubePlayer
@@ -163,7 +163,7 @@ export function CallGuidePage() {
                       videoId={song.youtube.videoId}
                     />
                   </div>
-                  <div className="player-active-meta">
+                  <div className="player-active-meta flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
                     <ListMusic size={17} aria-hidden="true" />
                     <span>{activeLine ? activeLine.id : 'No active lyric line'}</span>
                   </div>
@@ -207,38 +207,43 @@ export function CallGuidePage() {
                 <LyricList currentMs={currentMs} onSeekToLine={seekToLine} song={song} />
               </section>
             </div>
-          </>
-        ) : !error ? (
-          <div className="player-grid">
-            <section className="player-video-panel">
-              <div className="player-video-stack">
-                <div className="player-title-block">
-                  <div className="skeleton skeleton-text" style={{ width: '30%', height: '0.8rem', marginBottom: '0.4rem' }} />
-                  <div className="skeleton skeleton-text" style={{ width: '70%', height: '2rem', marginBottom: '0.4rem' }} />
-                  <div className="skeleton skeleton-text" style={{ width: '40%', height: '1rem' }} />
+          ) : !error ? (
+            <div className="player-grid">
+              <section className="player-video-panel">
+                <div className="player-video-stack flex flex-col gap-4">
+                  <div className="player-title-block flex flex-col gap-2">
+                    <Skeleton width="30%" height="0.8rem" radius={1} />
+                    <Skeleton width="70%" height="2rem" radius={1} />
+                    <Skeleton width="40%" height="1rem" radius={1} />
+                  </div>
+                  <div className="video-frame min-h-[200px]">
+                    <Skeleton width="100%" height="100%" radius={2} />
+                  </div>
+                  <div className="player-active-meta flex items-center gap-2">
+                    <Skeleton width="20%" height="1rem" radius={1} />
+                  </div>
                 </div>
-                <div className="video-frame skeleton skeleton-video" style={{ background: 'rgba(255, 255, 255, 0.03)' }} />
-                <div className="player-active-meta" style={{ display: 'none' }}>
-                  <div className="skeleton skeleton-text" style={{ width: '20%', height: '1rem' }} />
-                </div>
-              </div>
-            </section>
+              </section>
 
-            <section className="live-lyrics-panel">
-              <div className="call-kind-legend" style={{ height: '2.2rem', border: '0', background: 'rgba(255, 255, 255, 0.03)', marginBottom: '0.65rem', borderRadius: '0.5rem' }} />
-              <div className="skeleton-lyric-list">
-                <div className="skeleton-lyric-line" style={{ opacity: 0.15 }}><div className="skeleton skeleton-text" style={{ width: '50%', height: '1.4rem' }} /></div>
-                <div className="skeleton-lyric-line" style={{ opacity: 0.35 }}><div className="skeleton skeleton-text" style={{ width: '75%', height: '1.4rem' }} /></div>
-                <div className="skeleton-lyric-line" style={{ opacity: 0.55 }}><div className="skeleton skeleton-text" style={{ width: '60%', height: '1.4rem' }} /></div>
-                <div className="skeleton-lyric-line" style={{ opacity: 1 }}><div className="skeleton skeleton-text" style={{ width: '85%', height: '2rem' }} /></div>
-                <div className="skeleton-lyric-line" style={{ opacity: 0.55 }}><div className="skeleton skeleton-text" style={{ width: '65%', height: '1.4rem' }} /></div>
-                <div className="skeleton-lyric-line" style={{ opacity: 0.35 }}><div className="skeleton skeleton-text" style={{ width: '80%', height: '1.4rem' }} /></div>
-                <div className="skeleton-lyric-line" style={{ opacity: 0.15 }}><div className="skeleton skeleton-text" style={{ width: '55%', height: '1.4rem' }} /></div>
-              </div>
-            </section>
-          </div>
-        ) : null}
-      </section>
-    </main>
-  )
+              <section className="live-lyrics-panel">
+                <div className="mb-4">
+                  <Skeleton width="100%" height="2.2rem" radius={2} />
+                </div>
+                <div className="skeleton-lyric-list flex flex-col gap-3">
+                  <Skeleton width="50%" height="1.4rem" radius={1} index={0} />
+                  <Skeleton width="75%" height="1.4rem" radius={1} index={1} />
+                  <Skeleton width="60%" height="1.4rem" radius={1} index={2} />
+                  <Skeleton width="85%" height="2rem" radius={1} index={3} />
+                  <Skeleton width="65%" height="1.4rem" radius={1} index={4} />
+                  <Skeleton width="80%" height="1.4rem" radius={1} index={5} />
+                  <Skeleton width="55%" height="1.4rem" radius={1} index={6} />
+                </div>
+              </section>
+            </div>
+          ) : null}
+        </LayoutContent>
+      </Layout>
+    </AppShell>
+  </Theme>
+)
 }
