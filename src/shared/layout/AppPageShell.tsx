@@ -1,8 +1,14 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { Github } from 'lucide-react'
+import { AppShell } from '@astryxdesign/core/AppShell'
+import { Banner } from '@astryxdesign/core/Banner'
+import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout'
+import { Toolbar } from '@astryxdesign/core/Toolbar'
+import { Card } from '@astryxdesign/core/Card'
+import { ClickableCard } from '@astryxdesign/core/ClickableCard'
+import { AppHeader } from './AppHeader'
 
-export type AppNavKey = 'catalog' | 'events'
+export type { AppNavKey } from './AppHeader'
+export type AppPageNavKey = 'catalog' | 'events'
 
 export interface SummaryItem {
   icon?: ReactNode
@@ -12,7 +18,7 @@ export interface SummaryItem {
 }
 
 export interface AppPageShellProps {
-  activeNav: AppNavKey
+  activeNav: AppPageNavKey
   children: ReactNode
   className?: string
   kicker: string
@@ -30,17 +36,21 @@ interface StatusBannerProps {
   variant?: 'error' | 'info' | 'warning'
 }
 
-const navItems: Array<{ key: AppNavKey; label: string; to: string }> = [
-  { key: 'catalog', label: 'Catalog', to: '/' },
-  { key: 'events', label: 'Events', to: '/events' },
-]
+
 
 export function StatusBanner({ action, children, icon, role, variant = 'info' }: StatusBannerProps) {
+  const status = variant === 'warning' ? 'warning' : variant === 'error' ? 'error' : 'info'
+
   return (
-    <div className="status-banner app-status-banner" data-variant={variant} role={role}>
-      {icon}
-      <p>{children}</p>
-      {action}
+    <div className="app-status-banner">
+      <Banner
+        status={status}
+        title={children}
+        icon={icon}
+        endContent={action}
+        role={role}
+        container="card"
+      />
     </div>
   )
 }
@@ -58,70 +68,72 @@ export function AppPageShell({
   const titleId = `${activeNav}-page-title`
 
   return (
-    <main className={`app-shell app-page-shell${className ? ` ${className}` : ''}`}>
-      <header className="app-top-bar sticky top-0 z-10">
-        <div className="app-top-bar-inner">
-          <Link className="app-brand" to="/">
-            <span className="app-brand-mark" aria-hidden="true" />
-            <span>Miku Call Guide</span>
-          </Link>
-          <nav className="app-nav" aria-label="Main navigation">
-            {navItems.map((item) => (
-              <Link data-active={activeNav === item.key} key={item.key} to={item.to}>
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="app-top-bar-action" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {primaryAction}
-            {activeNav === 'catalog' && (
-              <a
-                href="https://github.com/Miku-Events/miku-call-guide-app"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="app-github-link"
-                title="GitHub Repository"
-                aria-label="GitHub Repository"
-              >
-                <Github size={20} />
-              </a>
-            )}
-          </div>
-        </div>
-      </header>
+    <AppShell
+      height="fill"
+      variant="elevated"
+      contentPadding={0}
+      className={`app-page-shell${className ? ` ${className}` : ''}`}
+      topNav={
+        <AppHeader
+          activeNav={activeNav}
+          primaryAction={primaryAction}
+        />
+      }
+    >
+      <Layout className="app-main" aria-labelledby={titleId}>
+        <LayoutHeader className="px-4">
+          <div className="app-heading-row flex justify-between items-end w-full">
+            <div>
+              <p className="app-kicker">{kicker}</p>
+              <h1 id={titleId}>{title}</h1>
+            </div>
+            <div className="app-summary-strip flex gap-2" aria-label={`${title} summary`}>
+              {summaryItems.map((item) => {
+                const innerContent = (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] font-semibold">
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </div>
+                    <strong className="text-lg text-[var(--color-text-teal)] mt-1">{item.value}</strong>
+                  </div>
+                )
 
-      <section className="app-main" aria-labelledby={titleId}>
-        <div className="app-heading-row">
-          <div>
-            <p className="app-kicker">{kicker}</p>
-            <h1 id={titleId}>{title}</h1>
+                return item.to ? (
+                  <ClickableCard
+                    key={item.label}
+                    href={item.to}
+                    label={item.label}
+                    className="app-summary-item flex flex-col p-3 min-w-[7rem]"
+                  >
+                    {innerContent}
+                  </ClickableCard>
+                ) : (
+                  <Card
+                    key={item.label}
+                    className="app-summary-item flex flex-col p-3 min-w-[7rem]"
+                  >
+                    {innerContent}
+                  </Card>
+                )
+              })}
+            </div>
           </div>
-          <div className="app-summary-strip" aria-label={`${title} summary`}>
-            {summaryItems.map((item) => {
-              const content = (
-                <>
-                  {item.icon}
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </>
-              )
+        </LayoutHeader>
 
-              return item.to ? (
-                <Link className="app-summary-item" key={item.label} to={item.to}>
-                  {content}
-                </Link>
-              ) : (
-                <div className="app-summary-item" key={item.label}>
-                  {content}
-                </div>
-              )
-            })}
+        {toolbar && (
+          <div className="mx-4 my-2 app-toolbar">
+            <Toolbar
+              label="Page actions"
+              startContent={toolbar}
+            />
           </div>
-        </div>
+        )}
 
-        {toolbar ? <div className="app-toolbar">{toolbar}</div> : null}
-        {children}
-      </section>
-    </main>
+        <LayoutContent className="px-4">
+          {children}
+        </LayoutContent>
+      </Layout>
+    </AppShell>
   )
 }

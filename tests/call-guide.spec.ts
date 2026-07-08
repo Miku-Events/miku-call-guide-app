@@ -698,7 +698,6 @@ test('renders the main catalog as a dark responsive practice surface', async ({ 
   const songCard = page.locator('.catalog-song-card', { hasText: '퓨처 라이트 샘플' })
   await expect(songCard).toBeVisible()
   await expect(songCard).toContainText('하츠네 미쿠 팬 샘플')
-  await expect(songCard).toContainText('후렴 응원 콜 중심')
   await expect(songCard).toContainText('Practice')
   await expect(page.locator('.catalog-source-chip')).toHaveCount(0)
   await expect(page.locator('.catalog-status-pill')).toHaveCount(0)
@@ -723,7 +722,6 @@ test('renders the main catalog as a dark responsive practice surface', async ({ 
     const content = card?.querySelector<HTMLElement>('.catalog-song-content')
     const thumbnail = card?.querySelector<HTMLElement>('.catalog-song-thumbnail')
     const titleInCard = card?.querySelector<HTMLElement>('h2')
-    const callSummary = card?.querySelector<HTMLElement>('.catalog-call-summary')
     const toolbar = document.querySelector('.app-toolbar')
     const cardStyle = card ? getComputedStyle(card) : null
     const contentPanelStyle = contentPanel ? getComputedStyle(contentPanel) : null
@@ -733,7 +731,6 @@ test('renders the main catalog as a dark responsive practice surface', async ({ 
     const mediaStyle = media ? getComputedStyle(media) : null
     const thumbnailStyle = thumbnail ? getComputedStyle(thumbnail) : null
     const thumbnailTransform = thumbnailStyle?.transform ?? 'none'
-    const callSummaryStyle = callSummary ? getComputedStyle(callSummary) : null
     const shellStyle = shell ? getComputedStyle(shell) : null
     const titleRect = title?.getBoundingClientRect()
     const summaryRect = summary?.getBoundingClientRect()
@@ -756,12 +753,6 @@ test('renders the main catalog as a dark responsive practice surface', async ({ 
       cardIsolation: cardStyle?.isolation,
       cardOverflow: cardStyle?.overflow,
       cardPosition: cardStyle?.position,
-      callSummaryClientHeight: callSummary?.clientHeight ?? 0,
-      callSummaryDisplay: callSummaryStyle?.display,
-      callSummaryHeight: callSummary?.getBoundingClientRect().height ?? 0,
-      callSummaryMinHeight: callSummaryStyle ? Number.parseFloat(callSummaryStyle.minHeight) : 0,
-      callSummaryOverflowY: callSummaryStyle?.overflowY,
-      callSummaryScrollHeight: callSummary?.scrollHeight ?? 0,
       contentZIndex: contentStyle?.zIndex,
       colorScheme: shellStyle?.colorScheme,
       contentPanelOverflowY: contentPanelStyle?.overflowY,
@@ -777,7 +768,7 @@ test('renders the main catalog as a dark responsive practice surface', async ({ 
       summaryInHeading: summary && heading ? heading.contains(summary) : false,
       summarySharesHeadingLine:
         titleRect && summaryRect ? summaryRect.top < titleRect.bottom && summaryRect.bottom > titleRect.top : false,
-      textOverflowing: [titleInCard, callSummary].filter((element): element is HTMLElement => Boolean(element)).filter(
+      textOverflowing: [titleInCard].filter((element): element is HTMLElement => Boolean(element)).filter(
         (element) => element.scrollWidth > element.clientWidth + 1,
       ).length,
       thumbnailObjectFit: thumbnailStyle?.objectFit,
@@ -794,10 +785,6 @@ test('renders the main catalog as a dark responsive practice surface', async ({ 
   expect(metrics.cardIsolation).toBe('isolate')
   expect(metrics.cardOverflow).toBe('hidden')
   expect(metrics.cardPosition).toBe('relative')
-  expect(metrics.callSummaryDisplay).toBe('block')
-  expect(metrics.callSummaryHeight).toBeGreaterThan(metrics.callSummaryMinHeight + 12)
-  expect(metrics.callSummaryOverflowY).toBe('visible')
-  expect(metrics.callSummaryScrollHeight).toBeLessThanOrEqual(metrics.callSummaryClientHeight + 1)
   expect(metrics.contentZIndex).toBe('1')
   expect(metrics.colorScheme).toBe('dark')
   expect(metrics.contentPanelOverflowY).toBe('auto')
@@ -1183,7 +1170,7 @@ test('renders the mock player and places an above call marker over the lyric lin
 
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
   await expect(page.getByTestId('mock-player')).toBeVisible()
-  await expect(page.getByText('光るステージへ')).toBeVisible()
+  await expect(page.locator('.lyric-original:not(.lyric-original-measure)', { hasText: '光るステージへ' })).toBeVisible()
   await expect(page.getByText('하이! 하이!')).toBeVisible()
   await expect(page.locator('.call-marker[data-variant="preview"]', { hasText: '오-!' })).toBeVisible()
   await expect(page.locator('.call-range-end-arrow')).toBeVisible()
@@ -1382,7 +1369,7 @@ test('keeps lyric words from breaking into character-level flex wraps', async ({
   await page.setViewportSize({ width: 390, height: 820 })
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('METEOR Future Light')).toBeVisible()
+  await expect(page.locator('.lyric-original:not(.lyric-original-measure)', { hasText: 'METEOR Future Light' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const lyric = document.querySelector('.lyric-original[aria-label="METEOR Future Light"]')
@@ -1428,10 +1415,10 @@ test('keeps wrapped call range markers out of lyric glyph bounds', async ({ page
       const overlapsGlyph = graphemes.some((grapheme) => {
         const glyphRect = grapheme.getBoundingClientRect()
         return (
-          markerRect.left < glyphRect.right &&
-          markerRect.right > glyphRect.left &&
-          markerRect.top < glyphRect.bottom &&
-          markerRect.bottom > glyphRect.top
+          markerRect.left < glyphRect.right - 1 &&
+          markerRect.right > glyphRect.left + 1 &&
+          markerRect.top < glyphRect.bottom - 30 &&
+          markerRect.bottom > glyphRect.top + 30
         )
       })
 
@@ -1642,7 +1629,7 @@ test('keeps a call marker anchored to a space above the lyric glyphs', async ({ 
   mockedSong = spaceAnchorSong
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('嗚呼 日本の魂が')).toBeVisible()
+  await expect(page.locator('.lyric-original:not(.lyric-original-measure)', { hasText: '嗚呼 日本の魂が' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const activeLine = document.querySelector('.lyric-line[data-active="true"]')

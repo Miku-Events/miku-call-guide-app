@@ -5,6 +5,11 @@ import type { CalendarEventSummary, EventGuide, EventLink, EventOccurrence, Load
 import { occurrenceDateKeys } from '../calendarLayout'
 import { isEmbeddableXPost } from '../eventEmbeds'
 import { XPostEmbed } from '../XPostEmbed'
+import { Token } from '@astryxdesign/core/Token'
+import { Button } from '@astryxdesign/core/Button'
+import { EmptyState } from '@astryxdesign/core/EmptyState'
+import type { SheetDismissHandleResult } from '../hooks/useSheetDismissHandle'
+import type { OverflowDragScrollResult } from '../hooks/useOverflowDragScroll'
 
 const eventTypeLabels: Record<string, string> = {
   concert: 'Concert',
@@ -17,6 +22,19 @@ const eventTypeLabels: Record<string, string> = {
   collaboration: 'Collab',
   announcement: 'Notice',
   other: 'Other',
+}
+
+const eventColorMap: Record<string, 'default' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'cyan' | 'blue' | 'purple' | 'pink' | 'gray'> = {
+  concert: 'pink',
+  dj: 'purple',
+  popup: 'orange',
+  ticketApplication: 'blue',
+  ticketGeneralSale: 'blue',
+  livestream: 'cyan',
+  exhibition: 'yellow',
+  collaboration: 'teal',
+  announcement: 'red',
+  other: 'gray',
 }
 
 const eventPlatformLabels: Record<EventLink['platform'], string> = {
@@ -63,11 +81,11 @@ interface EventDetailSheetProps {
   detailExpanded: boolean
   setDetailExpanded: React.Dispatch<React.SetStateAction<boolean>>
   detailDismissDragY: number
-  detailDismissHandleProps: any
+  detailDismissHandleProps: SheetDismissHandleResult['handleProps']
   detailDismissDragging: boolean
   detailCanDrag: boolean
   detailIsDragging: boolean
-  detailDragScrollProps: any
+  detailDragScrollProps: OverflowDragScrollResult<HTMLElement>['dragScrollProps']
   detailRef: React.RefObject<HTMLElement | null>
   setDialog: React.Dispatch<React.SetStateAction<DialogState>>
 }
@@ -153,12 +171,11 @@ export function EventDetailSheet({
 
       <div className="event-detail-list">
         {!selectedDate ? (
-          <div className="event-empty-state">
-            <div className="event-empty-icon" aria-hidden="true">
-              <CalendarDays size={28} />
-            </div>
-            <p>달력에서 날짜를 선택하여 해당 날짜의 일정을 확인하세요.</p>
-          </div>
+          <EmptyState
+            title="날짜를 선택하세요"
+            description="달력에서 날짜를 선택하여 해당 날짜의 일정을 확인하세요."
+            icon={<CalendarDays size={28} />}
+          />
         ) : selectedEvents.length > 0 ? (
           selectedEvents.map((event) => {
             const detail = eventDetails[event.id]?.data
@@ -172,12 +189,16 @@ export function EventDetailSheet({
 
             return (
               <article className="event-detail-card" data-event-type={event.type} key={event.id}>
-                <div className="event-detail-card-title">
-                  <a href={firstSns?.url ?? detail?.links.official ?? '#'} rel="noreferrer" target="_blank">
+                <div className="event-detail-card-title flex justify-between items-start gap-4">
+                  <a href={firstSns?.url ?? detail?.links.official ?? '#'} rel="noreferrer" target="_blank" className="flex items-center gap-1">
                     {title}
                     <ExternalLink size={14} aria-hidden="true" />
                   </a>
-                  <span>{eventTypeLabels[event.type]}</span>
+                  <Token
+                    color={eventColorMap[event.type] ?? 'default'}
+                    label={eventTypeLabels[event.type]}
+                    size="sm"
+                  />
                 </div>
                 {occurrenceTime ? <p className="event-detail-time">{occurrenceTime}</p> : null}
                 {detail?.summary ? <p className="event-detail-summary">{localizedText(detail.summary, 'ko', ['ja', 'en'])}</p> : null}
@@ -205,31 +226,28 @@ export function EventDetailSheet({
                   {detail?.links.official ? <a href={detail.links.official} rel="noreferrer" target="_blank">Official</a> : null}
                   {detail?.links.ticket ? <a href={detail.links.ticket} rel="noreferrer" target="_blank">Ticket</a> : null}
                 </div>
-                <button
-                  className="event-edit-button"
+                <Button
+                  label="수정 요청"
+                  variant="secondary"
                   onClick={() => setDialog({ kind: 'edit', event, occurrence: matchingOccurrence })}
-                  type="button"
-                >
-                  수정 요청
-                </button>
+                  className="event-edit-button mt-3"
+                />
               </article>
             )
           })
         ) : (
-          <div className="event-empty-state">
-            <div className="event-empty-icon" aria-hidden="true">
-              <CalendarDays size={28} />
-            </div>
-            <p>선택하신 날짜({formatDateLabel(selectedDate)})에 예정된 이벤트가 없습니다.</p>
-            <button
-              className="app-secondary-button"
-              onClick={() => setDialog({ kind: 'add' })}
-              type="button"
-              style={{ marginTop: '0.5rem' }}
-            >
-              일정 제보하기
-            </button>
-          </div>
+          <EmptyState
+            title="예정된 이벤트가 없습니다"
+            description={`선택하신 날짜(${formatDateLabel(selectedDate)})에 예정된 이벤트가 없습니다.`}
+            icon={<CalendarDays size={28} />}
+            actions={
+              <Button
+                label="일정 제보하기"
+                variant="secondary"
+                onClick={() => setDialog({ kind: 'add' })}
+              />
+            }
+          />
         )}
       </div>
     </aside>

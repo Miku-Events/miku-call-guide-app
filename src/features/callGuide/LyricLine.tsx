@@ -198,11 +198,13 @@ function LyricLineComponent({
     lineRef.current = element
     setLineElement(element)
     registerLine?.(element)
+    if (!element) {
+      setRowSplits(null)
+    }
   }, [registerLine])
 
   useLayoutEffect(() => {
     if (!lineElement || graphemeCount === 0) {
-      setRowSplits(null)
       return
     }
 
@@ -262,7 +264,7 @@ function LyricLineComponent({
       resizeObserver.disconnect()
       window.removeEventListener('resize', updateSplits)
     }
-  }, [lineElement, graphemeCount])
+  }, [lineElement, graphemeCount, lyricTokens])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!interactive || (event.key !== 'Enter' && event.key !== ' ')) {
@@ -317,7 +319,9 @@ function LyricLineComponent({
     return val ? /^\s+$/u.test(val) : false
   }, [graphemeValues])
 
-  const activeSplits = rowSplits || [{ startIdx: 1, endIdx: graphemeCount }]
+  const activeSplits = useMemo(() => {
+    return rowSplits || [{ startIdx: 1, endIdx: graphemeCount }]
+  }, [rowSplits, graphemeCount])
 
   const getCallRowIndex = useCallback((pointChar: number) => {
     let matchedRowIdx = activeSplits.findIndex(

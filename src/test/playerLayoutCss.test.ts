@@ -70,18 +70,18 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(appShell, 'background', 'var(--app-bg)')
 
     const appTopBar = getBlock(css, '.app-top-bar')
-    expectDeclaration(appTopBar, 'background', 'rgba(9, 9, 11, 0.92)')
+    expectDeclaration(appTopBar, 'background', 'color-mix(in srgb, var(--color-background-body) 92%, transparent)')
 
     const appToolbar = getBlock(css, '.app-toolbar {')
     expectDeclaration(appToolbar, 'display', 'grid')
-    expectDeclaration(appToolbar, 'border-radius', '8px')
+    expectDeclaration(appToolbar, 'border-radius', 'var(--radius-element)')
 
     const appSummaryItem = getBlock(css, '.app-summary-item {')
-    expectDeclaration(appSummaryItem, 'border-radius', '8px')
+    expectDeclaration(appSummaryItem, 'border-radius', 'var(--radius-element)')
 
     const appStatusBanner = getBlock(css, '.app-status-banner {')
     expectDeclaration(appStatusBanner, 'display', 'flex')
-    expectDeclaration(appStatusBanner, 'border-radius', '8px')
+    expectDeclaration(appStatusBanner, 'border-radius', 'var(--radius-element)')
 
     const eventCompactAddButton = getBlock(css, '.event-add-compact-button {')
     expectDeclaration(eventCompactAddButton, 'min-height', '2rem')
@@ -106,15 +106,15 @@ describe('player layout CSS contracts', () => {
 
     const catalogContentPanel = getBlock(css, '.catalog-content-panel')
     expectDeclaration(catalogContentPanel, 'overflow', 'auto')
-    expectDeclaration(catalogContentPanel, 'border-radius', '8px')
+    expectDeclaration(catalogContentPanel, 'border-radius', 'var(--radius-element)')
 
     const catalogGrid = getBlock(css, '.catalog-song-grid')
     expectDeclaration(catalogGrid, 'display', 'grid')
     expectDeclaration(catalogGrid, 'grid-template-columns', 'repeat(auto-fill, minmax(min(100%, 22rem), 1fr))')
 
     const catalogCard = getBlock(css, '.catalog-song-card {')
-    expectDeclaration(catalogCard, 'min-height', '18rem')
-    expectDeclaration(catalogCard, 'border-radius', '0.5rem')
+    expectDeclaration(catalogCard, 'min-height', '15.5rem')
+    expectDeclaration(catalogCard, 'border-radius', 'var(--radius-element)')
     expectDeclaration(catalogCard, 'background', 'var(--catalog-surface)')
   })
 
@@ -150,7 +150,7 @@ describe('player layout CSS contracts', () => {
     expect(css).toContain('.global-call-item[data-kind="penlight"]')
     expect(css).toContain('.call-kind-legend-item[data-kind="penlight"]')
     expect(css).toContain('.call-kind-dot')
-    expect(css).toContain('border-radius: 999px;')
+    expect(css).toContain('border-radius: var(--radius-full);')
     expect(css).toContain('.player-shell .call-marker-text')
     expect(css).toContain('background: var(--call-color);')
   })
