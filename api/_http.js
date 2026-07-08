@@ -38,7 +38,11 @@ export function readBody(req) {
   }
 
   if (typeof req.body === 'string') {
-    return JSON.parse(req.body)
+    try {
+      return JSON.parse(req.body)
+    } catch {
+      return {}
+    }
   }
 
   return {}

@@ -1,25 +1,21 @@
 import { createState } from '../../_session.js'
 
-function safeReturnTo(value) {
+export function safeReturnTo(value) {
   const fallback = process.env.APP_ORIGIN || '/'
   if (typeof value !== 'string' || !value) {
     return fallback
   }
 
-  if (value.startsWith('/') && !value.startsWith('//')) {
-    return value
-  }
-
-  if (!process.env.APP_ORIGIN) {
-    return fallback
-  }
-
   try {
-    const url = new URL(value)
-    return url.origin === process.env.APP_ORIGIN ? url.toString() : fallback
-  } catch {
-    return fallback
-  }
+    const base = process.env.APP_ORIGIN || 'http://localhost'
+    const baseOrigin = new URL(base).origin
+    const url = new URL(value, baseOrigin)
+    if (url.origin === baseOrigin) {
+      return url.pathname + url.search + url.hash
+    }
+  } catch {}
+
+  return fallback
 }
 
 export default function handler(req, res) {

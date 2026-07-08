@@ -80,12 +80,33 @@ tags:
 ${note ? `# note: ${note.replace(/\r?\n/g, ' ')}\n` : ''}`
 }
 
-function validateBody(body) {
+export function validateBody(body) {
   const errors = []
   for (const key of ['title', 'type', 'timezone', 'snsUrl']) {
     if (!body[key]) {
       errors.push(`${key} is required`)
     }
+  }
+  if (body.title && String(body.title).length > 100) {
+    errors.push('title must be 100 characters or less')
+  }
+  if (body.type && String(body.type).length > 50) {
+    errors.push('type must be 50 characters or less')
+  }
+  if (body.timezone && String(body.timezone).length > 50) {
+    errors.push('timezone must be 50 characters or less')
+  }
+  if (body.snsUrl && String(body.snsUrl).length > 500) {
+    errors.push('snsUrl must be 500 characters or less')
+  }
+  if (body.sourceUrl && String(body.sourceUrl).length > 500) {
+    errors.push('sourceUrl must be 500 characters or less')
+  }
+  if (body.note && String(body.note).length > 1000) {
+    errors.push('note must be 1000 characters or less')
+  }
+  if (body.slug && String(body.slug).length > 100) {
+    errors.push('slug must be 100 characters or less')
   }
   if (!body.startsAt && !body.startsOn) {
     errors.push('either startsAt or startsOn is required')
