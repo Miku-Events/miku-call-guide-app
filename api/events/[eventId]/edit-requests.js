@@ -34,6 +34,29 @@ export default async function handler(req, res) {
       return
     }
 
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(eventId) || eventId.length > 100) {
+      json(res, 400, { error: 'invalid_event_id', message: 'eventId must be a valid slug (lowercase letters, numbers, hyphens) and 100 characters or less' })
+      return
+    }
+
+    if (message.length > 2000) {
+      json(res, 400, { error: 'invalid_message', message: 'message must be 2000 characters or less' })
+      return
+    }
+
+    if (body.occurrenceId && String(body.occurrenceId).length > 50) {
+      json(res, 400, { error: 'invalid_occurrence_id', message: 'occurrenceId must be 50 characters or less' })
+      return
+    }
+
+    if (body.sourceUrl) {
+      const sourceUrlStr = String(body.sourceUrl)
+      if (sourceUrlStr.length > 500 || !/^https?:\/\//.test(sourceUrlStr)) {
+        json(res, 400, { error: 'invalid_source_url', message: 'sourceUrl must be a valid HTTP URL and 500 characters or less' })
+        return
+      }
+    }
+
     const issue = await createEditRequestIssue({
       eventId,
       message,
