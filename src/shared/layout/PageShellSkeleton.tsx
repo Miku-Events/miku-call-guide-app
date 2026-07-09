@@ -57,7 +57,7 @@ export function PageShellSkeleton() {
             <div className="catalog-song-grid">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div className="catalog-song-card catalog-song-card--skeleton" key={index} aria-hidden="true">
-                  <div className="catalog-song-media relative min-h-[10.25rem]">
+                  <div className="catalog-song-media relative min-h-[8rem]">
                     <Skeleton width="100%" height="100%" radius={2} index={index} />
                   </div>
                   <div className="catalog-song-content mt-0 bg-transparent pt-4 flex flex-col gap-2">
