@@ -373,7 +373,7 @@ export function CatalogPage() {
             <div className="catalog-song-grid">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div className="catalog-song-card catalog-song-card--skeleton" key={index} aria-hidden="true">
-                  <div className="catalog-song-media skeleton" style={{ minHeight: '10.25rem' }} />
+                  <div className="catalog-song-media skeleton" style={{ minHeight: '8rem' }} />
                   <div className="catalog-song-content" style={{ marginTop: '0', background: 'transparent', paddingTop: '1rem' }}>
                     <div className="skeleton" style={{ height: '1.4rem', width: '70%', marginBottom: '0.6rem' }} />
                     <div className="skeleton" style={{ height: '0.9rem', width: '40%', marginBottom: '1.2rem' }} />
