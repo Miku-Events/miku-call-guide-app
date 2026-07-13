@@ -330,6 +330,32 @@ describe('post-deploy smoke', () => {
     expect(rootAttempts).toBe(2)
   })
 
+  it('retries a successful canonical response before security headers propagate', async () => {
+    let rootAttempts = 0
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url) === `${appOrigin}/` && rootAttempts++ === 0) {
+        return new Response(`<link rel="canonical" href="${appOrigin}/">`, { status: 200 })
+      }
+      return successfulResponse(String(url))
+    })
+
+    await runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock }))
+    expect(rootAttempts).toBe(2)
+  })
+
+  it('retries an immutable deployment readiness 404 during Functions propagation', async () => {
+    let readinessAttempts = 0
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url) === `${deploymentOrigin}/api/ready` && readinessAttempts++ === 0) {
+        return Response.json({ error: 'not_found' }, { status: 404 })
+      }
+      return successfulResponse(String(url))
+    })
+
+    await runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock }))
+    expect(readinessAttempts).toBe(2)
+  })
+
   it('aborts timed-out attempts and reports the exhausted request', async () => {
     const fetchMock = vi.fn((_url, init) => new Promise((_resolve, reject) => {
       init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
