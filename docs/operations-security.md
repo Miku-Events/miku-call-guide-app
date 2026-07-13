@@ -35,6 +35,7 @@
 ## 4. 세션·origin·Cloudflare API token
 
 - [ ] production의 `APP_ENV=production`을 명시하고, `APP_ORIGIN`과 `VITE_APP_ORIGIN`을 동일한 정확한 HTTPS `URL.origin` 문자열로 설정합니다. hostname은 canonical 소문자를 사용하고 후행 `/`, 기본 포트 `:443`, path/query/fragment, credentials, 바깥 공백을 넣지 않습니다.
+- [ ] `wrangler.toml`을 Pages runtime 변수의 source of truth로 사용합니다. production 배포 preflight는 이전 dashboard 구성에 남은 동명 `APP_ORIGIN` binding만 제거하며 다른 변수나 secret은 변경하지 않습니다.
 - [ ] production `SESSION_SECRET`은 32 UTF-8 bytes 이상의 고유 난수로 생성합니다.
 - [ ] Cloudflare deploy token은 대상 계정 하나와 Pages 배포에 필요한 `Cloudflare Pages: Edit` 권한만 부여합니다. DNS·Workers·다른 계정 권한은 부여하지 않습니다. Cloudflare API token은 개별 Pages project로 resource를 제한할 수 없으므로 project 단위 격리가 필수라면 `miku-call-guide-app` 전용 account를 사용합니다.
 - [ ] GitHub 무료 private 저장소에서는 environment required reviewer를 전제로 하지 않습니다. 한 운영자가 PR을 main에 merge한 뒤 input 없는 `workflow_dispatch`를 main에서 별도로 실행하는 수동 승격 절차를 따릅니다. release ID는 dispatch된 `github.sha`에서 자동 생성합니다.
