@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { validateRuntimeSong } from '../data-contracts/validators.mjs'
 
 const rootManifest = {
   schemaVersion: 1,
@@ -260,12 +261,14 @@ const song = {
   lyrics: [
     {
       id: 'line-001',
+      time: '00:00:00,000 --> 00:00:06,000',
       startMs: 0,
       endMs: 6000,
       text: { ja: '光るステージへ', koPronunciation: '히카루 스테-지에' },
     },
     {
       id: 'line-002',
+      time: '00:00:06,000 --> 00:00:12,000',
       startMs: 6000,
       endMs: 12000,
       text: { ja: '声を重ねよう', koPronunciation: '코에오 카사네요-' },
@@ -553,48 +556,56 @@ const autoFollowSong = {
   lyrics: [
     {
       id: 'line-001',
+      time: '00:00:00,000 --> 00:00:03,000',
       startMs: 0,
       endMs: 3000,
       text: { ja: '光る一番目の歌', koPronunciation: '히카루 이치반메노 우타' },
     },
     {
       id: 'line-002',
+      time: '00:00:03,000 --> 00:00:06,000',
       startMs: 3000,
       endMs: 6000,
       text: { ja: '声を重ねる二番目', koPronunciation: '코에오 카사네루 니반메' },
     },
     {
       id: 'line-003',
+      time: '00:00:06,000 --> 00:00:09,000',
       startMs: 6000,
       endMs: 9000,
       text: { ja: '星へ進む三番目', koPronunciation: '호시에 스스무 산반메' },
     },
     {
       id: 'line-004',
+      time: '00:00:09,000 --> 00:00:12,000',
       startMs: 9000,
       endMs: 12000,
       text: { ja: '未来へ続く四番目', koPronunciation: '미라이에 츠즈쿠 욘반메' },
     },
     {
       id: 'line-005',
+      time: '00:00:12,000 --> 00:00:15,000',
       startMs: 12000,
       endMs: 15000,
       text: { ja: '夢を灯す五番目', koPronunciation: '유메오 토모스 고반메' },
     },
     {
       id: 'line-006',
+      time: '00:00:15,000 --> 00:00:18,000',
       startMs: 15000,
       endMs: 18000,
       text: { ja: '君へ届く六番目', koPronunciation: '키미에 토도쿠 로쿠반메' },
     },
     {
       id: 'line-007',
+      time: '00:00:18,000 --> 00:00:21,000',
       startMs: 18000,
       endMs: 21000,
       text: { ja: '空を翔ける七番目', koPronunciation: '소라오 카케루 나나반메' },
     },
     {
       id: 'line-008',
+      time: '00:00:21,000 --> 00:00:24,000',
       startMs: 21000,
       endMs: 24000,
       text: { ja: '最後に響く八番目', koPronunciation: '사이고니 히비쿠 하치반메' },
@@ -636,10 +647,15 @@ const segmentedSong = {
   ],
 }
 
-let mockedSong = song
+let mockedSong: unknown = song
+
+function setMockedSong(candidate: unknown): void {
+  expect(validateRuntimeSong(candidate), JSON.stringify(validateRuntimeSong.errors ?? [])).toBe(true)
+  mockedSong = candidate
+}
 
 test.beforeEach(async ({ page }) => {
-  mockedSong = song
+  setMockedSong(song)
   await page.route('**/manifest.json', async (route) => {
     await route.fulfill({ json: rootManifest })
   })
@@ -1234,7 +1250,7 @@ test('moves the active lyric into the current position as playback advances', as
 })
 
 test('stacks overlapping call kinds as separate colored marker rows', async ({ page }) => {
-  mockedSong = overlappingKindSong
+  setMockedSong(overlappingKindSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
@@ -1262,7 +1278,7 @@ test('stacks overlapping call kinds as separate colored marker rows', async ({ p
 })
 
 test('keeps cross-lane call anchor rails from covering lyrics or pronunciation', async ({ page }) => {
-  mockedSong = crossLaneAnchorRailSong
+  setMockedSong(crossLaneAnchorRailSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
@@ -1346,7 +1362,7 @@ test('restores lyric follow mode when a lyric line is clicked after manual scrol
 })
 
 test('keeps long active lyrics inside the lyric panel', async ({ page }) => {
-  mockedSong = longLyricSong
+  setMockedSong(longLyricSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.getByText('키라리토 카가야쿠')).toBeVisible()
@@ -1365,7 +1381,7 @@ test('keeps long active lyrics inside the lyric panel', async ({ page }) => {
 })
 
 test('keeps lyric words from breaking into character-level flex wraps', async ({ page }) => {
-  mockedSong = wordWrapSong
+  setMockedSong(wordWrapSong)
   await page.setViewportSize({ width: 390, height: 820 })
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -1393,7 +1409,7 @@ test('keeps lyric words from breaking into character-level flex wraps', async ({
 })
 
 test('keeps wrapped call range markers out of lyric glyph bounds', async ({ page }) => {
-  mockedSong = wrappedRangeSong
+  setMockedSong(wrappedRangeSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.getByText('하이 세노!')).toBeVisible()
@@ -1431,7 +1447,7 @@ test('keeps wrapped call range markers out of lyric glyph bounds', async ({ page
 })
 
 test('anchors a pointChar after the final grapheme to the wrapped lyric end', async ({ page }) => {
-  mockedSong = endAnchorSong
+  setMockedSong(endAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.getByText('끝점 콜!')).toBeVisible()
@@ -1467,7 +1483,7 @@ test('anchors a pointChar after the final grapheme to the wrapped lyric end', as
 })
 
 test('keeps an attakaito wrapped end anchor on the second visual lyric line', async ({ page }) => {
-  mockedSong = attakaitoWrappedEndAnchorSong
+  setMockedSong(attakaitoWrappedEndAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.getByText('Hey!')).toBeVisible()
@@ -1511,7 +1527,7 @@ test('keeps an attakaito wrapped end anchor on the second visual lyric line', as
 })
 
 test('keeps a left-anchored call marker inside the lyric lane', async ({ page }) => {
-  mockedSong = leftAnchorSong
+  setMockedSong(leftAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.getByText('왼쪽에서도 잘리지 않는')).toBeVisible()
@@ -1539,7 +1555,7 @@ test('keeps a left-anchored call marker inside the lyric lane', async ({ page })
 })
 
 test('keeps a left-anchored PPPH call chip from clipping its text', async ({ page }) => {
-  mockedSong = ppphLeftAnchorSong
+  setMockedSong(ppphLeftAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.getByText('하이 세노! 하이! 하이! 하이하이하이하이!')).toBeVisible()
@@ -1600,7 +1616,7 @@ test('places inactive call chips at their lyric anchor instead of a leading row'
 })
 
 test('keeps separated inactive call chips on the same vertical level', async ({ page }) => {
-  mockedSong = separatedInactivePreviewSong
+  setMockedSong(separatedInactivePreviewSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   const inactiveLine = page.locator('.lyric-line', {
@@ -1626,7 +1642,7 @@ test('keeps separated inactive call chips on the same vertical level', async ({ 
 })
 
 test('keeps a call marker anchored to a space above the lyric glyphs', async ({ page }) => {
-  mockedSong = spaceAnchorSong
+  setMockedSong(spaceAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.locator('.lyric-original:not(.lyric-original-measure)', { hasText: '嗚呼 日本の魂が' })).toBeVisible()
@@ -1651,7 +1667,7 @@ test('keeps a call marker anchored to a space above the lyric glyphs', async ({ 
 })
 
 test('keeps lyric auto-follow from scrolling the page and clipping the video', async ({ page }) => {
-  mockedSong = autoFollowSong
+  setMockedSong(autoFollowSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
   await expect(page.locator('.video-frame')).toBeVisible()
@@ -1679,7 +1695,7 @@ test('keeps lyric auto-follow from scrolling the page and clipping the video', a
 })
 
 test('renders segmented lyricTrack calls as previews and active segment markers', async ({ page }) => {
-  mockedSong = segmentedSong
+  setMockedSong(segmentedSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
@@ -1729,4 +1745,3 @@ test('verifies keyboard navigation and native dialog focus management', async ({
   const activeClass = await page.evaluate(() => document.activeElement?.className)
   expect(activeClass).toContain('event-add-compact-button')
 })
-

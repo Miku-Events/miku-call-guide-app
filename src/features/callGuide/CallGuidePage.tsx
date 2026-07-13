@@ -39,6 +39,7 @@ export function CallGuidePage() {
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
 
     async function loadInitialSong() {
       if (!songId) {
@@ -53,7 +54,10 @@ export function CallGuidePage() {
           throw new Error(`Song "${songId}" was not found in manifest.`)
         }
 
-        const loadedSong = await fetchSong(loadedManifest.url, manifestSong.path, songId)
+        const loadedSong = await fetchSong(loadedManifest.url, manifestSong.path, songId, {
+          expectedDataVersion: loadedManifest.data.dataVersion,
+          signal: controller.signal,
+        })
 
         if (!cancelled) {
           setManifestResult(loadedManifest)
@@ -61,6 +65,9 @@ export function CallGuidePage() {
           setError(null)
         }
       } catch (loadError) {
+        if (loadError && typeof loadError === 'object' && 'name' in loadError && loadError.name === 'AbortError') {
+          return
+        }
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : 'Song load failed.')
         }
@@ -71,10 +78,13 @@ export function CallGuidePage() {
 
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [rootManifestUrl, songId])
 
-  const song = songResult?.data
+  const currentSongResult = songResult?.data.id === songId ? songResult : null
+  const currentManifestResult = currentSongResult ? manifestResult : null
+  const song = currentSongResult?.data
 
   useEffect(() => {
     if (song) {
@@ -110,8 +120,8 @@ export function CallGuidePage() {
           endContent={
             <div className="flex items-center gap-3">
               <StatusDot
-                variant={manifestResult?.source === 'cache' || songResult?.source === 'cache' ? 'accent' : 'success'}
-                label={manifestResult?.source === 'cache' || songResult?.source === 'cache' ? 'cached' : 'live'}
+                variant={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'accent' : 'success'}
+                label={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'cached' : 'live'}
               />
               <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
                 <p className="m-0">{song ? formatMs(currentMs) : '0:00.0'}</p>
@@ -122,11 +132,11 @@ export function CallGuidePage() {
       }
     >
       <Layout className="player-main">
-        {manifestResult?.warning || songResult?.warning ? (
+        {currentManifestResult?.warning || currentSongResult?.warning ? (
           <div className="mx-4 my-2">
             <Banner
               status="warning"
-              title={manifestResult?.warning ?? songResult?.warning ?? ''}
+              title={currentManifestResult?.warning ?? currentSongResult?.warning ?? ''}
               container="card"
             />
           </div>

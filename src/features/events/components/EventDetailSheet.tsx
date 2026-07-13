@@ -59,7 +59,7 @@ function formatDateLabel(dateKey: string): string {
 }
 
 function formatOccurrenceTime(occurrence: EventOccurrence): string | null {
-  if (!occurrence.startsAt) {
+  if (occurrence.startsAt === undefined) {
     return null
   }
 
