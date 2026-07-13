@@ -1,4 +1,4 @@
-import { localizedText } from '../callGuide/callPositioning'
+import { localizedText } from '../../shared/i18n/localizedText'
 import type { CalendarEventSummary, EventOccurrence, EventType } from '../data/types'
 
 export interface CalendarBarSegment {

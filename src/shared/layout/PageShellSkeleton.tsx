@@ -30,7 +30,8 @@ export function PageShellSkeleton() {
       }
     >
       <Layout className="app-main">
-        <LayoutContent>
+        <LayoutContent aria-busy data-testid="page-shell-loading-content">
+          <p className="sr-only" role="status">페이지를 불러오는 중입니다.</p>
           <div className="app-heading-row px-4">
             <div>
               <div className="mb-1.5">

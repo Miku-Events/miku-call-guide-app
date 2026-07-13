@@ -2,7 +2,17 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8').replace(/\r\n/g, '\n')
+const cssFiles = [
+  ['index.css'],
+  ['features', 'catalog', 'catalog.css'],
+  ['features', 'callGuide', 'callGuide.css'],
+  ['features', 'events', 'events.css'],
+] as const
+
+const [baseCss, ...featureCss] = cssFiles.map((parts) => (
+  readFileSync(join(process.cwd(), 'src', ...parts), 'utf8').replace(/\r\n/g, '\n')
+))
+const css = [baseCss, ...featureCss].join('\n')
 
 function getBlock(source: string, marker: string, occurrence = 0) {
   let markerIndex = -1
@@ -60,14 +70,35 @@ function colorDistance(colorA: string, colorB: string): number {
 }
 
 describe('player layout CSS contracts', () => {
+  it('loads feature styles from their lazy route modules', () => {
+    const routeStyles = [
+      ['features', 'catalog', 'CatalogPage.tsx', "import './catalog.css'"],
+      ['features', 'callGuide', 'CallGuidePage.tsx', "import './callGuide.css'"],
+      ['features', 'events', 'EventCalendarPage.tsx', "import './events.css'"],
+    ] as const
+
+    for (const [feature, folder, moduleName, cssImport] of routeStyles) {
+      const source = readFileSync(join(process.cwd(), 'src', feature, folder, moduleName), 'utf8')
+      expect(source).toContain(cssImport)
+    }
+    expect(baseCss).not.toContain('.catalog-shell {')
+    expect(baseCss).not.toContain('.player-shell {')
+    expect(baseCss).not.toContain('.event-shell {')
+  })
+
   it('keeps catalog and events on the shared dark app shell structure', () => {
     const appShell = getBlock(css, '.app-page-shell')
     expectDeclaration(appShell, '--app-bg', '#09090b')
     expectDeclaration(appShell, '--app-surface', '#111113')
     expectDeclaration(appShell, '--app-surface-raised', '#18181b')
     expectDeclaration(appShell, '--app-panel', '#1f1f23')
+    expectDeclaration(appShell, '--app-bg', 'var(--color-background-body, #09090b)')
+    expectDeclaration(appShell, '--app-surface', 'var(--color-background-surface, #111113)')
+    expectDeclaration(appShell, '--app-text', 'var(--color-text-primary, #f4f4f5)')
+    expectDeclaration(appShell, '--app-accent', 'var(--color-text-cyan, #39c5bb)')
     expectDeclaration(appShell, 'color-scheme', 'dark')
     expectDeclaration(appShell, 'background', 'var(--app-bg)')
+    expect(baseCss).not.toContain('--color-text: var(--color-text-primary)')
 
     const appTopBar = getBlock(css, '.app-top-bar')
     expectDeclaration(appTopBar, 'background', 'color-mix(in srgb, var(--color-background-body) 92%, transparent)')
@@ -83,9 +114,25 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(appStatusBanner, 'display', 'flex')
     expectDeclaration(appStatusBanner, 'border-radius', 'var(--radius-element)')
 
+    const githubLink = getBlock(css, '.app-github-link {')
+    expectDeclaration(githubLink, 'min-width', '2.75rem')
+    expectDeclaration(githubLink, 'min-height', '2.75rem')
+
     const eventCompactAddButton = getBlock(css, '.event-add-compact-button {')
-    expectDeclaration(eventCompactAddButton, 'min-height', '2rem')
+    expectDeclaration(eventCompactAddButton, 'min-height', '2.75rem')
     expectDeclaration(eventCompactAddButton, 'font-size', '0.78rem')
+
+    const eventFilterButton = getBlock(css, '.event-type-filters button {')
+    expectDeclaration(eventFilterButton, 'min-width', '2.75rem')
+    expectDeclaration(eventFilterButton, 'min-height', '2.75rem')
+
+    const eventDetailLink = getBlock(css, '.event-link-row a {')
+    expectDeclaration(eventDetailLink, 'display', 'inline-flex')
+    expectDeclaration(eventDetailLink, 'align-items', 'center')
+    expectDeclaration(eventDetailLink, 'min-width', '2.75rem')
+
+    const eventDialog = getBlock(css, '.event-dialog {')
+    expectDeclaration(eventDialog, '--color-text-secondary', '#a1a1aa')
 
     const catalogShell = getBlock(css, '.catalog-shell')
     expectDeclaration(catalogShell, '--catalog-bg', 'var(--app-bg)')
@@ -124,6 +171,9 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(playerShell, '--player-surface', '#111113')
     expectDeclaration(playerShell, '--player-surface-raised', '#18181b')
     expectDeclaration(playerShell, '--player-panel', '#1f1f23')
+    expectDeclaration(playerShell, '--player-surface', 'var(--color-background-surface, #111113)')
+    expectDeclaration(playerShell, '--player-text', 'var(--color-text-primary, #f4f4f5)')
+    expectDeclaration(playerShell, '--player-accent', 'var(--color-text-cyan, #39c5bb)')
     expectDeclaration(playerShell, 'color-scheme', 'dark')
     expectDeclaration(playerShell, 'background', 'var(--player-bg)')
 

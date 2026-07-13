@@ -1,6 +1,6 @@
 import { type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { CalendarDays, ExternalLink, Maximize2, Minimize2 } from 'lucide-react'
-import { localizedText } from '../../callGuide/callPositioning'
+import { localizedText } from '../../../shared/i18n/localizedText'
 import type { CalendarEventSummary, EventGuide, EventLink, EventOccurrence, LoadResult } from '../../data/types'
 import { occurrenceDateKeys } from '../calendarLayout'
 import { isEmbeddableXPost } from '../eventEmbeds'
@@ -77,6 +77,7 @@ interface EventDetailSheetProps {
   selectedDate: string | null
   selectedEvents: CalendarEventSummary[]
   eventDetails: Record<string, LoadResult<EventGuide>>
+  isLoading: boolean
   isDetailExpanded: boolean
   detailExpanded: boolean
   setDetailExpanded: React.Dispatch<React.SetStateAction<boolean>>
@@ -94,6 +95,7 @@ export function EventDetailSheet({
   selectedDate,
   selectedEvents,
   eventDetails,
+  isLoading,
   isDetailExpanded,
   detailExpanded,
   setDetailExpanded,
@@ -125,13 +127,13 @@ export function EventDetailSheet({
 
   return (
     <aside
+      aria-labelledby="event-detail-heading"
       className="event-detail-panel"
       data-dismiss-dragging={detailDismissDragging}
       data-dragging={detailIsDragging}
       data-expanded={isDetailExpanded}
       data-open={Boolean(selectedDate)}
       data-scrollable={detailCanDrag}
-      aria-label="Selected day events"
       onClick={handleDetailPanelClick}
       ref={detailRef}
       style={{ '--event-detail-drag-y': `${detailDismissDragY}px` } as CSSProperties}
@@ -150,7 +152,7 @@ export function EventDetailSheet({
       <div className="event-detail-heading">
         <div>
           <p>Selected day</p>
-          <h2>{selectedDate ? formatDateLabel(selectedDate) : '날짜를 선택하세요'}</h2>
+          <h2 id="event-detail-heading">{selectedDate ? formatDateLabel(selectedDate) : '날짜를 선택하세요'}</h2>
         </div>
         <div className="event-detail-heading-actions">
           <button
@@ -169,7 +171,12 @@ export function EventDetailSheet({
         </div>
       </div>
 
-      <div className="event-detail-list">
+      <div className="event-detail-list" aria-busy={isLoading}>
+        {selectedDate && isLoading ? (
+          <p className="event-detail-loading-status" role="status">
+            상세 정보를 불러오는 중입니다.
+          </p>
+        ) : null}
         {!selectedDate ? (
           <EmptyState
             title="날짜를 선택하세요"
@@ -186,14 +193,19 @@ export function EventDetailSheet({
             const embeddedLinks = detail?.links.sns?.filter(isEmbeddableXPost) ?? []
             const occurrenceTime = matchingOccurrence ? formatOccurrenceTime(matchingOccurrence) : null
             const title = localizedText(event.title, 'ko', ['ja', 'en'])
+            const primaryUrl = firstSns?.url ?? detail?.links.official
 
             return (
               <article className="event-detail-card" data-event-type={event.type} key={event.id}>
                 <div className="event-detail-card-title flex justify-between items-start gap-4">
-                  <a href={firstSns?.url ?? detail?.links.official ?? '#'} rel="noreferrer" target="_blank" className="flex items-center gap-1">
-                    {title}
-                    <ExternalLink size={14} aria-hidden="true" />
-                  </a>
+                  {primaryUrl ? (
+                    <a href={primaryUrl} rel="noreferrer" target="_blank" className="flex items-center gap-1">
+                      {title}
+                      <ExternalLink size={14} aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <span className="event-detail-title">{title}</span>
+                  )}
                   <Token
                     color={eventColorMap[event.type] ?? 'default'}
                     label={eventTypeLabels[event.type]}

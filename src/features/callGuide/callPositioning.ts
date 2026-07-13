@@ -1,5 +1,7 @@
 import type { CallAnchor, CallEvent, CallMarkers, CallSegment, LyricLine } from '../data/types'
 
+export { localizedText } from '../../shared/i18n/localizedText'
+
 type DirectLyricCall = Extract<CallEvent, { anchor: unknown }>
 type SegmentedLyricCall = Extract<CallEvent, { segments: unknown }>
 type GlobalCall = Extract<CallEvent, { startMs: number }>
@@ -277,24 +279,6 @@ export function activeGlobalCalls(callEvents: CallEvent[], currentMs: number): C
     }
     return call.startMs <= currentMs && currentMs < call.endMs
   })
-}
-
-export function localizedText(
-  text: Record<string, string | undefined> | null | undefined,
-  preferredKey: string,
-  fallbackKeys: string[] = [],
-): string {
-  if (!text) {
-    return ''
-  }
-
-  for (const key of [preferredKey, ...fallbackKeys]) {
-    if (text[key]) {
-      return text[key]
-    }
-  }
-
-  return Object.values(text).find(Boolean) ?? ''
 }
 
 export function arrowForCall(call: { placement: CallEvent['placement']; markers: CallMarkers }): 'up' | 'down' {

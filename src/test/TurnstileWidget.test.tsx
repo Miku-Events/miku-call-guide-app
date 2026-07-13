@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TurnstileWidget } from '../components/TurnstileWidget'
 
@@ -28,13 +28,37 @@ describe('TurnstileWidget', () => {
       render(<TurnstileWidget action={action} onVerify={onVerify} />)
 
       await waitFor(() => expect(turnstileRender).toHaveBeenCalledOnce())
+      expect(screen.getByRole('status')).toHaveTextContent('보안 검증이 필요합니다')
       const options = turnstileRender.mock.calls[0]?.[1]
       expect(options).toMatchObject({ action })
 
-      options?.callback('verified-token')
+      act(() => options?.callback('verified-token'))
       expect(onVerify).toHaveBeenCalledWith('verified-token')
+      expect(screen.getByRole('status')).toHaveTextContent('보안 검증이 완료되었습니다')
     },
   )
+
+  it('resets the rendered widget and announces re-verification when resetNonce changes', async () => {
+    const onVerify = vi.fn()
+    const reset = vi.fn()
+    const turnstileRender = vi.fn(() => 'widget-id')
+    window.turnstile = {
+      render: turnstileRender,
+      reset,
+      remove: vi.fn(),
+    }
+
+    const { rerender } = render(
+      <TurnstileWidget action="event_submit" onVerify={onVerify} resetNonce={0} />,
+    )
+    await waitFor(() => expect(turnstileRender).toHaveBeenCalledOnce())
+
+    rerender(<TurnstileWidget action="event_submit" onVerify={onVerify} resetNonce={1} />)
+
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('widget-id'))
+    expect(onVerify).toHaveBeenLastCalledWith(null)
+    expect(screen.getByRole('status')).toHaveTextContent('보안 검증을 다시 완료해 주세요')
+  })
 
   it('announces a production configuration error and never renders or verifies without a site key', async () => {
     vi.stubEnv('DEV', false)

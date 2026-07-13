@@ -1,18 +1,20 @@
 import { ListMusic } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
+import './callGuide.css'
 import { getRootManifestUrl, shouldUseMockPlayer } from '../../app/config'
-import { formatMs } from '../../shared/time/formatTime'
+import { localizedText } from '../../shared/i18n/localizedText'
 import { fetchCallGuideManifest } from '../data/fetchManifest'
 import { fetchSong } from '../data/fetchSong'
 import type { CallGuideManifest, LoadResult, LyricLine, SongGuide } from '../data/types'
+import { PlaybackClock } from '../player/PlaybackClock'
+import { createPlaybackTimeStore } from '../player/playbackTimeStore'
 import { YouTubePlayer, type YouTubePlayerHandle } from '../player/YouTubePlayer'
 import {
   activeGlobalCalls,
   callKindLegend,
   callKindsInSong,
   findActiveLyric,
-  localizedText,
   normalizedCallKind,
 } from './callPositioning'
 import { LyricList } from './LyricList'
@@ -22,20 +24,34 @@ import { Layout, LayoutContent } from '@astryxdesign/core/Layout'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
+import { Button } from '@astryxdesign/core/Button'
 import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 
+function playbackBoundaryKey(song: SongGuide, currentMs: number): string {
+  const activeLineId = findActiveLyric(song.lyrics, currentMs)?.id ?? ''
+  const globalCallIds = activeGlobalCalls(song.callEvents, currentMs).map((call) => call.id)
+  return JSON.stringify([activeLineId, globalCallIds])
+}
+
 export function CallGuidePage() {
   const { songId } = useParams()
-  const [manifestResult, setManifestResult] = useState<LoadResult<CallGuideManifest> | null>(null)
-  const [songResult, setSongResult] = useState<LoadResult<SongGuide> | null>(null)
-  const [currentMs, setCurrentMs] = useState(0)
+  const [loaded, setLoaded] = useState<{
+    requestKey: string
+    manifestResult: LoadResult<CallGuideManifest>
+    songResult: LoadResult<SongGuide>
+  } | null>(null)
+  const [boundaryMs, setBoundaryMs] = useState(0)
+  const [playbackTimeStore] = useState(() => createPlaybackTimeStore())
   const [seekRequest, setSeekRequest] = useState<{ id: number; timeMs: number } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<{ requestKey: string; message: string } | null>(null)
+  const [retryRevision, setRetryRevision] = useState(0)
   const playerRef = useRef<YouTubePlayerHandle | null>(null)
+  const playbackBoundaryKeyRef = useRef('')
   const seekRequestIdRef = useRef(0)
   const rootManifestUrl = getRootManifestUrl()
   const mockPlayer = shouldUseMockPlayer()
+  const requestKey = `${rootManifestUrl}\u0000${songId ?? ''}\u0000${retryRevision}`
 
   useEffect(() => {
     let cancelled = false
@@ -43,7 +59,10 @@ export function CallGuidePage() {
 
     async function loadInitialSong() {
       if (!songId) {
-        setError('Song id was missing.')
+        await Promise.resolve()
+        if (!cancelled) {
+          setLoadError({ requestKey, message: 'Song id was missing.' })
+        }
         return
       }
 
@@ -60,16 +79,22 @@ export function CallGuidePage() {
         })
 
         if (!cancelled) {
-          setManifestResult(loadedManifest)
-          setSongResult(loadedSong)
-          setError(null)
+          setLoaded({ requestKey, manifestResult: loadedManifest, songResult: loadedSong })
+          playbackTimeStore.set(0)
+          playbackBoundaryKeyRef.current = playbackBoundaryKey(loadedSong.data, 0)
+          setBoundaryMs(0)
+          setSeekRequest(null)
+          setLoadError(null)
         }
       } catch (loadError) {
         if (loadError && typeof loadError === 'object' && 'name' in loadError && loadError.name === 'AbortError') {
           return
         }
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Song load failed.')
+          setLoadError({
+            requestKey,
+            message: loadError instanceof Error ? loadError.message : 'Song load failed.',
+          })
         }
       }
     }
@@ -80,11 +105,14 @@ export function CallGuidePage() {
       cancelled = true
       controller.abort()
     }
-  }, [rootManifestUrl, songId])
+  }, [playbackTimeStore, requestKey, rootManifestUrl, songId])
 
-  const currentSongResult = songResult?.data.id === songId ? songResult : null
-  const currentManifestResult = currentSongResult ? manifestResult : null
+  const currentLoad = loaded?.requestKey === requestKey ? loaded : null
+  const currentSongResult = currentLoad && currentLoad.songResult.data.id === songId ? currentLoad.songResult : null
+  const currentManifestResult = currentSongResult ? currentLoad?.manifestResult ?? null : null
+  const error = loadError?.requestKey === requestKey ? loadError.message : null
   const song = currentSongResult?.data
+  const isLoading = Boolean(songId) && !song && !error
 
   useEffect(() => {
     if (song) {
@@ -96,16 +124,31 @@ export function CallGuidePage() {
     }
   }, [song])
 
-  const activeLine = useMemo(() => (song ? findActiveLyric(song.lyrics, currentMs) : null), [currentMs, song])
-  const globalCalls = useMemo(() => (song ? activeGlobalCalls(song.callEvents, currentMs) : []), [currentMs, song])
+  const activeLine = useMemo(() => (song ? findActiveLyric(song.lyrics, boundaryMs) : null), [boundaryMs, song])
+  const globalCalls = useMemo(() => (song ? activeGlobalCalls(song.callEvents, boundaryMs) : []), [boundaryMs, song])
   const callLegendKinds = useMemo(() => (song ? callKindsInSong(song.callEvents) : []), [song])
+
+  const publishPlaybackTime = useCallback((timeMs: number) => {
+    playbackTimeStore.set(timeMs)
+    if (!song) {
+      return
+    }
+
+    const nextBoundaryKey = playbackBoundaryKey(song, timeMs)
+    if (nextBoundaryKey === playbackBoundaryKeyRef.current) {
+      return
+    }
+
+    playbackBoundaryKeyRef.current = nextBoundaryKey
+    setBoundaryMs(timeMs)
+  }, [playbackTimeStore, song])
   
   const seekToLine = useCallback((line: LyricLine) => {
     seekRequestIdRef.current += 1
-    setCurrentMs(line.startMs)
+    publishPlaybackTime(line.startMs)
     setSeekRequest({ id: seekRequestIdRef.current, timeMs: line.startMs })
     playerRef.current?.seekTo(line.startMs)
-  }, [])
+  }, [publishPlaybackTime])
 
   return (
     <Theme theme={neutralTheme} mode="dark">
@@ -124,7 +167,7 @@ export function CallGuidePage() {
                 label={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'cached' : 'live'}
               />
               <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
-                <p className="m-0">{song ? formatMs(currentMs) : '0:00.0'}</p>
+                <PlaybackClock active={Boolean(song)} store={playbackTimeStore} />
               </div>
             </div>
           }
@@ -148,11 +191,26 @@ export function CallGuidePage() {
               status="error"
               title={error}
               container="card"
+              role="alert"
+              endContent={(
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    label="다시 시도"
+                    onClick={() => setRetryRevision((revision) => revision + 1)}
+                    variant="secondary"
+                  />
+                  <Button
+                    href="/"
+                    label="카탈로그로 돌아가기"
+                    variant="ghost"
+                  />
+                </div>
+              )}
             />
           </div>
         ) : null}
 
-        <LayoutContent className="px-0">
+        <LayoutContent aria-busy={isLoading} className="px-0">
           {song ? (
             <div className="player-grid">
               <section className="player-video-panel">
@@ -166,7 +224,7 @@ export function CallGuidePage() {
                     <YouTubePlayer
                       durationMs={song.timing.durationMs}
                       mock={mockPlayer}
-                      onTimeUpdate={setCurrentMs}
+                      onTimeUpdate={publishPlaybackTime}
                       ref={playerRef}
                       seekRequest={seekRequest}
                       startOffsetMs={song.youtube.startOffsetMs}
@@ -214,11 +272,14 @@ export function CallGuidePage() {
                     ))}
                   </div>
                 ) : null}
-                <LyricList currentMs={currentMs} onSeekToLine={seekToLine} song={song} />
+                <LyricList currentMs={boundaryMs} onSeekToLine={seekToLine} song={song} />
               </section>
             </div>
           ) : !error ? (
             <div className="player-grid">
+              <p className="px-4 text-sm text-[var(--color-text-secondary)]" role="status">
+                곡 가이드를 불러오는 중입니다.
+              </p>
               <section className="player-video-panel">
                 <div className="player-video-stack flex flex-col gap-4">
                   <div className="player-title-block flex flex-col gap-2">
