@@ -109,10 +109,4 @@ export async function assertProductionReadiness(environment) {
   validateSessionSecret(environment)
   validateTurnstile(environment, appOrigin)
   await validateGitHub(environment)
-
-  // Pages Functions cannot inspect an account-level WAF rule. This explicit
-  // attestation is set only after the shared write-API rule is verified.
-  if (environment.CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED !== 'true') {
-    throw new Error('invalid_runtime_configuration')
-  }
 }

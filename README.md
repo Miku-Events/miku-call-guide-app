@@ -59,7 +59,7 @@ node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.
 
 `production`과 `preview`에서는 OAuth 및 세션 쿠키가 Secure `__Host-` 쿠키로 발급됩니다. HTTP 기반 `local`과 `test`만 비-`__Host` 쿠키 이름을 사용합니다. OAuth state/PKCE 거래는 10분, 로그인 세션은 7일 동안 유효합니다.
 
-`APP_ENV`는 반드시 `local`, `test`, `preview`, `production` 중 하나로 명시해야 합니다. `local`과 `test`에서는 Turnstile secret을 생략하면 공식 성공 테스트 secret을 사용하지만, live API를 사용하는 `preview`와 `production`은 실제 `CLOUDFLARE_TURNSTILE_SECRET_KEY`와 `TURNSTILE_EXPECTED_HOSTNAME`(프로토콜 없는 hostname)을 모두 요구하며 공식 테스트 키와 placeholder를 거부합니다. 운영의 `APP_ORIGIN`과 `VITE_APP_ORIGIN`은 정확히 `https://miku-call-guide-app.pages.dev`, `VITE_DATA_MANIFEST_URL`은 정확히 `https://miku-call-guide-data.pages.dev/manifest.json`이어야 합니다. 운영 빌드는 실제 Turnstile site key도 요구하며, 이 값들에서 CSP를 생성해 `dist/_headers`에 포함합니다. 운영 readiness는 고정된 runtime `APP_ORIGIN`, OAuth/GitHub App/session/Turnstile 설정과 외부 WAF rate-limit 확인 표식 `CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED=true`를 함께 검증합니다.
+`APP_ENV`는 반드시 `local`, `test`, `preview`, `production` 중 하나로 명시해야 합니다. `local`과 `test`에서는 Turnstile secret을 생략하면 공식 성공 테스트 secret을 사용하지만, live API를 사용하는 `preview`와 `production`은 실제 `CLOUDFLARE_TURNSTILE_SECRET_KEY`와 `TURNSTILE_EXPECTED_HOSTNAME`(프로토콜 없는 hostname)을 모두 요구하며 공식 테스트 키와 placeholder를 거부합니다. 운영의 `APP_ORIGIN`과 `VITE_APP_ORIGIN`은 정확히 `https://miku-call-guide-app.pages.dev`, `VITE_DATA_MANIFEST_URL`은 정확히 `https://miku-call-guide-data.pages.dev/manifest.json`이어야 합니다. 운영 빌드는 실제 Turnstile site key도 요구하며, 이 값들에서 CSP를 생성해 `dist/_headers`에 포함합니다. 운영 readiness는 고정된 runtime `APP_ORIGIN`, OAuth/GitHub App/session/Turnstile 설정을 검증합니다. 고정 `pages.dev` origin에는 별도 application rate limiter를 두지 않으며, 다른 zone의 WAF 규칙이나 확인 표식으로 보호된 것처럼 처리하지 않습니다.
 
 ### 4. 개발 서버 구동
 ```bash
@@ -147,7 +147,7 @@ GitHub Actions는 저장소에 vendoring된 생성 계약과 `data-contracts.loc
 
 `VITE_APP_ORIGIN`은 후행 `/` 없는 정확한 HTTPS `URL.origin` 형식으로 root canonical과 절대 OG URL을 생성합니다. `public/og-image.png`는 실제 1200×630 PNG이며 metadata test가 크기와 경로를 검사합니다.
 
-Cloudflare WAF rate limit, Turnstile hostname, GitHub App 최소 권한, 배포 token과 수동 production 승격처럼 저장소 밖에서 적용해야 하는 항목은 [운영 보안 체크리스트](docs/operations-security.md)를 따릅니다.
+Cloudflare Dashboard 보호 범위, Turnstile hostname, GitHub App 최소 권한, 배포 token과 수동 production 승격처럼 저장소 밖에서 적용해야 하는 항목은 [운영 보안 체크리스트](docs/operations-security.md)를 따릅니다.
 
 ---
 

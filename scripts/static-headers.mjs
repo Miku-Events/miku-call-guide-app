@@ -1,4 +1,6 @@
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
+const CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN = 'https://static.cloudflareinsights.com'
+const CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN = 'https://cloudflareinsights.com'
 const YOUTUBE_SCRIPT_ORIGINS = [
   'https://www.youtube.com',
   'https://s.ytimg.com',
@@ -62,12 +64,14 @@ export function generateStaticHeaders(environment) {
       dataOrigin,
       submissionOrigin,
       TURNSTILE_ORIGIN,
+      CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,
     ]),
     joinDirective('script-src', [
       "'self'",
       TURNSTILE_ORIGIN,
+      CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
       ...YOUTUBE_SCRIPT_ORIGINS,
       ...X_ORIGINS,
     ]),

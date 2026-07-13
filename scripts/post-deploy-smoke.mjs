@@ -12,6 +12,8 @@ const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 export const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
 export const READINESS_CONTRACT_VERSION = 'runtime-config-v1'
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
+const CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN = 'https://static.cloudflareinsights.com'
+const CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN = 'https://cloudflareinsights.com'
 const YOUTUBE_SCRIPT_ORIGINS = [
   'https://www.youtube.com',
   'https://s.ytimg.com',
@@ -32,6 +34,7 @@ const IMMUTABLE_DEPLOYMENT_ORIGIN_PATTERN = (
 const STATIC_SCRIPT_ALLOWLIST = new Set([
   "'self'",
   TURNSTILE_ORIGIN,
+  CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
   ...YOUTUBE_SCRIPT_ORIGINS,
   ...X_ORIGINS,
 ])
@@ -219,6 +222,7 @@ function assertStaticCsp(csp, label, { appOrigin, dataOrigin, submissionOrigin }
       dataOrigin,
       submissionOrigin,
       TURNSTILE_ORIGIN,
+      CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,
     ])],
