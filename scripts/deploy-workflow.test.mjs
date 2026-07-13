@@ -91,10 +91,13 @@ describe('production deployment workflow', () => {
     expect(environment).not.toContain('@release/manifest.json')
   })
 
-  it('declares the production environment and Turnstile hostname in Pages runtime config', async () => {
+  it('declares the canonical production origin and Turnstile hostname in Pages runtime config', async () => {
     const wrangler = await wranglerConfig()
 
     expect(wrangler).toContain('APP_ENV = "production"')
+    expect(wrangler).toContain(
+      'APP_ORIGIN = "https://miku-call-guide-app.pages.dev"',
+    )
     expect(wrangler).toContain(
       'TURNSTILE_EXPECTED_HOSTNAME = "miku-call-guide-app.pages.dev"',
     )
