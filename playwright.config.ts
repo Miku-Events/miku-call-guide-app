@@ -15,6 +15,7 @@ export default defineConfig({
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: !process.env.CI,
     env: {
+      VITE_APP_ORIGIN: 'http://127.0.0.1:5173',
       VITE_CALL_GUIDE_MANIFEST_URL: 'http://example.test/manifest.json',
     },
   },

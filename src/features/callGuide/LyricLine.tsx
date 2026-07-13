@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { localizedText } from '../../shared/i18n/localizedText'
 import type { LyricLine as LyricLineType } from '../data/types'
-import { callKindPriority, localizedText, normalizedCallKind, splitGraphemeTokens } from './callPositioning'
+import { callKindPriority, normalizedCallKind, splitGraphemeTokens } from './callPositioning'
 import { CallMarker } from './CallMarker'
 import type { GraphemeToken, RenderableCall, StreamingLyricPosition } from './callPositioning'
 
@@ -389,4 +390,3 @@ export const LyricLine = memo(LyricLineComponent, (prevProps, nextProps) => {
     prevProps.line.id === nextProps.line.id
   )
 })
-

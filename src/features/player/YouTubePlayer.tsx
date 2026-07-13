@@ -1,71 +1,12 @@
 import { Pause, Play, StepForward } from 'lucide-react'
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { formatMs } from '../../shared/time/formatTime'
 import { Button } from '@astryxdesign/core/Button'
 import { ButtonGroup } from '@astryxdesign/core/ButtonGroup'
+import { loadYouTubeIframeApi, type YouTubePlayerInstance } from './youtubeIframeApi'
 
-type YouTubePlayerInstance = {
-  getCurrentTime: () => number
-  seekTo: (seconds: number, allowSeekAhead?: boolean) => void
-  destroy: () => void
-}
-
-type YouTubeConstructor = new (
-  elementId: string,
-  options: {
-    videoId: string
-    playerVars: Record<string, string | number>
-    events: {
-      onReady?: () => void
-    }
-  },
-) => YouTubePlayerInstance
-
-declare global {
-  interface Window {
-    YT?: {
-      Player: YouTubeConstructor
-    }
-    onYouTubeIframeAPIReady?: () => void
-  }
-}
-
-let apiPromise: Promise<void> | null = null
-
-function loadYouTubeApi(): Promise<void> {
-  if (window.YT?.Player) {
-    return Promise.resolve()
-  }
-
-  if (!apiPromise) {
-    apiPromise = new Promise((resolve) => {
-      const previousReady = window.onYouTubeIframeAPIReady
-      window.onYouTubeIframeAPIReady = () => {
-        previousReady?.()
-        resolve()
-      }
-
-      const existing = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]')
-      if (!existing) {
-        const script = document.createElement('script')
-        script.src = 'https://www.youtube.com/iframe_api'
-        document.head.appendChild(script)
-      } else if (window.YT?.Player) {
-        resolve()
-      } else {
-        // Fallback for hot reloading / pre-existing script tag
-        const interval = window.setInterval(() => {
-          if (window.YT?.Player) {
-            window.clearInterval(interval)
-            resolve()
-          }
-        }, 50)
-      }
-    })
-  }
-
-  return apiPromise
-}
+const PLAYER_READY_TIMEOUT_MS = 10_000
+const PLAYBACK_POLL_MS = 100
 
 interface YouTubePlayerProps {
   videoId: string
@@ -92,11 +33,13 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
   mock = false,
   onTimeUpdate,
 }, ref) {
-  const playerId = `youtube-player-${useId().replace(/:/g, '')}`
   const playerRef = useRef<YouTubePlayerInstance | null>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
   const [mockPlaying, setMockPlaying] = useState(false)
   const [mockTimeMs, setMockTimeMs] = useState(() => clampTime(startOffsetMs, durationMs))
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryRevision, setRetryRevision] = useState(0)
   const initialTimeMs = clampTime(startOffsetMs, durationMs)
 
   const seekTo = useCallback((targetMs: number) => {
@@ -148,23 +91,58 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
       return
     }
 
-    const wrapper = wrapperRef.current
+    const controller = new AbortController()
     let intervalId = 0
+    let readyTimeoutId = 0
     let disposed = false
+    let failed = false
+    let ready = false
+    let player: YouTubePlayerInstance | null = null
 
-    loadYouTubeApi().then(() => {
+    setLoadState('loading')
+    setLoadError(null)
+
+    const clearScheduledWork = () => {
+      window.clearInterval(intervalId)
+      window.clearTimeout(readyTimeoutId)
+    }
+
+    const destroyPlayer = () => {
+      clearScheduledWork()
+      if (playerRef.current === player) {
+        playerRef.current = null
+      }
+      player?.destroy()
+      player = null
+      hostRef.current?.replaceChildren()
+    }
+
+    const fail = (message: string) => {
+      if (disposed || failed) return
+      failed = true
+      setLoadState('error')
+      setLoadError(message)
+      destroyPlayer()
+    }
+
+    loadYouTubeIframeApi(controller.signal).then(() => {
       if (disposed || !window.YT?.Player) {
         return
       }
 
-      if (wrapper) {
-        wrapper.innerHTML = ''
-        const container = document.createElement('div')
-        container.id = playerId
-        wrapper.appendChild(container)
+      const host = hostRef.current
+      if (!host) {
+        fail('YouTube 플레이어를 표시할 수 없습니다.')
+        return
       }
+      const mount = document.createElement('div')
+      host.replaceChildren(mount)
 
-      playerRef.current = new window.YT.Player(playerId, {
+      readyTimeoutId = window.setTimeout(() => {
+        fail('YouTube 플레이어 준비 시간이 초과되었습니다.')
+      }, PLAYER_READY_TIMEOUT_MS)
+
+      player = new window.YT.Player(mount, {
         videoId,
         playerVars: {
           rel: 0,
@@ -173,29 +151,39 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
           start: Math.floor(initialTimeMs / 1000),
         },
         events: {
+          onError: () => {
+            fail('YouTube 플레이어를 시작하지 못했습니다.')
+          },
           onReady: () => {
+            if (disposed || failed || ready) return
+            ready = true
+            window.clearTimeout(readyTimeoutId)
+            setLoadState('ready')
+            setLoadError(null)
             playerRef.current?.seekTo(initialTimeMs / 1000, true)
             onTimeUpdate(initialTimeMs)
             intervalId = window.setInterval(() => {
               if (playerRef.current) {
                 onTimeUpdate(playerRef.current.getCurrentTime() * 1000)
               }
-            }, 100)
+            }, PLAYBACK_POLL_MS)
           },
         },
       })
+      playerRef.current = player
+    }).catch((error: unknown) => {
+      if (disposed || (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')) {
+        return
+      }
+      fail('YouTube 플레이어를 불러오지 못했습니다.')
     })
 
     return () => {
       disposed = true
-      window.clearInterval(intervalId)
-      playerRef.current?.destroy()
-      playerRef.current = null
-      if (wrapper) {
-        wrapper.innerHTML = ''
-      }
+      controller.abort()
+      destroyPlayer()
     }
-  }, [initialTimeMs, mock, onTimeUpdate, playerId, videoId])
+  }, [initialTimeMs, mock, onTimeUpdate, retryRevision, videoId])
 
   if (mock) {
     return (
@@ -233,5 +221,41 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
     )
   }
 
-  return <div ref={wrapperRef} className="youtube-player-wrapper" style={{ display: 'contents' }} />
+  return (
+    <div
+      aria-busy={loadState === 'loading'}
+      className="youtube-player-wrapper"
+      data-testid="youtube-player"
+      style={{ display: 'contents' }}
+    >
+      <div ref={hostRef} className="youtube-player-host" />
+      {loadState === 'loading' ? (
+        <p className="text-sm text-[var(--color-text-secondary)]" role="status">
+          YouTube 플레이어를 불러오는 중입니다.
+        </p>
+      ) : null}
+      {loadState === 'ready' ? (
+        <p className="sr-only" role="status">YouTube 플레이어가 준비되었습니다.</p>
+      ) : null}
+      {loadState === 'error' ? (
+        <div className="flex flex-col gap-3" role="alert">
+          <p>{loadError}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              label="다시 시도"
+              onClick={() => setRetryRevision((revision) => revision + 1)}
+              variant="secondary"
+            />
+            <a
+              href={`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              YouTube에서 열기
+            </a>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 })

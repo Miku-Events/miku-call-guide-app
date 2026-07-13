@@ -1,5 +1,5 @@
-import { type CSSProperties } from 'react'
-import { localizedText } from '../../callGuide/callPositioning'
+import { type CSSProperties, useEffect, useState } from 'react'
+import { localizedText } from '../../../shared/i18n/localizedText'
 import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
 
 type DayKind = 'weekday' | 'saturday' | 'sunday'
@@ -19,6 +19,22 @@ function dayKindFromDateKey(dateKey: string): DayKind {
 function formatDateLabel(dateKey: string): string {
   const [year, month, date] = dateKey.split('-').map(Number)
   return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date(year, month - 1, date))
+}
+
+function useCompactCalendar(): boolean {
+  const [isCompact, setIsCompact] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 620px)').matches,
+  )
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 620px)')
+    const updateMatch = () => setIsCompact(mediaQuery.matches)
+    updateMatch()
+    mediaQuery.addEventListener('change', updateMatch)
+    return () => mediaQuery.removeEventListener('change', updateMatch)
+  }, [])
+
+  return isCompact
 }
 
 interface CalendarGridProps {
@@ -52,6 +68,8 @@ export function CalendarGrid({
   barsByWeek,
   calendarIsDragging,
 }: CalendarGridProps) {
+  const isCompact = useCompactCalendar()
+
   return (
     <>
       <div className="event-weekdays" aria-hidden="true">
@@ -82,13 +100,23 @@ export function CalendarGrid({
               {week.map((dateKey) => {
                 const inMonth = dateKey.startsWith(visibleMonth)
                 const dayKind = dayKindFromDateKey(dateKey)
+                const isSelected = selectedDate === dateKey
+                const isToday = todayKey === dateKey
+                const stateLabel = [isToday ? '오늘' : null, isSelected ? '선택됨' : null]
+                  .filter(Boolean)
+                  .join(', ')
+                const dateLabel = `${formatDateLabel(dateKey)}${stateLabel ? `, ${stateLabel}` : ''}`
                 return (
                   <button
+                    aria-current={isToday ? 'date' : undefined}
+                    aria-label={dateLabel}
+                    aria-pressed={isSelected}
                     className="event-day-cell"
+                    data-date={dateKey}
                     data-day-kind={dayKind}
                     data-in-month={inMonth}
-                    data-selected={selectedDate === dateKey}
-                    data-today={todayKey === dateKey}
+                    data-selected={isSelected}
+                    data-today={isToday}
                     key={dateKey}
                     onClick={() => openDateDetail(dateKey)}
                     type="button"
@@ -98,7 +126,7 @@ export function CalendarGrid({
                 )
               })}
               {weekBars.length > 0 ? (
-                <div className="event-span-bars" aria-label="Calendar events">
+                <div className="event-span-bars" aria-hidden={isCompact || undefined} aria-label="Calendar events">
                   {weekBars.map((segment) => {
                     const title = localizedText(segment.event.title, 'ko', ['ja', 'en'])
                     const barStyle = {
@@ -106,16 +134,29 @@ export function CalendarGrid({
                       '--event-bar-lane': segment.lane,
                     } as CSSProperties
 
-                    return (
+                    const commonProps = {
+                      className: 'event-span-bar',
+                      'data-continues-after': segment.continuesAfter,
+                      'data-continues-before': segment.continuesBefore,
+                      'data-event-id': segment.event.id,
+                      'data-event-type': segment.event.type,
+                      'data-occurrence-id': segment.occurrence.id,
+                      'data-selected': selectedDate ? segment.dateKeys.includes(selectedDate) : false,
+                      style: barStyle,
+                    }
+
+                    return isCompact ? (
+                      <div
+                        {...commonProps}
+                        aria-hidden="true"
+                        key={`${segment.event.id}-${segment.occurrence.id}-${segment.rowIndex}`}
+                      >
+                        <span>{title}</span>
+                      </div>
+                    ) : (
                       <button
+                        {...commonProps}
                         aria-label={`${title}: ${formatDateLabel(segment.dateKeyStart)} - ${formatDateLabel(segment.dateKeyEnd)}`}
-                        className="event-span-bar"
-                        data-continues-after={segment.continuesAfter}
-                        data-continues-before={segment.continuesBefore}
-                        data-event-id={segment.event.id}
-                        data-event-type={segment.event.type}
-                        data-occurrence-id={segment.occurrence.id}
-                        data-selected={selectedDate ? segment.dateKeys.includes(selectedDate) : false}
                         key={`${segment.event.id}-${segment.occurrence.id}-${segment.rowIndex}`}
                         onClick={(clickEvent) => {
                           clickEvent.stopPropagation()
@@ -131,7 +172,6 @@ export function CalendarGrid({
                             openDateDetail(segment.dateKeyStart)
                           }
                         }}
-                        style={barStyle}
                         type="button"
                       >
                         <span>{title}</span>

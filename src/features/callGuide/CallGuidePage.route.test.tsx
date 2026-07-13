@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CallGuideManifest, LoadResult, SongGuide } from '../data/types'
 
 const harness = vi.hoisted(() => ({
   fetchCallGuideManifest: vi.fn(),
   fetchSong: vi.fn(),
+  lyricRenderTimes: [] as number[],
+  playbackUpdate: null as ((timeMs: number) => void) | null,
   songId: 'song-a',
 }))
 
@@ -27,20 +29,17 @@ vi.mock('../data/fetchSong', () => ({
 }))
 
 vi.mock('../player/YouTubePlayer', () => ({
-  YouTubePlayer: () => null,
+  YouTubePlayer: ({ onTimeUpdate }: { onTimeUpdate: (timeMs: number) => void }) => {
+    harness.playbackUpdate = onTimeUpdate
+    return null
+  },
 }))
 
 vi.mock('./LyricList', () => ({
-  LyricList: () => null,
-}))
-
-vi.mock('./callPositioning', () => ({
-  activeGlobalCalls: () => [],
-  callKindLegend: {},
-  callKindsInSong: () => [],
-  findActiveLyric: () => null,
-  localizedText: (text: Record<string, string | undefined>) => Object.values(text).find(Boolean) ?? '',
-  normalizedCallKind: () => 'chant',
+  LyricList: ({ currentMs }: { currentMs: number }) => {
+    harness.lyricRenderTimes.push(currentMs)
+    return <div data-testid="lyric-time">{currentMs}</div>
+  },
 }))
 
 vi.mock('../../shared/layout/AppHeader', () => ({
@@ -53,11 +52,21 @@ vi.mock('@astryxdesign/core/AppShell', () => ({
 
 vi.mock('@astryxdesign/core/Layout', () => ({
   Layout: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  LayoutContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  LayoutContent: ({ children, ...props }: { children: ReactNode; 'aria-busy'?: boolean }) => (
+    <div data-testid="layout-content" {...props}>{children}</div>
+  ),
 }))
 
 vi.mock('@astryxdesign/core/Banner', () => ({
-  Banner: ({ title }: { title: string }) => <div>{title}</div>,
+  Banner: ({ endContent, role, title }: { endContent?: ReactNode; role?: string; title: string }) => (
+    <div role={role}>{title}{endContent}</div>
+  ),
+}))
+
+vi.mock('@astryxdesign/core/Button', () => ({
+  Button: ({ href, label, onClick }: { href?: string; label: string; onClick?: () => void }) => (
+    href ? <a href={href}>{label}</a> : <button onClick={onClick} type="button">{label}</button>
+  ),
 }))
 
 vi.mock('@astryxdesign/core/Skeleton', () => ({
@@ -103,6 +112,7 @@ function songResult(id: string, title: string): LoadResult<SongGuide> {
   return {
     data: {
       schemaVersion: 1,
+      dataVersion: 'v1',
       id,
       status: 'published',
       metadata: {
@@ -130,6 +140,10 @@ function songResult(id: string, title: string): LoadResult<SongGuide> {
 }
 
 beforeEach(() => {
+  harness.fetchCallGuideManifest.mockReset()
+  harness.fetchSong.mockReset()
+  harness.lyricRenderTimes = []
+  harness.playbackUpdate = null
   harness.songId = 'song-a'
   harness.fetchCallGuideManifest.mockResolvedValue(manifestResult())
 })
@@ -139,6 +153,15 @@ afterEach(() => {
 })
 
 describe('CallGuidePage route identity', () => {
+  it('announces loading and marks the content busy while the song is deferred', () => {
+    harness.fetchCallGuideManifest.mockImplementationOnce(() => new Promise(() => {}))
+
+    render(<CallGuidePage />)
+
+    expect(screen.getByTestId('layout-content')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('status')).toHaveTextContent('곡 가이드를 불러오는 중입니다.')
+  })
+
   it('does not render song A while a rerendered song B route is loading', async () => {
     let resolveSongB: ((result: LoadResult<SongGuide>) => void) | undefined
     harness.fetchSong
@@ -175,5 +198,129 @@ describe('CallGuidePage route identity', () => {
 
     expect(await screen.findByText('Song B load failed.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Song A' })).not.toBeInTheDocument()
+  })
+
+  it('shows an alert with retry and catalog recovery, then reloads successfully', async () => {
+    harness.fetchCallGuideManifest
+      .mockRejectedValueOnce(new Error('Song load failed.'))
+      .mockResolvedValueOnce(manifestResult())
+    harness.fetchSong.mockResolvedValueOnce(songResult('song-a', 'Song A'))
+
+    render(<CallGuidePage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Song load failed.')
+    expect(screen.getByRole('link', { name: '카탈로그로 돌아가기' })).toHaveAttribute('href', '/')
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+    expect(harness.fetchCallGuideManifest).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts an in-flight song request on unmount', async () => {
+    let requestSignal: AbortSignal | undefined
+    harness.fetchSong.mockImplementationOnce((...args) => {
+      requestSignal = args[3].signal
+      return new Promise(() => {})
+    })
+
+    const { unmount } = render(<CallGuidePage />)
+    await waitFor(() => expect(requestSignal).toBeInstanceOf(AbortSignal))
+
+    unmount()
+
+    expect(requestSignal?.aborted).toBe(true)
+  })
+
+  it('rerenders the guide only when playback crosses a lyric boundary', async () => {
+    const result = songResult('song-a', 'Song A')
+    result.data.timing.durationMs = 2000
+    result.data.lyrics = [
+      { id: 'line-1', startMs: 0, endMs: 1000, text: { ja: 'one' } },
+      { id: 'line-2', startMs: 1000, endMs: 2000, text: { ja: 'two' } },
+    ]
+    harness.fetchSong.mockResolvedValueOnce(result)
+
+    render(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+    const rendersAfterLoad = harness.lyricRenderTimes.length
+
+    act(() => harness.playbackUpdate?.(100))
+    act(() => harness.playbackUpdate?.(200))
+    expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad)
+
+    act(() => harness.playbackUpdate?.(1000))
+    await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1))
+    expect(harness.lyricRenderTimes.at(-1)).toBe(1000)
+  })
+
+  it('rerenders only at global call start and end boundaries within one lyric', async () => {
+    const result = songResult('song-a', 'Song A')
+    result.data.timing.durationMs = 2000
+    result.data.lyrics = [
+      { id: 'line-1', startMs: 0, endMs: 2000, text: { ja: 'one' } },
+    ]
+    result.data.callEvents = [{
+      activation: { mode: 'manualTime' },
+      cue: { kind: 'chant', intensity: 'normal', repeat: 1 },
+      endMs: 1000,
+      id: 'global-call-1',
+      lyricLineId: null,
+      markers: {
+        point: { enabled: false, style: 'none', direction: 'auto' },
+        range: { enabled: false, style: 'none' },
+      },
+      placement: { align: 'timeline', lane: 'above', mode: 'globalTrack' },
+      startMs: 500,
+      text: { ko: '콜' },
+      time: '00:00.500',
+    }]
+    harness.fetchSong.mockResolvedValueOnce(result)
+
+    render(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+    const rendersAfterLoad = harness.lyricRenderTimes.length
+
+    act(() => harness.playbackUpdate?.(100))
+    act(() => harness.playbackUpdate?.(400))
+    expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad)
+
+    act(() => harness.playbackUpdate?.(500))
+    await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1))
+    expect(screen.getByText('콜')).toBeInTheDocument()
+    act(() => harness.playbackUpdate?.(700))
+    act(() => harness.playbackUpdate?.(900))
+    expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1)
+
+    act(() => harness.playbackUpdate?.(1000))
+    await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 2))
+    expect(screen.queryByText('콜')).not.toBeInTheDocument()
+  })
+
+  it('resets the playback boundary when the song route changes', async () => {
+    const songA = songResult('song-a', 'Song A')
+    songA.data.timing.durationMs = 2000
+    songA.data.lyrics = [
+      { id: 'line-a-1', startMs: 0, endMs: 500, text: { ja: 'one' } },
+      { id: 'line-a-2', startMs: 500, endMs: 2000, text: { ja: 'two' } },
+    ]
+    const songB = songResult('song-b', 'Song B')
+    songB.data.lyrics = [
+      { id: 'line-b', startMs: 0, endMs: 1000, text: { ja: 'two' } },
+    ]
+    harness.fetchSong
+      .mockResolvedValueOnce(songA)
+      .mockResolvedValueOnce(songB)
+
+    const { rerender } = render(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+    act(() => harness.playbackUpdate?.(750))
+    await waitFor(() => expect(harness.lyricRenderTimes.at(-1)).toBe(750))
+
+    harness.songId = 'song-b'
+    rerender(<CallGuidePage />)
+
+    expect(await screen.findByRole('heading', { name: 'Song B' })).toBeInTheDocument()
+    expect(harness.lyricRenderTimes.at(-1)).toBe(0)
+    expect(screen.getByText('0:00.0')).toBeInTheDocument()
   })
 })

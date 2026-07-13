@@ -1,10 +1,12 @@
 import {
   AlertTriangle,
+  CircleCheck,
   ChevronLeft,
   ChevronRight,
   Plus,
   RefreshCw,
 } from 'lucide-react'
+import './events.css'
 import {
   useCallback,
   useEffect,
@@ -15,12 +17,10 @@ import { getRootManifestUrl, getSubmissionApiBaseUrl } from '../../app/config'
 import { AppPageShell, StatusBanner } from '../../shared/layout/AppPageShell'
 import {
   fetchEventCalendarIndex,
-  fetchEventDetail,
 } from '../data/fetchManifest'
 import type {
   CalendarEventSummary,
   EventCalendarIndex,
-  EventGuide,
   EventOccurrence,
   EventType,
   LoadResult,
@@ -38,6 +38,8 @@ import {
 import { eventPageWarning } from './eventWarnings'
 import { useOverflowDragScroll } from './hooks/useOverflowDragScroll'
 import { useSheetDismissHandle } from './hooks/useSheetDismissHandle'
+import { useEventCalendarController } from './hooks/useEventCalendarController'
+import { useEventDetails } from './hooks/useEventDetails'
 import { useEventMonth } from './hooks/useEventMonth'
 import { CalendarGrid } from './components/CalendarGrid'
 import { EventDetailSheet } from './components/EventDetailSheet'
@@ -70,33 +72,20 @@ const defaultEventTypePriority: EventType[] = [
   'other',
 ]
 
-type TypeFilter = 'all' | EventType
 type DialogState =
   | { kind: 'add' }
   | { kind: 'edit'; event: CalendarEventSummary; occurrence?: EventOccurrence }
   | null
 
-function pad(value: number): string {
-  return value.toString().padStart(2, '0')
-}
-
-function monthKeyFromDate(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`
-}
-
 function dateKeyFromDate(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const day = date.getDate().toString().padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
 }
 
 function parseMonthKey(month: string): Date {
   const [year, monthIndex] = month.split('-').map(Number)
   return new Date(year, monthIndex - 1, 1)
-}
-
-function addMonths(month: string, delta: number): string {
-  const date = parseMonthKey(month)
-  date.setMonth(date.getMonth() + delta)
-  return monthKeyFromDate(date)
 }
 
 function normalizeEventTypePriority(typePriority?: EventType[]): EventType[] {
@@ -134,41 +123,37 @@ function calendarWeeks(calendarDays: string[]): string[][] {
   return weeks
 }
 
-function eventDetailKey(dataVersion: string, eventId: string): string {
-  return JSON.stringify([dataVersion, eventId])
-}
-
 export function EventCalendarPage() {
   const rootManifestUrl = getRootManifestUrl()
   const submissionApiBaseUrl = getSubmissionApiBaseUrl()
   
   // State
   const [calendarIndex, setCalendarIndex] = useState<(LoadResult<EventCalendarIndex> & { url: string }) | null>(null)
-  const [visibleMonth, setVisibleMonth] = useState(() => monthKeyFromDate(new Date()))
-  const [todayKey] = useState(() => dateKeyFromDate(new Date()))
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [detailExpanded, setDetailExpanded] = useState(false)
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<DialogState>(null)
   const [session, setSession] = useState<SubmissionSession>({ authenticated: false })
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
-  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
-  const [eventDetails, setEventDetails] = useState<Record<string, LoadResult<EventGuide>>>({})
-
-  const resetSelection = useCallback(() => {
-    setSelectedDate(null)
-    setDetailExpanded(false)
-  }, [])
+  const [submissionSuccess, setSubmissionSuccess] = useState<string | null>(null)
+  const {
+    closeEventDetail,
+    detailExpanded,
+    moveMonth,
+    openDateDetail,
+    resetSelection,
+    selectedDate,
+    setDetailExpanded,
+    setTypeFilter,
+    todayKey,
+    typeFilter,
+    visibleMonth,
+  } = useEventCalendarController()
 
   // Custom fetching hook with abortable controls
-  const { data: monthResult, error: monthError } = useEventMonth(
+  const { data: monthResult, error: monthError, isLoading: monthIsLoading } = useEventMonth(
     calendarIndex,
     visibleMonth,
     resetSelection
   )
-
-  const activeError = error || monthError
 
   // Custom gesture hooks
   const {
@@ -184,11 +169,6 @@ export function EventCalendarPage() {
     isDragging: detailIsDragging,
     ref: detailRef,
   } = useOverflowDragScroll<HTMLElement>()
-
-  const closeEventDetail = useCallback(() => {
-    setSelectedDate(null)
-    setDetailExpanded(false)
-  }, [])
 
   const {
     dragY: detailDismissDragY,
@@ -279,20 +259,16 @@ export function EventCalendarPage() {
   const calendarBars = useMemo(() => buildCalendarBarSegments(filteredEvents, weeks, eventTypePriority), [eventTypePriority, filteredEvents, weeks])
   const barsByWeek = useMemo(() => groupBarsByWeek(calendarBars), [calendarBars])
   const selectedEvents = useMemo(() => (selectedDate ? eventsByDate.get(selectedDate) ?? [] : []), [eventsByDate, selectedDate])
-  const selectedEventDetails = useMemo(() => {
-    const currentDetails: Record<string, LoadResult<EventGuide>> = {}
-    const dataVersion = monthResult?.data.dataVersion
-    if (!dataVersion) return currentDetails
-
-    for (const event of selectedEvents) {
-      const detail = eventDetails[eventDetailKey(dataVersion, event.id)]
-      if (detail) {
-        currentDetails[event.id] = detail
-      }
-    }
-
-    return currentDetails
-  }, [eventDetails, monthResult?.data.dataVersion, selectedEvents])
+  const {
+    details: selectedEventDetails,
+    error: detailError,
+    isLoading: detailIsLoading,
+  } = useEventDetails(monthResult, selectedEvents)
+  const activeError = error || monthError || detailError
+  const isDetailLoading = Boolean(selectedDate && detailIsLoading && !activeError)
+  const isCalendarLoading = Boolean(
+    !activeError && (!calendarIndex || monthIsLoading || !monthResult),
+  )
   const isDetailExpanded = Boolean(selectedDate) && detailExpanded
   const warning = eventPageWarning(
     calendarIndex?.warning,
@@ -300,52 +276,6 @@ export function EventCalendarPage() {
     selectedEvents,
     selectedEventDetails,
   )
-
-  const openDateDetail = useCallback((dateKey: string) => {
-    setSelectedDate(dateKey)
-    setDetailExpanded(window.matchMedia('(min-width: 981px)').matches)
-  }, [])
-
-  // Fetch occurrence details when selected
-  useEffect(() => {
-    let cancelled = false
-    const controller = new AbortController()
-    async function loadDetails() {
-      if (!monthResult || selectedEvents.length === 0) return
-
-      const dataVersion = monthResult.data.dataVersion
-      const missing = selectedEvents.filter((event) => !eventDetails[eventDetailKey(dataVersion, event.id)])
-      if (missing.length === 0) return
-
-      const loaded = await Promise.all(
-        missing.map(async (event) => [eventDetailKey(dataVersion, event.id), await fetchEventDetail(monthResult.url, event.path, event.id, {
-          expectedDataVersion: dataVersion,
-          signal: controller.signal,
-        })] as const),
-      )
-
-      if (!cancelled) {
-        setEventDetails((current) => ({
-          ...current,
-          ...Object.fromEntries(loaded),
-        }))
-      }
-    }
-
-    void loadDetails().catch((loadError) => {
-      if (loadError && typeof loadError === 'object' && 'name' in loadError && loadError.name === 'AbortError') {
-        return
-      }
-      if (!cancelled) {
-        setError(loadError instanceof Error ? loadError.message : 'Event detail load failed.')
-      }
-    })
-
-    return () => {
-      cancelled = true
-      controller.abort()
-    }
-  }, [eventDetails, monthResult, selectedEvents])
 
   return (
     <AppPageShell
@@ -359,11 +289,11 @@ export function EventCalendarPage() {
       title="Event Calendar"
       toolbar={
         <div className="flex items-center justify-between w-full flex-wrap gap-4">
-          <div className="event-month-controls flex items-center gap-2">
+          <div aria-label="월 이동" className="event-month-controls flex items-center gap-2" role="group">
             <Button
               label="Previous month"
               isIconOnly
-              onClick={() => setVisibleMonth((month) => addMonths(month, -1))}
+              onClick={() => moveMonth(-1)}
               icon={<ChevronLeft size={18} aria-hidden="true" />}
               variant="ghost"
             />
@@ -371,14 +301,19 @@ export function EventCalendarPage() {
             <Button
               label="Next month"
               isIconOnly
-              onClick={() => setVisibleMonth((month) => addMonths(month, 1))}
+              onClick={() => moveMonth(1)}
               icon={<ChevronRight size={18} aria-hidden="true" />}
               variant="ghost"
             />
           </div>
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="event-type-filters flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]">
+            <div
+              aria-label="이벤트 종류 필터"
+              className="event-type-filters flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]"
+              role="group"
+            >
               <button
+                aria-pressed={typeFilter === 'all'}
                 type="button"
                 data-active={typeFilter === 'all' ? 'true' : 'false'}
                 onClick={() => setTypeFilter('all')}
@@ -392,6 +327,7 @@ export function EventCalendarPage() {
               </button>
               {availableTypes.map((type) => (
                 <button
+                  aria-pressed={typeFilter === type}
                   type="button"
                   key={type}
                   data-active={typeFilter === type ? 'true' : 'false'}
@@ -423,9 +359,13 @@ export function EventCalendarPage() {
         </StatusBanner>
       ) : null}
 
-      {submissionMessage ? (
-        <StatusBanner icon={<AlertTriangle size={18} aria-hidden="true" />} variant="info">
-          {submissionMessage}
+      {submissionSuccess ? (
+        <StatusBanner
+          icon={<CircleCheck size={18} aria-hidden="true" />}
+          role="status"
+          variant="info"
+        >
+          {submissionSuccess}
         </StatusBanner>
       ) : null}
 
@@ -449,6 +389,7 @@ export function EventCalendarPage() {
 
       <div className="event-calendar-layout" data-detail-expanded={isDetailExpanded}>
         <section
+          aria-busy={isCalendarLoading}
           className="event-calendar-panel"
           aria-label="Monthly event calendar"
           data-dragging={calendarIsDragging}
@@ -456,6 +397,11 @@ export function EventCalendarPage() {
           ref={calendarRef}
           {...calendarDragScrollProps}
         >
+          {isCalendarLoading ? (
+            <p className="event-loading-status" role="status">
+              달력 데이터를 불러오는 중입니다.
+            </p>
+          ) : null}
           <CalendarGrid
             barsByWeek={barsByWeek}
             calendarIsDragging={calendarIsDragging}
@@ -477,6 +423,7 @@ export function EventCalendarPage() {
           detailIsDragging={detailIsDragging}
           detailRef={detailRef}
           eventDetails={selectedEventDetails}
+          isLoading={isDetailLoading}
           isDetailExpanded={isDetailExpanded}
           selectedDate={selectedDate}
           selectedEvents={selectedEvents}
@@ -489,7 +436,7 @@ export function EventCalendarPage() {
         dialog={dialog}
         session={session}
         setDialog={setDialog}
-        setSubmissionMessage={setSubmissionMessage}
+        setSubmissionSuccess={setSubmissionSuccess}
         setTurnstileToken={setTurnstileToken}
         submissionApiBaseUrl={submissionApiBaseUrl}
         turnstileToken={turnstileToken}

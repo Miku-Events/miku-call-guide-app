@@ -20,20 +20,15 @@ export function AppHeader({ activeNav, endContent, primaryAction }: AppHeaderPro
     <div className="flex items-center gap-3">
       {primaryAction}
       {(activeNav === 'catalog' || activeNav === 'events') && (
-        <a
+        <IconButton
+          icon={<Github size={20} />}
+          label="GitHub Repository"
           href="https://github.com/Miku-Events/miku-call-guide-app"
-          target="_blank"
-          rel="noopener noreferrer"
           className="app-github-link"
-          title="GitHub Repository"
-          aria-label="GitHub Repository"
-        >
-          <IconButton
-            icon={<Github size={20} />}
-            label="GitHub Repository"
-            variant="ghost"
-          />
-        </a>
+          rel="noopener noreferrer"
+          target="_blank"
+          variant="ghost"
+        />
       )}
     </div>
   )
