@@ -1,4 +1,10 @@
-import { handleOptions, json, requireMethod, setCors } from '../_http.js'
+import {
+  handleOptions,
+  json,
+  requireMethod,
+  respondWithError,
+  setCors,
+} from '../_http.js'
 import { readSession } from '../_session.js'
 
 export default function handler(req, res) {
@@ -10,9 +16,16 @@ export default function handler(req, res) {
     return
   }
 
-  const session = readSession(req)
-  json(res, 200, {
-    authenticated: Boolean(session?.login),
-    login: session?.login,
-  })
+  try {
+    const session = readSession(req, req.env)
+    json(res, 200, {
+      authenticated: Boolean(session?.login),
+      login: session?.login,
+    })
+  } catch (error) {
+    respondWithError(req, res, error, {
+      code: 'session_not_configured',
+      status: 503,
+    })
+  }
 }

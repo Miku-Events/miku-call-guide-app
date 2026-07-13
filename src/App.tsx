@@ -1,5 +1,7 @@
 import { lazy, Suspense } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
+import { AppErrorBoundary } from './shared/errors/AppErrorBoundary'
+import { NotFoundPage } from './shared/errors/NotFoundPage'
 import { PageShellSkeleton } from './shared/layout/PageShellSkeleton'
 
 const CatalogPage = lazy(() =>
@@ -13,14 +15,18 @@ const EventCalendarPage = lazy(() =>
 )
 
 export default function App() {
+  const location = useLocation()
+
   return (
-    <Suspense fallback={<PageShellSkeleton />}>
-      <Routes>
-        <Route path="/" element={<CatalogPage />} />
-        <Route path="/songs/:songId" element={<CallGuidePage />} />
-        <Route path="/events" element={<EventCalendarPage />} />
-      </Routes>
-    </Suspense>
+    <AppErrorBoundary resetKey={location.key}>
+      <Suspense fallback={<PageShellSkeleton />}>
+        <Routes>
+          <Route path="/" element={<CatalogPage />} />
+          <Route path="/songs/:songId" element={<CallGuidePage />} />
+          <Route path="/events" element={<EventCalendarPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Suspense>
+    </AppErrorBoundary>
   )
 }
-

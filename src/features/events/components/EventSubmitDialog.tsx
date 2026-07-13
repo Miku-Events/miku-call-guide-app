@@ -1,4 +1,4 @@
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import { Github, Send } from 'lucide-react'
 import { TurnstileWidget } from '../../../components/TurnstileWidget'
 import type { SubmissionSession } from '../submissionClient'
@@ -11,6 +11,7 @@ import { TextArea } from '@astryxdesign/core/TextArea'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Button } from '@astryxdesign/core/Button'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
+import { useFocusTrap } from '@astryxdesign/core/hooks'
 
 const eventTypeLabels: Record<string, string> = {
   concert: 'Concert',
@@ -42,7 +43,7 @@ interface EventSubmitDialogProps {
   turnstileToken: string | null
   setTurnstileToken: (token: string | null) => void
   submissionApiBaseUrl: string
-  setSubmissionMessage: (msg: string | null) => void
+  setSubmissionSuccess: (msg: string | null) => void
 }
 
 export function EventSubmitDialog({
@@ -52,8 +53,16 @@ export function EventSubmitDialog({
   turnstileToken,
   setTurnstileToken,
   submissionApiBaseUrl,
-  setSubmissionMessage,
+  setSubmissionSuccess,
 }: EventSubmitDialogProps) {
+  const { containerRef: dialogRef } = useFocusTrap<HTMLDialogElement>({ isActive: Boolean(dialog) })
+  const [submissionError, setSubmissionError] = useState<string | null>(null)
+  const [turnstileResetNonce, setTurnstileResetNonce] = useState(0)
+  const dialogIdentity = dialog
+    ? `${dialog.kind}:${dialog.kind === 'edit' ? dialog.event.id : 'new'}`
+    : null
+  const previousDialogIdentityRef = useRef(dialogIdentity)
+  const dialogGenerationRef = useRef(0)
   const [addForm, setAddForm] = useState(() => ({
     title: '',
     slug: '',
@@ -73,9 +82,26 @@ export function EventSubmitDialog({
     sourceUrl: '',
   }))
 
+  useEffect(() => {
+    if (previousDialogIdentityRef.current === dialogIdentity) return
+    previousDialogIdentityRef.current = dialogIdentity
+    dialogGenerationRef.current += 1
+    setSubmissionError(null)
+    setTurnstileResetNonce(0)
+    setTurnstileToken(null)
+  }, [dialogIdentity, setTurnstileToken])
+
+  const closeDialog = () => {
+    dialogGenerationRef.current += 1
+    setSubmissionError(null)
+    setTurnstileResetNonce(0)
+    setTurnstileToken(null)
+    setDialog(null)
+  }
+
   const openLogin = () => {
     if (!submissionApiBaseUrl) {
-      setSubmissionMessage('Submission API가 설정되지 않았습니다.')
+      setSubmissionError('Submission API가 설정되지 않았습니다.')
       return
     }
     window.location.href = githubLoginUrl(submissionApiBaseUrl, window.location.href)
@@ -84,6 +110,8 @@ export function EventSubmitDialog({
   // React 19 Action State for adding event
   const [, addAction, addPending] = useActionState(
     async (_prevState: unknown, formData: FormData) => {
+      const submissionGeneration = dialogGenerationRef.current
+      setSubmissionError(null)
       try {
         const startDate = String(formData.get('startDate') ?? '')
         const startTime = String(formData.get('startTime') ?? '')
@@ -122,14 +150,20 @@ export function EventSubmitDialog({
           slug: String(formData.get('slug') ?? '') || undefined,
           turnstileToken: turnstileToken || '',
         })
-        setSubmissionMessage(result.url ? `PR 생성 요청이 접수되었습니다: ${result.url}` : 'PR 생성 요청이 접수되었습니다.')
-        setDialog(null)
-        setTurnstileToken(null)
+        if (submissionGeneration !== dialogGenerationRef.current) {
+          return { success: false, ignored: true }
+        }
+        setSubmissionSuccess(result.url ? `PR 생성 요청이 접수되었습니다: ${result.url}` : 'PR 생성 요청이 접수되었습니다.')
+        closeDialog()
         return { success: true }
       } catch (err: unknown) {
+        if (submissionGeneration !== dialogGenerationRef.current) {
+          return { success: false, ignored: true }
+        }
         const errorMsg = err instanceof Error ? err.message : '일정 추가 요청에 실패했습니다.'
-        setSubmissionMessage(errorMsg)
+        setSubmissionError(errorMsg)
         setTurnstileToken(null)
+        setTurnstileResetNonce((current) => current + 1)
         return { success: false, error: errorMsg }
       }
     },
@@ -141,6 +175,8 @@ export function EventSubmitDialog({
     async (_prevState: unknown, formData: FormData) => {
       if (!dialog || dialog.kind !== 'edit') return null
 
+      const submissionGeneration = dialogGenerationRef.current
+      setSubmissionError(null)
       try {
         const result = await submitEditRequest(submissionApiBaseUrl, {
           eventId: dialog.event.id,
@@ -149,14 +185,20 @@ export function EventSubmitDialog({
           sourceUrl: String(formData.get('sourceUrl') ?? '') || undefined,
           turnstileToken: turnstileToken || '',
         })
-        setSubmissionMessage(result.url ? `수정 요청 이슈가 생성되었습니다: ${result.url}` : '수정 요청 이슈가 생성되었습니다.')
-        setDialog(null)
-        setTurnstileToken(null)
+        if (submissionGeneration !== dialogGenerationRef.current) {
+          return { success: false, ignored: true }
+        }
+        setSubmissionSuccess(result.url ? `수정 요청 이슈가 생성되었습니다: ${result.url}` : '수정 요청 이슈가 생성되었습니다.')
+        closeDialog()
         return { success: true }
       } catch (err: unknown) {
+        if (submissionGeneration !== dialogGenerationRef.current) {
+          return { success: false, ignored: true }
+        }
         const errorMsg = err instanceof Error ? err.message : '수정 요청에 실패했습니다.'
-        setSubmissionMessage(errorMsg)
+        setSubmissionError(errorMsg)
         setTurnstileToken(null)
+        setTurnstileResetNonce((current) => current + 1)
         return { success: false, error: errorMsg }
       }
     },
@@ -167,23 +209,32 @@ export function EventSubmitDialog({
 
   return (
     <Dialog
+      ref={dialogRef}
+      aria-label={dialog?.kind === 'edit' ? '이벤트 수정 요청' : '일정 추가'}
       isOpen={Boolean(dialog)}
       onOpenChange={(open) => {
-        if (!open) setDialog(null)
+        if (!open) closeDialog()
       }}
       purpose="form"
       width={540}
       className="event-dialog-backdrop"
     >
       {dialog ? (
-        <div className="p-1" key={dialog.kind + (dialog.kind === 'edit' ? dialog.event.id : '')}>
+        <div className="event-dialog" key={dialog.kind + (dialog.kind === 'edit' ? dialog.event.id : '')}>
           <DialogHeader
             title={dialog.kind === 'add' ? '일정 추가' : '수정 요청'}
             subtitle={session.authenticated ? `@${session.login ?? 'github-user'}` : 'GitHub 로그인 필요'}
-            onOpenChange={() => setDialog(null)}
+            onOpenChange={closeDialog}
           />
 
-          <div className="mt-4">
+          <div className="event-dialog-content mt-4">
+            {submissionError ? (
+              <div className="event-dialog-error" role="alert">
+                <strong>요청을 제출하지 못했습니다.</strong>
+                <p>{submissionError}</p>
+                <p>보안 검증을 다시 완료한 뒤 재시도해 주세요.</p>
+              </div>
+            ) : null}
             {!session.authenticated ? (
               <EmptyState
                 title="GitHub 로그인 필요"
@@ -199,7 +250,7 @@ export function EventSubmitDialog({
                 }
               />
             ) : dialog.kind === 'add' ? (
-              <form className="flex flex-col gap-4" action={addAction}>
+              <form aria-label="일정 추가 요청" className="flex flex-col gap-4" action={addAction}>
                 <TextInput
                   label="이벤트 제목"
                   value={addForm.title}
@@ -310,7 +361,11 @@ export function EventSubmitDialog({
                   rows={4}
                 />
                 <div className="mt-4 flex flex-col gap-4">
-                  <TurnstileWidget onVerify={setTurnstileToken} />
+                  <TurnstileWidget
+                    action="event_submit"
+                    onVerify={setTurnstileToken}
+                    resetNonce={turnstileResetNonce}
+                  />
                   <Button
                     label="PR 요청"
                     icon={<Send size={16} aria-hidden="true" />}
@@ -322,7 +377,7 @@ export function EventSubmitDialog({
                 </div>
               </form>
             ) : (
-              <form className="flex flex-col gap-4" action={editAction}>
+              <form aria-label="이벤트 수정 요청" className="flex flex-col gap-4" action={editAction}>
                 <TextInput
                   label="대상 이벤트"
                   value={dialog.event.id}
@@ -351,7 +406,11 @@ export function EventSubmitDialog({
                   isOptional
                 />
                 <div className="mt-4 flex flex-col gap-4">
-                  <TurnstileWidget onVerify={setTurnstileToken} />
+                  <TurnstileWidget
+                    action="event_edit"
+                    onVerify={setTurnstileToken}
+                    resetNonce={turnstileResetNonce}
+                  />
                   <Button
                     label="Issue 생성"
                     icon={<Send size={16} aria-hidden="true" />}

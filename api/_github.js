@@ -1,9 +1,18 @@
+import { HttpError } from './_http.js'
+import { importGitHubAppPrivateKey } from './_github-private-key.js'
+
 const apiBase = 'https://api.github.com'
+export const GITHUB_TIMEOUT_MS = 10_000
  
-function requiredEnv(name) {
-  const value = process.env[name]
+function requiredEnv(name, environment) {
+  const value = environment?.[name]
   if (!value) {
-    throw new Error(`${name} is not configured`)
+    throw new HttpError(
+      503,
+      name.startsWith('GITHUB_OAUTH_')
+        ? 'github_oauth_not_configured'
+        : 'github_app_not_configured',
+    )
   }
   return value
 }
@@ -31,16 +40,6 @@ function base64Encode(str) {
   return btoa(binary)
 }
 
-// Convert base64 string to ArrayBuffer
-function base64ToArrayBuffer(b64) {
-  const byteString = atob(b64)
-  const byteArray = new Uint8Array(byteString.length)
-  for (let i = 0; i < byteString.length; i++) {
-    byteArray[i] = byteString.charCodeAt(i)
-  }
-  return byteArray.buffer
-}
-
 // Convert ArrayBuffer to base64url string
 function arrayBufferToBase64Url(buffer) {
   const bytes = new Uint8Array(buffer)
@@ -59,40 +58,18 @@ function arrayBufferToBase64Url(buffer) {
  * Creates a JWT for GitHub App authentication using standard Web Crypto API.
  * This runs flawlessly on Cloudflare Pages Functions, Node, and Vercel Edge.
  */
-async function appJwt() {
+async function appJwt(environment) {
   const now = Math.floor(Date.now() / 1000)
   const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' })
   const payload = base64UrlJson({
     iat: now - 60,
     exp: now + 9 * 60,
-    iss: requiredEnv('GITHUB_APP_ID'),
+    iss: requiredEnv('GITHUB_APP_ID', environment),
   })
   const content = `${header}.${payload}`
   
-  // Format the PKCS#8 private key
-  const pem = requiredEnv('GITHUB_APP_PRIVATE_KEY').replace(/\\n/g, '\n')
-  const cleanPem = pem
-    .replace(/-----[^-]+-----/g, '') // Strip headers and footers (BEGIN/END PRIVATE KEY)
-    .replace(/[^A-Za-z0-9+/=]/g, '')  // Strip all non-base64 characters (quotes, newlines, spaces)
-  
-  // Pad the base64 string to be a multiple of 4 if needed
-  let paddedB64 = cleanPem
-  while (paddedB64.length % 4 !== 0) {
-    paddedB64 += '='
-  }
-  
-  const binaryKey = base64ToArrayBuffer(paddedB64)
-  
-  // Import the RSA private key using standard Web Crypto API
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    binaryKey,
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      hash: { name: 'SHA-256' },
-    },
-    false,
-    ['sign']
+  const cryptoKey = await importGitHubAppPrivateKey(
+    requiredEnv('GITHUB_APP_PRIVATE_KEY', environment),
   )
   
   // Sign the content
@@ -108,78 +85,176 @@ async function appJwt() {
   return `${content}.${signature}`
 }
 
-async function githubFetch(path, options = {}) {
-  const response = await fetch(`${apiBase}${path}`, {
-    ...options,
-    headers: {
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      'User-Agent': 'miku-call-guide-app',
-      ...options.headers,
-    },
-  })
-
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`GitHub API ${path} failed with ${response.status}: ${body}`)
-  }
-
-  return response.status === 204 ? null : response.json()
+function upstreamError(status = 502) {
+  return new HttpError(
+    status,
+    status === 503 ? 'github_upstream_unavailable' : 'github_upstream_failed',
+  )
 }
 
-export async function installationToken() {
-  const installationId = requiredEnv('GITHUB_APP_INSTALLATION_ID')
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+async function withTimeout(externalSignal, operation) {
+  const controller = new AbortController()
+  const abortFromExternalSignal = () => controller.abort(externalSignal?.reason)
+  if (externalSignal?.aborted) {
+    abortFromExternalSignal()
+  } else {
+    externalSignal?.addEventListener('abort', abortFromExternalSignal, { once: true })
+  }
+  const abortPromise = new Promise((_resolve, reject) => {
+    controller.signal.addEventListener('abort', () => reject(upstreamError(503)), {
+      once: true,
+    })
+  })
+  const timeout = setTimeout(() => controller.abort(), GITHUB_TIMEOUT_MS)
+
+  try {
+    return await Promise.race([
+      operation(controller.signal),
+      abortPromise,
+    ])
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error
+    }
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      throw upstreamError(503)
+    }
+    throw upstreamError(502)
+  } finally {
+    clearTimeout(timeout)
+    externalSignal?.removeEventListener('abort', abortFromExternalSignal)
+  }
+}
+
+async function parseJsonResponse(response) {
+  try {
+    const result = await response.json()
+    if (!isRecord(result)) {
+      throw new Error('Unexpected response shape')
+    }
+    return result
+  } catch {
+    throw upstreamError(502)
+  }
+}
+
+async function cancelResponseBody(response) {
+  try {
+    await response.body?.cancel()
+  } catch {
+    // The upstream status is already known; cleanup failure must not expose details.
+  }
+}
+
+async function githubFetch(path, options = {}) {
+  return withTimeout(options.signal, async (signal) => {
+    const response = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers: {
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2022-11-28',
+        'User-Agent': 'miku-call-guide-app',
+        ...options.headers,
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      await cancelResponseBody(response)
+      throw upstreamError(502)
+    }
+
+    return response.status === 204 ? null : parseJsonResponse(response)
+  })
+}
+
+export async function installationToken(environment) {
+  const installationId = requiredEnv('GITHUB_APP_INSTALLATION_ID', environment)
+  let jwt
+  try {
+    jwt = await appJwt(environment)
+  } catch (error) {
+    if (error instanceof HttpError) throw error
+    throw new HttpError(503, 'github_app_not_configured')
+  }
   const result = await githubFetch(`/app/installations/${installationId}/access_tokens`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${await appJwt()}` },
+    headers: { authorization: `Bearer ${jwt}` },
   })
+  if (typeof result?.token !== 'string' || !result.token) {
+    throw upstreamError(502)
+  }
   return result.token
 }
 
-export async function exchangeOAuthCode(code) {
-  const response = await fetch('https://github.com/login/oauth/access_token', {
-    body: JSON.stringify({
-      client_id: requiredEnv('GITHUB_OAUTH_CLIENT_ID'),
-      client_secret: requiredEnv('GITHUB_OAUTH_CLIENT_SECRET'),
-      code,
-    }),
-    headers: { 
-      accept: 'application/json', 
-      'content-type': 'application/json',
-      'User-Agent': 'miku-call-guide-app'
-    },
-    method: 'POST',
-  })
-  if (!response.ok) {
-    throw new Error(`GitHub OAuth exchange failed with ${response.status}`)
-  }
+export async function exchangeOAuthCode(code, codeVerifier, environment) {
+  return withTimeout(undefined, async (signal) => {
+    const response = await fetch('https://github.com/login/oauth/access_token', {
+      body: JSON.stringify({
+        client_id: requiredEnv('GITHUB_OAUTH_CLIENT_ID', environment),
+        client_secret: requiredEnv('GITHUB_OAUTH_CLIENT_SECRET', environment),
+        code,
+        code_verifier: codeVerifier,
+      }),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'User-Agent': 'miku-call-guide-app',
+      },
+      method: 'POST',
+      signal,
+    })
+    if (!response.ok) {
+      await cancelResponseBody(response)
+      throw upstreamError(502)
+    }
 
-  const data = await response.json()
-  if (!data.access_token) {
-    throw new Error('GitHub OAuth exchange did not return an access token')
-  }
-  return data.access_token
+    const data = await parseJsonResponse(response)
+    if (typeof data.access_token !== 'string' || !data.access_token) {
+      throw upstreamError(502)
+    }
+    return data.access_token
+  })
 }
 
-export async function fetchGitHubUser(accessToken) {
-  return githubFetch('/user', {
+export async function fetchGitHubUser(accessToken, environment) {
+  if (!environment || typeof environment !== 'object') {
+    throw new HttpError(503, 'github_oauth_not_configured')
+  }
+  const user = await githubFetch('/user', {
     headers: { authorization: `Bearer ${accessToken}` },
   })
+  if (
+    !user
+    || (typeof user.id !== 'number' && typeof user.id !== 'string')
+    || typeof user.login !== 'string'
+    || !user.login
+  ) {
+    throw upstreamError(502)
+  }
+  return user
 }
 
-export function repoConfig() {
+export function repoConfig(environment) {
   return {
-    owner: requiredEnv('GITHUB_DATA_OWNER'),
-    repo: requiredEnv('GITHUB_DATA_REPO'),
-    baseBranch: process.env.GITHUB_DATA_BASE_BRANCH || 'main',
+    owner: requiredEnv('GITHUB_DATA_OWNER', environment),
+    repo: requiredEnv('GITHUB_DATA_REPO', environment),
+    baseBranch: environment.GITHUB_DATA_BASE_BRANCH || 'main',
   }
 }
 
-export async function createEventPullRequest({ branchName, content, filePath, title, submitter }) {
-  const token = await installationToken()
-  const { owner, repo, baseBranch } = repoConfig()
+export async function createEventPullRequest({ branchName, content, filePath, title, submitter }, environment) {
+  const token = await installationToken(environment)
+  const { owner, repo, baseBranch } = repoConfig(environment)
   const headers = { authorization: `Bearer ${token}` }
   const baseRef = await githubFetch(`/repos/${owner}/${repo}/git/ref/heads/${baseBranch}`, { headers })
+  if (typeof baseRef?.object?.sha !== 'string' || !baseRef.object.sha) {
+    throw upstreamError(502)
+  }
 
   await githubFetch(`/repos/${owner}/${repo}/git/refs`, {
     body: JSON.stringify({
@@ -200,7 +275,7 @@ export async function createEventPullRequest({ branchName, content, filePath, ti
     method: 'PUT',
   })
 
-  return githubFetch(`/repos/${owner}/${repo}/pulls`, {
+  const pullRequest = await githubFetch(`/repos/${owner}/${repo}/pulls`, {
     body: JSON.stringify({
       base: baseBranch,
       body: `Submitted from the web event form.\n\nSubmitted by: @${submitter}`,
@@ -210,12 +285,16 @@ export async function createEventPullRequest({ branchName, content, filePath, ti
     headers,
     method: 'POST',
   })
+  if (typeof pullRequest?.html_url !== 'string' || !pullRequest.html_url) {
+    throw upstreamError(502)
+  }
+  return pullRequest
 }
 
-export async function createEditRequestIssue({ eventId, occurrenceId, message, sourceUrl, submitter }) {
-  const token = await installationToken()
-  const { owner, repo } = repoConfig()
-  return githubFetch(`/repos/${owner}/${repo}/issues`, {
+export async function createEditRequestIssue({ eventId, occurrenceId, message, sourceUrl, submitter }, environment) {
+  const token = await installationToken(environment)
+  const { owner, repo } = repoConfig(environment)
+  const issue = await githubFetch(`/repos/${owner}/${repo}/issues`, {
     body: JSON.stringify({
       body: [
         `Submitted by: @${submitter}`,
@@ -233,4 +312,8 @@ export async function createEditRequestIssue({ eventId, occurrenceId, message, s
     headers: { authorization: `Bearer ${token}` },
     method: 'POST',
   })
+  if (typeof issue?.html_url !== 'string' || !issue.html_url) {
+    throw upstreamError(502)
+  }
+  return issue
 }

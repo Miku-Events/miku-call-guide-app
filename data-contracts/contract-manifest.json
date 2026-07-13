@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "schemas": [
+    {
+      "file": "schemas/call-guide-manifest.schema.json",
+      "sha256": "38496d2df53be3f911841c85f330b63be8ad7309470d07b67e5408871505ac41"
+    },
+    {
+      "file": "schemas/call-texts.schema.json",
+      "sha256": "b36b5504e5f2980166b08259f401c4145f101dd92763803134b619555d47d959"
+    },
+    {
+      "file": "schemas/common.schema.json",
+      "sha256": "8bbcf2fe595ff7dc35da2803d55359b39725ac86289319e626887bfc984636a1"
+    },
+    {
+      "file": "schemas/event-calendar-config.schema.json",
+      "sha256": "177855494ac65704d285a70b01fb50009035e410556e4664a9600d8e086c53de"
+    },
+    {
+      "file": "schemas/event-calendar-index.schema.json",
+      "sha256": "13aadc301a30040044310eec050b7e0df8bfa67ca38e3f2ddae502d09bed38c8"
+    },
+    {
+      "file": "schemas/event-calendar-month.schema.json",
+      "sha256": "689649fabc082ca5ba49c6cda4904be80205d2a57079a5a7fc2246040b393e06"
+    },
+    {
+      "file": "schemas/event-registry.schema.json",
+      "sha256": "c1acd156e10c5583c7bc1c12c504d99f3a20e1c274857e5537a7594785f22206"
+    },
+    {
+      "file": "schemas/event.schema.json",
+      "sha256": "51801d67345bdec64caf4dce42776f164649bb45fc340f3f5f85d8e898d0f434"
+    },
+    {
+      "file": "schemas/manifest.schema.json",
+      "sha256": "46e03597e38bf074dfbd8a586c1fea4f071b59fc036e1883bda1f057c6c0e692"
+    },
+    {
+      "file": "schemas/runtime-contracts.schema.json",
+      "sha256": "c3c4111ffd8eadbf7bd97253a199de63a794f03bbb94c33cda77e26967d0fe72"
+    },
+    {
+      "file": "schemas/runtime-event.schema.json",
+      "sha256": "5b982033de952bfb37b243291e6bddfd0bbbadb1f4aeace48cf66ab4634680f1"
+    },
+    {
+      "file": "schemas/runtime-song.schema.json",
+      "sha256": "ed7f211d57838c1f7a4c889431ea1c5ad7f29c9fee7d0af1302dd7541cdb539c"
+    },
+    {
+      "file": "schemas/song.schema.json",
+      "sha256": "233f9f739e7f7050e81f2e9f26882bde551534fb7f50fefe2b7eb5ee07219615"
+    }
+  ]
+}

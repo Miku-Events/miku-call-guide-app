@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { localizedText } from '../callGuide/callPositioning'
+import { localizedText } from '../../shared/i18n/localizedText'
 import type { EventLink } from '../data/types'
 
 declare global {

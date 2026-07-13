@@ -4,6 +4,8 @@ compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
 
 [vars]
+APP_ENV = "production"
+TURNSTILE_EXPECTED_HOSTNAME = "miku-call-guide-app.pages.dev"
 GITHUB_DATA_OWNER = "Miku-Events"
 GITHUB_DATA_REPO = "miku-call-guide-data"
 GITHUB_DATA_BASE_BRANCH = "main"

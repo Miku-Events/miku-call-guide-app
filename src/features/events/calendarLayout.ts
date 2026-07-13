@@ -1,4 +1,4 @@
-import { localizedText } from '../callGuide/callPositioning'
+import { localizedText } from '../../shared/i18n/localizedText'
 import type { CalendarEventSummary, EventOccurrence, EventType } from '../data/types'
 
 export interface CalendarBarSegment {
@@ -34,13 +34,17 @@ function datesBetween(startDate: string, endDate: string): string[] {
 }
 
 export function occurrenceDateKeys(occurrence: EventOccurrence): string[] {
-  const startDate = occurrence.startsOn ?? localDatePart(occurrence.startsAt!)
-  const endDate = occurrence.endsOn ?? (occurrence.endsAt ? localDatePart(occurrence.endsAt) : startDate)
+  const isAllDay = occurrence.startsOn !== undefined
+  const startDate = isAllDay ? occurrence.startsOn : localDatePart(occurrence.startsAt)
+  const endDate = isAllDay
+    ? occurrence.endsOn ?? startDate
+    : occurrence.endsAt ? localDatePart(occurrence.endsAt) : startDate
   return datesBetween(startDate, endDate)
 }
 
 function firstOccurrenceStart(event: Pick<CalendarEventSummary, 'occurrences'>): string {
-  return event.occurrences[0]?.startsAt ?? event.occurrences[0]?.startsOn ?? ''
+  const occurrence = event.occurrences[0]
+  return occurrence.startsAt ?? occurrence.startsOn
 }
 
 function eventTitleSortKey(event: Pick<CalendarEventSummary, 'id' | 'title'>): string {

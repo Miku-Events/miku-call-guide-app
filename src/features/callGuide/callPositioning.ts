@@ -1,11 +1,22 @@
 import type { CallAnchor, CallEvent, CallMarkers, CallSegment, LyricLine } from '../data/types'
 
-export interface RenderableCall extends Omit<CallEvent, 'id' | 'lyricLineId' | 'anchor' | 'markers' | 'segments'> {
+export { localizedText } from '../../shared/i18n/localizedText'
+
+type DirectLyricCall = Extract<CallEvent, { anchor: unknown }>
+type SegmentedLyricCall = Extract<CallEvent, { segments: unknown }>
+type GlobalCall = Extract<CallEvent, { startMs: number }>
+type LyricCall = DirectLyricCall | SegmentedLyricCall
+
+export interface RenderableCall {
   id: string
   sourceCallId: string
   lyricLineId: string
+  placement: LyricCall['placement']
   anchor: CallAnchor
+  text: LyricCall['text']
   markers: CallMarkers
+  activation: LyricCall['activation']
+  cue: LyricCall['cue']
   segmentIndex?: number
   segmentPart?: CallSegment['part']
 }
@@ -28,6 +39,18 @@ export const callKindLegend: Record<CallKind, { label: string }> = {
   custom: {
     label: 'Custom',
   },
+}
+
+function isDirectLyricCall(call: CallEvent): call is DirectLyricCall {
+  return call.anchor !== undefined
+}
+
+function isSegmentedLyricCall(call: CallEvent): call is SegmentedLyricCall {
+  return call.segments !== undefined
+}
+
+function isGlobalCall(call: CallEvent): call is GlobalCall {
+  return call.startMs !== undefined
 }
 
 export function normalizedCallKind(call: { cue?: { kind?: unknown } }): CallKind {
@@ -199,75 +222,63 @@ export function streamingLyricWindow(lyrics: LyricLine[], activeLine: LyricLine 
 }
 
 export function callsForLine(callEvents: CallEvent[], lineId: string): RenderableCall[] {
-  return callEvents.flatMap((call) => {
+  const result: RenderableCall[] = []
+
+  for (const call of callEvents) {
     if (call.placement.mode !== 'lyricTrack') {
-      return []
+      continue
     }
 
-    if (call.segments?.length) {
-      return call.segments.flatMap((segment, index) => {
+    if (isSegmentedLyricCall(call)) {
+      call.segments.forEach((segment, index) => {
         if (segment.lyricLineId !== lineId) {
-          return []
+          return
         }
 
-        return [
-          {
-            ...call,
-            id: `${call.id}::segment-${index}`,
-            sourceCallId: call.id,
-            lyricLineId: segment.lyricLineId,
-            anchor: segment.anchor,
-            markers: segment.markers,
-            segmentIndex: index,
-            segmentPart: segment.part,
-          },
-        ]
+        result.push({
+          id: `${call.id}::segment-${index}`,
+          sourceCallId: call.id,
+          lyricLineId: segment.lyricLineId,
+          placement: call.placement,
+          anchor: segment.anchor,
+          text: call.text,
+          markers: segment.markers,
+          activation: call.activation,
+          cue: call.cue,
+          segmentIndex: index,
+          segmentPart: segment.part,
+        })
       })
+      continue
     }
 
-    if (call.lyricLineId !== lineId || !call.anchor || !call.markers) {
-      return []
+    if (!isDirectLyricCall(call) || call.lyricLineId !== lineId) {
+      continue
     }
 
-    return [
-      {
-        ...call,
-        sourceCallId: call.id,
-        lyricLineId: call.lyricLineId,
-        anchor: call.anchor,
-        markers: call.markers,
-      },
-    ]
-  })
+    result.push({
+      id: call.id,
+      sourceCallId: call.id,
+      lyricLineId: call.lyricLineId,
+      placement: call.placement,
+      anchor: call.anchor,
+      text: call.text,
+      markers: call.markers,
+      activation: call.activation,
+      cue: call.cue,
+    })
+  }
+
+  return result
 }
 
 export function activeGlobalCalls(callEvents: CallEvent[], currentMs: number): CallEvent[] {
-  return callEvents.filter(
-    (call) =>
-      call.placement.mode === 'globalTrack' &&
-      typeof call.startMs === 'number' &&
-      typeof call.endMs === 'number' &&
-      call.startMs <= currentMs &&
-      currentMs < call.endMs,
-  )
-}
-
-export function localizedText(
-  text: Record<string, string> | null | undefined,
-  preferredKey: string,
-  fallbackKeys: string[] = [],
-): string {
-  if (!text) {
-    return ''
-  }
-
-  for (const key of [preferredKey, ...fallbackKeys]) {
-    if (text[key]) {
-      return text[key]
+  return callEvents.filter((call): call is GlobalCall => {
+    if (!isGlobalCall(call)) {
+      return false
     }
-  }
-
-  return Object.values(text).find(Boolean) ?? ''
+    return call.startMs <= currentMs && currentMs < call.endMs
+  })
 }
 
 export function arrowForCall(call: { placement: CallEvent['placement']; markers: CallMarkers }): 'up' | 'down' {

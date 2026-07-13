@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { safeReturnTo } from '../../api/auth/github/start.js'
 import { readBody } from '../../api/_http.js'
@@ -17,7 +19,7 @@ describe('API Security Tests', () => {
     })
 
     it('returns fallback when no value is provided', () => {
-      expect(safeReturnTo(null as any)).toBe('/')
+      expect(safeReturnTo(null)).toBe('/')
       expect(safeReturnTo('')).toBe('/')
     })
 
@@ -48,18 +50,18 @@ describe('API Security Tests', () => {
 
   describe('readBody', () => {
     it('returns req.body as-is if it is an object', () => {
-      const req = { body: { foo: 'bar' } }
-      expect(readBody(req as any)).toEqual({ foo: 'bar' })
+      const req = { body: { foo: 'bar' }, headers: { 'content-type': 'application/json' } }
+      expect(readBody(req)).toEqual({ foo: 'bar' })
     })
 
     it('parses req.body if it is a valid JSON string', () => {
-      const req = { body: '{"foo":"bar"}' }
-      expect(readBody(req as any)).toEqual({ foo: 'bar' })
+      const req = { body: '{"foo":"bar"}', headers: { 'content-type': 'application/json' } }
+      expect(readBody(req)).toEqual({ foo: 'bar' })
     })
 
-    it('handles malformed JSON string gracefully without throwing', () => {
-      const req = { body: '{"foo":' }
-      expect(readBody(req as any)).toEqual({})
+    it('rejects malformed JSON strings', () => {
+      const req = { body: '{"foo":', headers: { 'content-type': 'application/json' } }
+      expect(() => readBody(req)).toThrow()
     })
   })
 
