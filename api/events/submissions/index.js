@@ -1,4 +1,5 @@
 import { createEventPullRequest } from '../../_github.js'
+import { EVENT_TYPES } from '../../../data-contracts/event-types.mjs'
 import {
   apiError,
   handleOptions,
@@ -11,18 +12,7 @@ import {
 import { readSession, requestEnvironment } from '../../_session.js'
 import { verifyTurnstileToken } from '../../_turnstile.js'
 
-const supportedTypes = new Set([
-  'concert',
-  'dj',
-  'popup',
-  'ticketApplication',
-  'ticketGeneralSale',
-  'livestream',
-  'exhibition',
-  'collaboration',
-  'announcement',
-  'other',
-])
+const supportedTypes = new Set(EVENT_TYPES)
 
 function slugify(value) {
   return String(value)

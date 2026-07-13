@@ -35,6 +35,7 @@ import {
   compareCalendarEvents,
   groupBarsByWeek,
 } from './calendarLayout'
+import { eventPageWarning } from './eventWarnings'
 import { useOverflowDragScroll } from './hooks/useOverflowDragScroll'
 import { useSheetDismissHandle } from './hooks/useSheetDismissHandle'
 import { useEventMonth } from './hooks/useEventMonth'
@@ -131,6 +132,10 @@ function calendarWeeks(calendarDays: string[]): string[][] {
   }
 
   return weeks
+}
+
+function eventDetailKey(dataVersion: string, eventId: string): string {
+  return JSON.stringify([dataVersion, eventId])
 }
 
 export function EventCalendarPage() {
@@ -274,8 +279,27 @@ export function EventCalendarPage() {
   const calendarBars = useMemo(() => buildCalendarBarSegments(filteredEvents, weeks, eventTypePriority), [eventTypePriority, filteredEvents, weeks])
   const barsByWeek = useMemo(() => groupBarsByWeek(calendarBars), [calendarBars])
   const selectedEvents = useMemo(() => (selectedDate ? eventsByDate.get(selectedDate) ?? [] : []), [eventsByDate, selectedDate])
+  const selectedEventDetails = useMemo(() => {
+    const currentDetails: Record<string, LoadResult<EventGuide>> = {}
+    const dataVersion = monthResult?.data.dataVersion
+    if (!dataVersion) return currentDetails
+
+    for (const event of selectedEvents) {
+      const detail = eventDetails[eventDetailKey(dataVersion, event.id)]
+      if (detail) {
+        currentDetails[event.id] = detail
+      }
+    }
+
+    return currentDetails
+  }, [eventDetails, monthResult?.data.dataVersion, selectedEvents])
   const isDetailExpanded = Boolean(selectedDate) && detailExpanded
-  const warning = calendarIndex?.warning ?? monthResult?.warning
+  const warning = eventPageWarning(
+    calendarIndex?.warning,
+    monthResult?.warning,
+    selectedEvents,
+    selectedEventDetails,
+  )
 
   const openDateDetail = useCallback((dateKey: string) => {
     setSelectedDate(dateKey)
@@ -285,14 +309,19 @@ export function EventCalendarPage() {
   // Fetch occurrence details when selected
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
     async function loadDetails() {
       if (!monthResult || selectedEvents.length === 0) return
 
-      const missing = selectedEvents.filter((event) => !eventDetails[event.id])
+      const dataVersion = monthResult.data.dataVersion
+      const missing = selectedEvents.filter((event) => !eventDetails[eventDetailKey(dataVersion, event.id)])
       if (missing.length === 0) return
 
       const loaded = await Promise.all(
-        missing.map(async (event) => [event.id, await fetchEventDetail(monthResult.url, event.path, event.id)] as const),
+        missing.map(async (event) => [eventDetailKey(dataVersion, event.id), await fetchEventDetail(monthResult.url, event.path, event.id, {
+          expectedDataVersion: dataVersion,
+          signal: controller.signal,
+        })] as const),
       )
 
       if (!cancelled) {
@@ -304,6 +333,9 @@ export function EventCalendarPage() {
     }
 
     void loadDetails().catch((loadError) => {
+      if (loadError && typeof loadError === 'object' && 'name' in loadError && loadError.name === 'AbortError') {
+        return
+      }
       if (!cancelled) {
         setError(loadError instanceof Error ? loadError.message : 'Event detail load failed.')
       }
@@ -311,6 +343,7 @@ export function EventCalendarPage() {
 
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [eventDetails, monthResult, selectedEvents])
 
@@ -443,7 +476,7 @@ export function EventCalendarPage() {
           detailExpanded={detailExpanded}
           detailIsDragging={detailIsDragging}
           detailRef={detailRef}
-          eventDetails={eventDetails}
+          eventDetails={selectedEventDetails}
           isDetailExpanded={isDetailExpanded}
           selectedDate={selectedDate}
           selectedEvents={selectedEvents}
