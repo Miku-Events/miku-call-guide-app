@@ -1,36 +1,205 @@
-name: Deploy Web App to Cloudflare Pages
+name: Quality and manual production release
 
 on:
+  pull_request:
   push:
     branches:
       - main
-  workflow_dispatch: # GitHub Actions 대시보드에서 수동 실행(Run workflow) 버튼을 제공합니다.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  quality:
+    name: Quality and build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 24
-          cache: 'npm'
+          node-version-file: .node-version
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build frontend React app
-        run: npm run build
+      - name: Configure frontend build
+        shell: bash
         env:
-          VITE_DATA_MANIFEST_URL: ${{ secrets.VITE_DATA_MANIFEST_URL }}
-          VITE_CLOUDFLARE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
+          PRODUCTION_APP_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
+          PRODUCTION_DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
+          PRODUCTION_SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
+          PRODUCTION_TURNSTILE_SITE_KEY: ${{ vars.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY || secrets.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
+        run: |
+          echo "VITE_RELEASE_ID=$GITHUB_SHA" >> "$GITHUB_ENV"
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            {
+              echo "VITE_APP_ORIGIN=http://127.0.0.1:4173"
+              echo "VITE_DATA_MANIFEST_URL=https://example.test/manifest.json"
+              echo "VITE_SUBMISSION_API_URL=http://127.0.0.1:4173"
+              echo "VITE_CLOUDFLARE_TURNSTILE_SITE_KEY=1x00000000000000000000AA"
+            } >> "$GITHUB_ENV"
+            exit 0
+          fi
 
-      - name: Publish to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3 # 🌟 최신 공식 wrangler-action@v3로 교체
+          node scripts/validate-production-build-env.mjs >> "$GITHUB_ENV"
+
+      - name: Run quality checks and build
+        run: npm run check
+
+      - name: Audit production dependencies
+        run: npm audit --audit-level=high
+
+      - name: Upload built app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e:
+    name: Built-artifact E2E
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download built app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E against built app
+        run: npm run test:e2e:ci
+
+  preview:
+    name: Deploy and browser-smoke enforced-CSP preview
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs:
+      - quality
+      - e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download tested app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist
+
+      - name: Verify enforced-CSP artifact
+        shell: bash
+        run: |
+          test -f dist/index.html
+          grep -q '^  Content-Security-Policy:' dist/_headers
+          ! grep -q 'Content-Security-Policy-Report-Only:' dist/_headers
+
+      - name: Publish enforced-CSP Pages preview
+        id: preview
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=miku-call-guide-app --branch=main # 🌟 표준 배포 명령어로 현대화
+          command: pages deploy dist --project-name=miku-call-guide-app --branch=release-preview-${{ github.sha }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser-smoke enforced-CSP preview
+        env:
+          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
+          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
+          EXPECTED_RELEASE_ID: ${{ github.sha }}
+          PREVIEW_SMOKE_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
+          SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
+        run: npm run smoke:preview
+
+  deploy:
+    name: Deploy production artifact
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+
+      - name: Download tested app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist
+
+      - name: Verify artifact
+        shell: bash
+        run: |
+          test -f dist/index.html
+          grep -q '^  Content-Security-Policy:' dist/_headers
+          ! grep -q 'Content-Security-Policy-Report-Only:' dist/_headers
+
+      - name: Publish to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=miku-call-guide-app --branch=main
+
+      - name: Smoke deployed app and data
+        env:
+          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
+          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
+          DEPLOYMENT_SMOKE_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}
+          EXPECTED_RELEASE_ID: ${{ github.sha }}
+          SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
+        run: npm run smoke:deploy

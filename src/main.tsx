@@ -5,6 +5,7 @@ import { HashRouter, Link } from 'react-router-dom'
 import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 import { LinkProvider } from '@astryxdesign/core/Link'
+import { HashRouterSkipLinkGuard } from './shared/layout/HashRouterSkipLinkGuard'
 import './index.css'
 import App from './App.tsx'
 
@@ -29,7 +30,9 @@ function Root() {
     <Theme theme={neutralTheme} mode={mode}>
       <LinkProvider component={RouterLink as any}>
         <HashRouter>
-          <App />
+          <HashRouterSkipLinkGuard>
+            <App />
+          </HashRouterSkipLinkGuard>
         </HashRouter>
       </LinkProvider>
     </Theme>

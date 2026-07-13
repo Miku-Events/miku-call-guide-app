@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { arrowForCall, fallbackAnchorPercent, localizedText, normalizedCallKind } from './callPositioning'
+import { localizedText } from '../../shared/i18n/localizedText'
+import { arrowForCall, fallbackAnchorPercent, normalizedCallKind } from './callPositioning'
 import type { RenderableCall } from './callPositioning'
 
 interface MarkerPosition {

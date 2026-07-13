@@ -5,6 +5,7 @@ import { LyricList } from './LyricList'
 
 const song: SongGuide = {
   schemaVersion: 1,
+  dataVersion: 'v1',
   id: 'sample-song',
   status: 'published',
   metadata: {
