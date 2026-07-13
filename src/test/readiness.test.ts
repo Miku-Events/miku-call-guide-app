@@ -18,7 +18,6 @@ async function productionEnvironment(privateKey = pkcs8PrivateKeyPem) {
     APP_ENV: 'production',
     APP_ORIGIN,
     CLOUDFLARE_TURNSTILE_SECRET_KEY: '0x4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-    CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED: 'true',
     GITHUB_APP_ID: '123456',
     GITHUB_APP_INSTALLATION_ID: '987654',
     GITHUB_APP_PRIVATE_KEY: privateKey,
@@ -130,6 +129,17 @@ describe('production readiness endpoint', () => {
     expect(await response.json()).toEqual({ ready: true })
   })
 
+  it('reports ready without a rate-limit attestation when the remaining production configuration is complete', async () => {
+    const environment = await productionEnvironment()
+    expect('CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED' in environment).toBe(false)
+
+    const response = await requestReadiness(environment)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get(READINESS_CONTRACT_HEADER)).toBe(READINESS_CONTRACT_VERSION)
+    expect(await response.json()).toEqual({ ready: true })
+  })
+
   it('rejects a different canonical APP_ORIGIN even when its Turnstile hostname matches', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const response = await requestReadiness({
@@ -214,7 +224,6 @@ describe('production readiness endpoint', () => {
   it.each([
     'APP_ORIGIN',
     'CLOUDFLARE_TURNSTILE_SECRET_KEY',
-    'CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED',
     'GITHUB_APP_ID',
     'GITHUB_APP_INSTALLATION_ID',
     'GITHUB_APP_PRIVATE_KEY',
@@ -247,7 +256,6 @@ describe('production readiness endpoint', () => {
     ['a non-origin APP_ORIGIN', { APP_ORIGIN: 'https://miku-call-guide-app.pages.dev/path' }],
     ['an origin/Turnstile hostname mismatch', { TURNSTILE_EXPECTED_HOSTNAME: 'other.miku-events.dev' }],
     ['an invalid private key', { GITHUB_APP_PRIVATE_KEY: 'not-a-private-key' }],
-    ['an unconfirmed edge rate limit', { CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED: 'false' }],
   ])('fails closed for %s', async (_label, override) => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const response = await requestReadiness({

@@ -44,6 +44,15 @@ describe('static Cloudflare Pages headers', () => {
     expect(headers).toContain('https://fonts.gstatic.com')
   })
 
+  it('allows the Cloudflare Web Analytics beacon and collection endpoint', () => {
+    const headers = generateStaticHeaders(environment)
+
+    expect(directive(headers, 'script-src'))
+      .toContain('https://static.cloudflareinsights.com')
+    expect(directive(headers, 'connect-src'))
+      .toContain('https://cloudflareinsights.com')
+  })
+
   it('emits the required static response security headers', () => {
     const headers = generateStaticHeaders(environment)
 
