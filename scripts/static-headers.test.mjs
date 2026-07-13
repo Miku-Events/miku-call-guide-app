@@ -59,14 +59,14 @@ describe('static Cloudflare Pages headers', () => {
     expect(headers).not.toContain('Content-Security-Policy-Report-Only:')
   })
 
-  it('uses report-only CSP only for preview artifacts', () => {
+  it('keeps CSP enforced for preview environments', () => {
     const headers = generateStaticHeaders({
       ...environment,
-      VITE_CSP_MODE: 'preview',
+      APP_ENV: 'preview',
     })
 
-    expect(headers).toContain('Content-Security-Policy-Report-Only:')
-    expect(headers).not.toMatch(/\n\s+Content-Security-Policy:/)
+    expect(headers).toContain('Content-Security-Policy:')
+    expect(headers).not.toContain('Content-Security-Policy-Report-Only:')
     expect(headers).toContain('Strict-Transport-Security: max-age=31536000')
     expect(headers).toContain('X-Content-Type-Options: nosniff')
     expect(headers).toContain('Referrer-Policy: strict-origin-when-cross-origin')

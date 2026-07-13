@@ -9,6 +9,7 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
+    "dev:local": "vite --host 127.0.0.1 --port 4173",
     "build": "tsc -b && vite build",
     "bundle:check": "node scripts/bundle-budget.mjs",
     "contracts:sync": "node scripts/sync-data-contracts.mjs",
@@ -21,7 +22,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test --config=playwright.ci.config.ts",
-    "smoke:deploy": "node scripts/post-deploy-smoke.mjs"
+    "smoke:deploy": "node scripts/post-deploy-smoke.mjs",
+    "smoke:preview": "node scripts/preview-browser-smoke.mjs"
   },
   "dependencies": {
     "@astryxdesign/core": "^0.1.3",

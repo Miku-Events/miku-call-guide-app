@@ -1,24 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { assertNoBrowserSecurityErrors } from './preview-browser-smoke.mjs'
+import {
+  assertNoBrowserSecurityErrors,
+  formatPreviewSmokeReport,
+  PREVIEW_ROUTES,
+} from './preview-browser-smoke.mjs'
 
 describe('preview browser smoke diagnostics', () => {
-  it('accepts a browser run without CSP, console, or page errors', () => {
+  it('visits the catalog, events, and representative song routes', () => {
+    expect(PREVIEW_ROUTES).toEqual(['/', '/#/events', '/#/songs/39-music'])
+  })
+
+  it('records console diagnostics without treating them as promotion failures', () => {
     expect(() => assertNoBrowserSecurityErrors({
-      consoleErrors: [],
+      consoleErrors: ['recoverable third-party diagnostic'],
       cspViolations: [],
       pageErrors: [],
     })).not.toThrow()
+  })
+
+  it('includes console diagnostics in the CLI report', () => {
+    const report = formatPreviewSmokeReport({
+      callbackUrl: 'https://app.example/api/auth/github/callback',
+      consoleDiagnostics: [{ type: 'warning', text: 'third-party warning' }],
+      previewOrigin: 'https://preview.pages.dev',
+      releaseId: 'a'.repeat(40),
+      routes: PREVIEW_ROUTES,
+    })
+
+    expect(report).toContain('console diagnostics: 1')
+    expect(report).toContain('[warning] third-party warning')
   })
 
   it.each([
     ['CSP violations', {
       consoleErrors: [],
       cspViolations: [{ blockedURI: 'https://static.cloudflareinsights.com/beacon.min.js' }],
-      pageErrors: [],
-    }],
-    ['console errors', {
-      consoleErrors: ['Refused to execute script'],
-      cspViolations: [],
       pageErrors: [],
     }],
     ['page errors', {

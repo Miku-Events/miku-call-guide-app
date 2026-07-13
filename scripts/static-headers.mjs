@@ -82,15 +82,9 @@ export function generateStaticHeaders(environment) {
     joinDirective('form-action', ["'self'", appOrigin]),
     "manifest-src 'self'",
   ].join('; ')
-  const contentSecurityPolicyHeader = (
-    environment.VITE_CSP_MODE === 'preview' || environment.APP_ENV === 'preview'
-  )
-    ? 'Content-Security-Policy-Report-Only'
-    : 'Content-Security-Policy'
-
   return [
     '/*',
-    `  ${contentSecurityPolicyHeader}: ${contentSecurityPolicy}`,
+    `  Content-Security-Policy: ${contentSecurityPolicy}`,
     '  Strict-Transport-Security: max-age=31536000',
     '  X-Content-Type-Options: nosniff',
     '  Referrer-Policy: strict-origin-when-cross-origin',

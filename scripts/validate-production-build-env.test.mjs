@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { validateProductionBuildEnv } from './validate-production-build-env.mjs'
 
 const validEnvironment = {
-  appOrigin: 'https://app.miku-events.dev',
-  dataManifestUrl: 'https://data.miku-events.dev/manifest.json',
+  appOrigin: 'https://miku-call-guide-app.pages.dev',
+  dataManifestUrl: 'https://miku-call-guide-data.pages.dev/manifest.json',
   submissionApiUrl: 'https://miku-call-guide.pages.dev',
   turnstileSiteKey: '0x4AAAAAAABbCcDdEeFfGgHh',
 }
@@ -94,16 +94,38 @@ describe('validateProductionBuildEnv', () => {
     })).toThrow('VITE_CLOUDFLARE_TURNSTILE_SITE_KEY cannot contain YOUR_')
   })
 
+  it('rejects a valid HTTPS app origin other than the fixed production origin', () => {
+    expect(() => validateProductionBuildEnv({
+      ...validEnvironment,
+      appOrigin: 'https://alternate-miku-call-guide-app.pages.dev',
+    })).toThrow(
+      'VITE_APP_ORIGIN must equal https://miku-call-guide-app.pages.dev',
+    )
+  })
+
   it.each([
-    ['a trailing slash', 'https://app.miku-events.dev/'],
-    ['an uppercase hostname', 'https://APP.MIKU-EVENTS.DEV'],
-    ['an explicit default HTTPS port', 'https://app.miku-events.dev:443'],
-    ['leading whitespace', ' https://app.miku-events.dev'],
-    ['trailing whitespace', 'https://app.miku-events.dev '],
-    ['a path', 'https://app.miku-events.dev/app'],
-    ['a query', 'https://app.miku-events.dev?source=deploy'],
-    ['a fragment', 'https://app.miku-events.dev#app'],
-    ['userinfo', 'https://user@app.miku-events.dev'],
+    'https://alternate-miku-call-guide-data.pages.dev/manifest.json',
+    'https://miku-call-guide-data.pages.dev/manifest.json ',
+    'https://miku-call-guide-data.pages.dev/manifest.json?version=latest',
+  ])('rejects data URL %s instead of the exact production manifest', (dataManifestUrl) => {
+    expect(() => validateProductionBuildEnv({
+      ...validEnvironment,
+      dataManifestUrl,
+    })).toThrow(
+      'VITE_DATA_MANIFEST_URL must equal https://miku-call-guide-data.pages.dev/manifest.json',
+    )
+  })
+
+  it.each([
+    ['a trailing slash', 'https://miku-call-guide-app.pages.dev/'],
+    ['an uppercase hostname', 'https://MIKU-CALL-GUIDE-APP.PAGES.DEV'],
+    ['an explicit default HTTPS port', 'https://miku-call-guide-app.pages.dev:443'],
+    ['leading whitespace', ' https://miku-call-guide-app.pages.dev'],
+    ['trailing whitespace', 'https://miku-call-guide-app.pages.dev '],
+    ['a path', 'https://miku-call-guide-app.pages.dev/app'],
+    ['a query', 'https://miku-call-guide-app.pages.dev?source=deploy'],
+    ['a fragment', 'https://miku-call-guide-app.pages.dev#app'],
+    ['userinfo', 'https://user@miku-call-guide-app.pages.dev'],
   ])('rejects %s in VITE_APP_ORIGIN before building', (_label, appOrigin) => {
     expect(() => validateProductionBuildEnv({
       ...validEnvironment,
@@ -135,15 +157,8 @@ describe('validateProductionBuildEnv', () => {
     )
   })
 
-  it('accepts plausible HTTPS production values', () => {
+  it('accepts the fixed production values and an optional submission origin', () => {
     expect(validateProductionBuildEnv(validEnvironment)).toEqual(validEnvironment)
-    expect(validateProductionBuildEnv({
-      ...validEnvironment,
-      appOrigin: 'https://app.miku-events.dev:8443',
-    })).toEqual({
-      ...validEnvironment,
-      appOrigin: 'https://app.miku-events.dev:8443',
-    })
     expect(validateProductionBuildEnv({
       ...validEnvironment,
       submissionApiUrl: '',
