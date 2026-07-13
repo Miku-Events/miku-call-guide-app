@@ -74,9 +74,15 @@ describe('production deployment workflow', () => {
 
   it('publishes without a current-production readiness preflight or bootstrap bypass', async () => {
     const workflow = await deploymentWorkflow()
+    const reconcile = workflow.indexOf('name: Reconcile legacy Pages runtime binding')
     const publish = workflow.indexOf('name: Publish to Cloudflare Pages')
 
+    expect(reconcile).toBeGreaterThan(-1)
     expect(publish).toBeGreaterThan(-1)
+    expect(reconcile).toBeLessThan(publish)
+    expect(workflow).toContain('node scripts/reconcile-pages-config.mjs')
+    expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}')
+    expect(workflow).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}')
     expect(workflow).not.toContain('pre-deploy-readiness.mjs')
     expect(workflow).not.toContain('READINESS_BOOTSTRAP_MODE')
   })
