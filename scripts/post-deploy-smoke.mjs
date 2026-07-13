@@ -4,6 +4,8 @@ import { canonicalProductionOrigin } from '../api/_production-hostname.js'
 
 const DEFAULT_ATTEMPTS = 3
 const DEFAULT_RETRY_DELAY_MS = 500
+const DEFAULT_SMOKE_ATTEMPTS = 8
+const DEFAULT_SMOKE_RETRY_DELAY_MS = 5_000
 const DEFAULT_TIMEOUT_MS = 8_000
 const MINIMUM_HSTS_MAX_AGE_SECONDS = 31_536_000
 const MINIMUM_OG_IMAGE_BYTES = 10_000
@@ -155,6 +157,24 @@ export async function fetchWithRetry(url, {
 
   const detail = lastError instanceof Error ? lastError.message : String(lastError)
   throw new Error(`Request to ${url} failed after ${attempts} attempts: ${detail}`)
+}
+
+async function retryCheck(check, { attempts, retryDelayMs }) {
+  if (!Number.isSafeInteger(attempts) || attempts < 1) {
+    throw new Error('attempts must be at least 1')
+  }
+  let lastError
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await check()
+    } catch (error) {
+      lastError = error
+    }
+    if (attempt < attempts && retryDelayMs > 0) {
+      await wait(retryDelayMs)
+    }
+  }
+  throw lastError
 }
 
 function assertStatus(response, expected, label) {
@@ -432,8 +452,8 @@ export async function runPostDeploySmoke({
   expectedReleaseId,
   submissionApiUrl,
   fetchImpl = globalThis.fetch,
-  attempts = DEFAULT_ATTEMPTS,
-  retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+  attempts = DEFAULT_SMOKE_ATTEMPTS,
+  retryDelayMs = DEFAULT_SMOKE_RETRY_DELAY_MS,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
   const normalizedOrigin = requiredAppOrigin(appOrigin, 'APP_SMOKE_ORIGIN')
@@ -447,42 +467,49 @@ export async function runPostDeploySmoke({
     : ''
   const normalizedReleaseId = requiredReleaseId(expectedReleaseId)
   const canonicalUrl = `${normalizedOrigin}/`
-  const requestOptions = { attempts, fetchImpl, retryDelayMs, timeoutMs }
+  const requestOptions = { attempts: 1, fetchImpl, retryDelayMs: 0, timeoutMs }
+  const retryOptions = { attempts, retryDelayMs }
   const cspContext = {
     appOrigin: normalizedOrigin,
     dataOrigin: new URL(normalizedManifestUrl).origin,
     submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
   }
 
-  const deployment = await checkAppSurface(
+  const deployment = await retryCheck(() => checkAppSurface(
     normalizedDeploymentOrigin,
     'Deployment',
     canonicalUrl,
     normalizedReleaseId,
     cspContext,
     requestOptions,
-  )
-  const app = await checkAppSurface(
+  ), retryOptions)
+  const app = await retryCheck(() => checkAppSurface(
     normalizedOrigin,
     'Canonical app',
     canonicalUrl,
     normalizedReleaseId,
     cspContext,
     requestOptions,
-  )
+  ), retryOptions)
 
-  const ogImageResponse = await fetchWithRetry(`${normalizedOrigin}/og-image.png`, requestOptions)
-  assertStatus(ogImageResponse, [200], 'OG image')
-  const imageType = (ogImageResponse.headers.get('content-type') || '').toLowerCase()
-  if (!imageType.startsWith('image/')) throw new Error('OG image must return an image content-type')
-  const imageBytes = (await ogImageResponse.arrayBuffer()).byteLength
-  if (imageBytes < MINIMUM_OG_IMAGE_BYTES) {
-    throw new Error(`OG image is too small (${imageBytes} bytes; expected at least ${MINIMUM_OG_IMAGE_BYTES})`)
-  }
+  const ogImage = await retryCheck(async () => {
+    const response = await fetchWithRetry(`${normalizedOrigin}/og-image.png`, requestOptions)
+    assertStatus(response, [200], 'OG image')
+    const imageType = (response.headers.get('content-type') || '').toLowerCase()
+    if (!imageType.startsWith('image/')) throw new Error('OG image must return an image content-type')
+    const bytes = (await response.arrayBuffer()).byteLength
+    if (bytes < MINIMUM_OG_IMAGE_BYTES) {
+      throw new Error(`OG image is too small (${bytes} bytes; expected at least ${MINIMUM_OG_IMAGE_BYTES})`)
+    }
+    return { bytes, status: response.status }
+  }, retryOptions)
 
-  const manifestResponse = await fetchWithRetry(normalizedManifestUrl, requestOptions)
-  assertStatus(manifestResponse, [200], 'Data manifest')
-  const manifest = validateManifest(await readJsonObject(manifestResponse, 'Data manifest'))
+  const data = await retryCheck(async () => {
+    const response = await fetchWithRetry(normalizedManifestUrl, requestOptions)
+    assertStatus(response, [200], 'Data manifest')
+    const manifest = validateManifest(await readJsonObject(response, 'Data manifest'))
+    return { manifest, status: response.status }
+  }, retryOptions)
 
   return {
     app: {
@@ -491,9 +518,9 @@ export async function runPostDeploySmoke({
       status: app.status,
     },
     data: {
-      dataVersion: manifest.dataVersion,
-      schemaVersion: manifest.schemaVersion,
-      status: manifestResponse.status,
+      dataVersion: data.manifest.dataVersion,
+      schemaVersion: data.manifest.schemaVersion,
+      status: data.status,
     },
     deployment: {
       origin: normalizedDeploymentOrigin,
@@ -504,7 +531,7 @@ export async function runPostDeploySmoke({
       canonical: app.readiness,
       deployment: deployment.readiness,
     },
-    ogImage: { bytes: imageBytes, status: ogImageResponse.status },
+    ogImage,
   }
 }
 
