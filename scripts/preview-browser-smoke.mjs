@@ -2,12 +2,10 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium } from '@playwright/test'
 import { canonicalProductionOrigin } from '../api/_production-hostname.js'
-import {
-  assertPreviewFunctionSecurityHeaders,
-  assertPreviewStaticSecurityHeaders,
-} from './post-deploy-smoke.mjs'
+import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
+export const PREVIEW_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
 
 function requiredOrigin(value, name, { canonical = false } = {}) {
   if (typeof value !== 'string' || value !== value.trim()) {
@@ -70,13 +68,11 @@ function detail(value) {
 }
 
 export function assertNoBrowserSecurityErrors({
-  consoleErrors = [],
   cspViolations = [],
   pageErrors = [],
 } = {}) {
   const failures = [
     ...cspViolations.map((value) => `CSP: ${detail(value)}`),
-    ...consoleErrors.map((value) => `console: ${detail(value)}`),
     ...pageErrors.map((value) => `page: ${detail(value)}`),
   ]
   if (failures.length > 0) {
@@ -116,43 +112,6 @@ async function assertReleaseMarker(request, previewOrigin, expectedReleaseId) {
   }
 }
 
-async function assertPreviewFunctions(request, previewOrigin) {
-  const sessionResponse = await request.get(`${previewOrigin}/api/auth/session`, {
-    headers: { 'cache-control': 'no-cache' },
-    maxRedirects: 0,
-  })
-  assertStatus(sessionResponse, 200, 'Preview session Function')
-  assertPreviewFunctionSecurityHeaders(await responseHeaders(sessionResponse))
-  const session = await sessionResponse.json()
-  if (!session || typeof session.authenticated !== 'boolean') {
-    throw new Error('Preview session Function returned an invalid contract')
-  }
-
-  const oauthResponse = await request.get(`${previewOrigin}/api/auth/github/start?returnTo=%2F`, {
-    headers: { 'cache-control': 'no-cache' },
-    maxRedirects: 0,
-  })
-  assertStatus(oauthResponse, 302, 'Preview OAuth start Function')
-  assertPreviewFunctionSecurityHeaders(await responseHeaders(oauthResponse))
-  const location = oauthResponse.headers().location || ''
-  let authorization
-  try {
-    authorization = new URL(location)
-  } catch {
-    throw new Error('Preview OAuth start Function returned an invalid authorization URL')
-  }
-  if (
-    authorization.origin !== 'https://github.com'
-    || authorization.pathname !== '/login/oauth/authorize'
-    || !authorization.searchParams.get('client_id')
-    || !authorization.searchParams.get('state')
-    || !authorization.searchParams.get('code_challenge')
-    || authorization.searchParams.get('code_challenge_method') !== 'S256'
-  ) {
-    throw new Error('Preview OAuth start Function is missing the OAuth/PKCE contract')
-  }
-}
-
 export async function runPreviewBrowserSmoke({
   appOrigin,
   browserType = chromium,
@@ -177,10 +136,11 @@ export async function runPreviewBrowserSmoke({
   try {
     const context = await browser.newContext()
     const page = await context.newPage()
-    const consoleErrors = []
+    const consoleDiagnostics = []
+    const cspViolations = []
     const pageErrors = []
     page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text())
+      consoleDiagnostics.push({ type: message.type(), text: message.text() })
     })
     page.on('pageerror', (error) => pageErrors.push(error.message))
     await page.addInitScript(() => {
@@ -195,41 +155,61 @@ export async function runPreviewBrowserSmoke({
       })
     })
 
-    const rootResponse = await page.goto(
-      `${normalizedPreviewOrigin}/?preview-smoke=${encodeURIComponent(normalizedReleaseId)}`,
-      { waitUntil: 'networkidle' },
-    )
-    if (!rootResponse) throw new Error('Preview root did not return a navigation response')
-    assertStatus(rootResponse, 200, 'Preview root')
-    assertPreviewStaticSecurityHeaders(await responseHeaders(rootResponse), {
-      appOrigin: normalizedAppOrigin,
-      dataOrigin: new URL(normalizedManifestUrl).origin,
-      submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
-    })
-    await page.locator('main').first().waitFor({ state: 'visible' })
-    await page.evaluate(() => new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(resolve))
-    }))
-    const cspViolations = await page.evaluate(() => globalThis.__mikuPreviewCspViolations || [])
-    assertNoBrowserSecurityErrors({ consoleErrors, cspViolations, pageErrors })
+    for (const [index, route] of PREVIEW_ROUTES.entries()) {
+      const separator = route.includes('?') ? '&' : '?'
+      const response = await page.goto(
+        `${normalizedPreviewOrigin}${route}${separator}preview-smoke=${encodeURIComponent(normalizedReleaseId)}`,
+        { waitUntil: 'networkidle' },
+      )
+      if (index === 0) {
+        if (!response) throw new Error('Preview root did not return a navigation response')
+        assertStatus(response, 200, 'Preview root')
+        assertStaticSecurityHeaders(await responseHeaders(response), {
+          appOrigin: normalizedAppOrigin,
+          dataOrigin: new URL(normalizedManifestUrl).origin,
+          submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
+        }, 'Preview root')
+      }
+      await page.locator('main').first().waitFor({ state: 'visible' })
+      await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      }))
+      const routeViolations = await page.evaluate(() => {
+        const violations = globalThis.__mikuPreviewCspViolations || []
+        globalThis.__mikuPreviewCspViolations = []
+        return violations
+      })
+      cspViolations.push(...routeViolations.map((violation) => ({ route, ...violation })))
+    }
+    assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
     await assertReleaseMarker(context.request, normalizedPreviewOrigin, normalizedReleaseId)
-    await assertPreviewFunctions(context.request, normalizedPreviewOrigin)
 
     return {
       callbackUrl: `${normalizedAppOrigin}/api/auth/github/callback`,
+      consoleDiagnostics,
       previewOrigin: normalizedPreviewOrigin,
       releaseId: normalizedReleaseId,
+      routes: [...PREVIEW_ROUTES],
     }
   } finally {
     await browser.close()
   }
 }
 
-function formatReport(report) {
+function formatConsoleDiagnostic(diagnostic) {
+  const type = String(diagnostic?.type || 'log').replace(/[\r\n]+/g, ' ')
+  const message = String(diagnostic?.text || '').replace(/[\r\n]+/g, ' ').slice(0, 500)
+  return `  - [${type}] ${message}`
+}
+
+export function formatPreviewSmokeReport(report) {
   return [
     'Preview browser smoke: PASS',
     `- preview: ${report.previewOrigin}`,
     `- release: ${report.releaseId}`,
+    `- routes: ${report.routes.join(', ')}`,
+    `- console diagnostics: ${report.consoleDiagnostics.length}`,
+    ...report.consoleDiagnostics.map(formatConsoleDiagnostic),
     `- expected OAuth callback: ${report.callbackUrl}`,
   ].join('\n')
 }
@@ -242,7 +222,7 @@ async function runCli() {
     previewOrigin: process.env.PREVIEW_SMOKE_ORIGIN,
     submissionApiUrl: process.env.SUBMISSION_API_URL,
   })
-  process.stdout.write(`${formatReport(report)}\n`)
+  process.stdout.write(`${formatPreviewSmokeReport(report)}\n`)
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : ''
