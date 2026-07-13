@@ -310,7 +310,7 @@ export function EventSubmitDialog({
                   rows={4}
                 />
                 <div className="mt-4 flex flex-col gap-4">
-                  <TurnstileWidget onVerify={setTurnstileToken} />
+                  <TurnstileWidget action="event_submit" onVerify={setTurnstileToken} />
                   <Button
                     label="PR 요청"
                     icon={<Send size={16} aria-hidden="true" />}
@@ -351,7 +351,7 @@ export function EventSubmitDialog({
                   isOptional
                 />
                 <div className="mt-4 flex flex-col gap-4">
-                  <TurnstileWidget onVerify={setTurnstileToken} />
+                  <TurnstileWidget action="event_edit" onVerify={setTurnstileToken} />
                   <Button
                     label="Issue 생성"
                     icon={<Send size={16} aria-hidden="true" />}

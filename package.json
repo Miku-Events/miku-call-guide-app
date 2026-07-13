@@ -3,14 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=24.11.1 <25"
+  },
   "scripts": {
     "start": "vite",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:ci": "playwright test --config=playwright.ci.config.ts"
   },
   "dependencies": {
     "@astryxdesign/core": "^0.1.3",

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 
+export type TurnstileAction = 'event_submit' | 'event_edit'
+
 declare global {
   interface Window {
     onloadTurnstileCallback?: () => void
@@ -8,6 +10,7 @@ declare global {
         container: string | HTMLElement,
         options: {
           sitekey: string
+          action: TurnstileAction
           callback: (token: string) => void
           'expired-callback'?: () => void
           'error-callback'?: () => void
@@ -21,18 +24,30 @@ declare global {
 }
 
 interface TurnstileWidgetProps {
+  action: TurnstileAction
   onVerify: (token: string | null) => void
   theme?: 'light' | 'dark' | 'auto'
 }
 
-const DEFAULT_SITE_KEY = '1x00000000000000000000AA' // Cloudflare 공식 무조건 성공 테스트 키
+const DEFAULT_DEV_SITE_KEY = '1x00000000000000000000AA'
 
-export function TurnstileWidget({ onVerify, theme = 'dark' }: TurnstileWidgetProps) {
+function resolveTurnstileSiteKey(siteKey: string | undefined, isDevelopment: boolean) {
+  const configuredSiteKey = siteKey?.trim()
+  if (configuredSiteKey) return configuredSiteKey
+  return isDevelopment ? DEFAULT_DEV_SITE_KEY : null
+}
+
+export function TurnstileWidget({ action, onVerify, theme = 'dark' }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetIdRef = useRef<string | null>(null)
+  const siteKey = resolveTurnstileSiteKey(
+    import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY,
+    import.meta.env.DEV,
+  )
 
   useEffect(() => {
-    const siteKey = import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY || DEFAULT_SITE_KEY
+    if (!siteKey) return
+
     let isMounted = true
 
     const initializeWidget = () => {
@@ -45,6 +60,7 @@ export function TurnstileWidget({ onVerify, theme = 'dark' }: TurnstileWidgetPro
 
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
+          action,
           theme,
           callback: (token) => {
             if (isMounted) onVerify(token)
@@ -83,7 +99,19 @@ export function TurnstileWidget({ onVerify, theme = 'dark' }: TurnstileWidgetPro
         window.turnstile.remove(widgetIdRef.current)
       }
     }
-  }, [onVerify, theme])
+  }, [action, onVerify, siteKey, theme])
+
+  if (!siteKey) {
+    return (
+      <div
+        role="alert"
+        className="turnstile-container-wrapper"
+        style={{ minHeight: '65px' }}
+      >
+        보안 검증 설정 오류: Turnstile 사이트 키가 설정되지 않았습니다.
+      </div>
+    )
+  }
 
   return <div ref={containerRef} className="turnstile-container-wrapper" style={{ minHeight: '65px' }} />
 }

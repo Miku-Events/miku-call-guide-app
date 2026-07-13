@@ -148,6 +148,7 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
       return
     }
 
+    const wrapper = wrapperRef.current
     let intervalId = 0
     let disposed = false
 
@@ -156,11 +157,11 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
         return
       }
 
-      if (wrapperRef.current) {
-        wrapperRef.current.innerHTML = ''
+      if (wrapper) {
+        wrapper.innerHTML = ''
         const container = document.createElement('div')
         container.id = playerId
-        wrapperRef.current.appendChild(container)
+        wrapper.appendChild(container)
       }
 
       playerRef.current = new window.YT.Player(playerId, {
@@ -190,8 +191,8 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
       window.clearInterval(intervalId)
       playerRef.current?.destroy()
       playerRef.current = null
-      if (wrapperRef.current) {
-        wrapperRef.current.innerHTML = ''
+      if (wrapper) {
+        wrapper.innerHTML = ''
       }
     }
   }, [initialTimeMs, mock, onTimeUpdate, playerId, videoId])
