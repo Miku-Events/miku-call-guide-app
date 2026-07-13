@@ -7,6 +7,10 @@ import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
 export const PREVIEW_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
 
+export function mainLandmarkLocator(page) {
+  return page.getByRole('main')
+}
+
 function requiredOrigin(value, name, { canonical = false } = {}) {
   if (typeof value !== 'string' || value !== value.trim()) {
     throw new Error(`${name} must be an exact HTTPS origin`)
@@ -170,7 +174,7 @@ export async function runPreviewBrowserSmoke({
           submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
         }, 'Preview root')
       }
-      await page.locator('main').first().waitFor({ state: 'visible' })
+      await mainLandmarkLocator(page).waitFor({ state: 'visible' })
       await page.evaluate(() => new Promise((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(resolve))
       }))
