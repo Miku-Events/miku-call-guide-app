@@ -1,20 +1,16 @@
 # 운영 보안 체크리스트
 
-이 문서는 저장소 코드만으로 적용할 수 없는 **외부 운영 설정**을 기록합니다. 아래 항목은 Cloudflare와 GitHub 관리 콘솔에서 운영자가 직접 적용하고, 배포 전 별도 계정으로 재확인해야 합니다. 애플리케이션 내부 rate limiter가 이 설정을 대신하지 않습니다.
+이 문서는 저장소 코드만으로 적용할 수 없는 **외부 운영 설정**을 기록합니다. 아래 항목은 Cloudflare와 GitHub 관리 콘솔에서 운영자가 직접 적용하고, 배포 전 별도 계정으로 재확인해야 합니다.
 
-## 1. Cloudflare 쓰기 API rate limiting
+## 1. Cloudflare Dashboard 보호 범위
 
-- [ ] Cloudflare WAF의 단일 rate limiting rule에 아래 두 POST 경로를 함께 넣습니다. 반드시 한 규칙으로 합산해야 합니다.
-  - 정확히 `/api/events/submissions`
-  - `/api/events/*/edit-requests` (`*`는 한 개의 event id path segment)
-- [ ] 집계 키는 클라이언트 IP로 설정합니다.
-- [ ] 임계값은 **10분 동안 합산 10회**로 설정합니다.
-- [ ] 초과 동작은 **30분 Block**으로 설정합니다.
-- [ ] 정상 요청 10회, 11번째 요청의 차단, 30분 뒤 복구를 preview에서 검증합니다.
-- [ ] Cloudflare edge 차단 응답의 `429`와 Ray ID를 확인하고, Ray ID를 운영 로그의 edge request 식별자로 사용합니다. WAF가 Function보다 먼저 차단하므로 애플리케이션 JSON 응답을 반환한다고 가정하지 않습니다.
-- [ ] 규칙을 실제로 검증한 뒤에만 Pages production 환경 변수 `CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED=true`를 설정합니다. `/api/ready`는 계정 수준 WAF 규칙을 런타임에서 조회할 수 없으므로 이 표식을 운영자 확인 증거로 사용합니다. 규칙을 제거하거나 바꾸기 전에 표식을 먼저 제거합니다.
+- [ ] canonical production origin이 `https://miku-call-guide-app.pages.dev`인지 확인합니다.
+- [ ] `sekai.today` zone의 WAF rule이 `pages.dev` 요청에도 적용된다고 가정하지 않습니다.
+- [ ] 현재 `pages.dev` 구성에는 application rate limiter, Workers Rate Limiting binding, KV, Durable Object 또는 별도 limiter Worker를 추가하지 않습니다.
+- [ ] `CLOUDFLARE_WRITE_RATE_LIMIT_CONFIGURED` 같은 확인 표식만으로 limiter가 존재하는 것처럼 보고하지 않습니다.
+- [ ] Cloudflare의 자동 DDoS 보호, Turnstile 및 Pages Functions 할당량은 각각 별도 보호 계층이며 application rate limit과 동일한 계약으로 설명하지 않습니다.
 
-> 이 규칙은 Cloudflare 계정의 WAF/Rate limiting 기능입니다. `wrangler.toml`이나 Pages Functions 코드가 자동 생성하지 않습니다.
+쓰기 API는 GitHub session, Turnstile action/hostname, JSON content type, 16 KiB body 제한과 입력 길이 제한을 계속 적용합니다. 향후 proxied custom domain을 도입할 때만 해당 zone에서 제공하는 WAF rate limiting을 별도 변경으로 재검토합니다.
 
 ## 2. Turnstile
 
@@ -46,13 +42,13 @@
 
 ## 5. 배포 전후 확인
 
-- [ ] Cloudflare Pages Web Analytics 주입을 production과 preview 모두에서 비활성화합니다. `static.cloudflareinsights.com`은 의도적으로 CSP allowlist에 추가하지 않습니다.
+- [ ] Cloudflare Pages Web Analytics 설정은 유지하고, 정적 CSP는 공식 beacon과 collector origin인 `static.cloudflareinsights.com`, `cloudflareinsights.com`만 허용하는지 확인합니다.
 - [ ] 동일한 artifact의 enforced CSP를 preview와 production에서 사용합니다. preview browser smoke는 `/`, `/#/events`, `/#/songs/39-music`을 순회하며 CSP violation과 page error가 있으면 production 승격을 중단합니다. console 메시지는 진단으로 기록하되 단독 실패 조건으로 사용하지 않습니다.
 - [ ] preview 정적 응답과 production 정적·Function 응답이 모두 `Content-Security-Policy`를 반환하고 `Content-Security-Policy-Report-Only`를 반환하지 않는지 확인합니다.
 - [ ] production artifact의 `dist/_headers`에 wildcard `script-src`와 `'unsafe-eval'`이 없는지 확인합니다.
 - [ ] production 전환 후 OAuth state 불일치·만료·재사용, PKCE 실패, Turnstile action/hostname 불일치, 16 KiB 초과 JSON, GitHub timeout이 모두 표준 JSON 오류와 request ID를 반환하는지 운영 검증합니다. 이 검증은 정적 preview smoke의 범위가 아닙니다.
 - [ ] `/api/auth/logout`이 POST에 204를 반환하고 세션 및 OAuth cookie를 삭제하는지 확인합니다.
-- [ ] `/api/ready`가 production의 `APP_ENV`, 정확한 canonical HTTPS `APP_ORIGIN`, session secret, OAuth/GitHub App 자격 증명, Turnstile secret/hostname, WAF 확인 표식을 검증하고 `x-miku-readiness-contract: runtime-config-v1`과 정확히 `{ "ready": true }`만 반환하는지 확인합니다. 미준비 응답은 값이나 누락된 변수 이름을 공개하지 않는 `{ "error": "service_not_ready", "requestId": "..." }` 503이어야 합니다.
+- [ ] `/api/ready`가 production의 `APP_ENV`, 정확한 canonical HTTPS `APP_ORIGIN`, session secret, OAuth/GitHub App 자격 증명과 Turnstile secret/hostname을 검증하고 `x-miku-readiness-contract: runtime-config-v1`과 정확히 `{ "ready": true }`만 반환하는지 확인합니다. 미준비 응답은 값이나 누락된 변수 이름을 공개하지 않는 `{ "error": "service_not_ready", "requestId": "..." }` 503이어야 합니다.
 - [ ] 빌드 artifact의 `release.json`이 GitHub commit SHA와 일치하는지 확인합니다. 배포 smoke는 Wrangler의 고유 `deployment-url`과 canonical origin에서 이 값을 각각 확인하므로 이전 정상 배포가 새 배포를 대신해 통과할 수 없습니다.
 
 `main` push는 품질 검사만 실행합니다. production 배포는 main의 input 없는 `workflow_dispatch`에서만 시작하며, dispatch된 `github.sha`로 한 번 생성한 artifact를 enforced-CSP preview와 production이 순서대로 공유합니다. preview smoke가 통과한 뒤 production에 배포하고, post-deploy smoke가 고유 deployment URL과 canonical origin의 release marker 및 readiness를 확인합니다. 실패하면 이전 Pages deployment로 rollback합니다. 이 수동 경계를 유지하려면 Cloudflare Pages의 native Git production 자동 배포를 비활성화해야 합니다.
