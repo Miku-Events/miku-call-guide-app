@@ -19,4 +19,14 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['api/**/*.js', 'functions/**/*.js'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.worker,
+      },
+    },
+  },
 ])
