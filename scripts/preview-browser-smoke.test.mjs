@@ -1,13 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   assertNoBrowserSecurityErrors,
   formatPreviewSmokeReport,
+  mainLandmarkLocator,
   PREVIEW_ROUTES,
 } from './preview-browser-smoke.mjs'
 
 describe('preview browser smoke diagnostics', () => {
   it('visits the catalog, events, and representative song routes', () => {
     expect(PREVIEW_ROUTES).toEqual(['/', '/#/events', '/#/songs/39-music'])
+  })
+
+  it('locates the visible semantic main landmark instead of a main element tag', () => {
+    const landmark = { waitFor: vi.fn() }
+    const getByRole = vi.fn(() => landmark)
+
+    expect(mainLandmarkLocator({ getByRole })).toBe(landmark)
+    expect(getByRole).toHaveBeenCalledWith('main')
   })
 
   it('records console diagnostics without treating them as promotion failures', () => {
