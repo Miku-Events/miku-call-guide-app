@@ -38,7 +38,7 @@
 - [ ] `wrangler.toml`을 Pages runtime 변수의 source of truth로 사용합니다. production 배포 preflight는 이전 dashboard 구성에 남은 동명 `APP_ORIGIN` binding만 제거하며 다른 변수나 secret은 변경하지 않습니다.
 - [ ] production `SESSION_SECRET`은 32 UTF-8 bytes 이상의 고유 난수로 생성합니다.
 - [ ] Cloudflare deploy token은 대상 계정 하나와 Pages 배포에 필요한 `Cloudflare Pages: Edit` 권한만 부여합니다. DNS·Workers·다른 계정 권한은 부여하지 않습니다. Cloudflare API token은 개별 Pages project로 resource를 제한할 수 없으므로 project 단위 격리가 필수라면 `miku-call-guide-app` 전용 account를 사용합니다.
-- [ ] GitHub 무료 private 저장소에서는 environment required reviewer를 전제로 하지 않습니다. 한 운영자가 PR을 main에 merge한 뒤 input 없는 `workflow_dispatch`를 main에서 별도로 실행하는 수동 승격 절차를 따릅니다. release ID는 dispatch된 `github.sha`에서 자동 생성합니다.
+- [ ] GitHub 무료 private 저장소에서는 environment required reviewer를 전제로 하지 않습니다. 보호된 `main`에 PR을 merge하면 push workflow가 production 설정을 검증하고 preview smoke 통과 후 자동 승격합니다. 복구나 동일 절차 재실행에는 `main`에서 input 없는 `workflow_dispatch`를 사용합니다. release ID는 실행 대상 `github.sha`에서 자동 생성합니다.
 - [ ] `CLOUDFLARE_API_TOKEN`과 `CLOUDFLARE_ACCOUNT_ID`는 GitHub Actions secret으로, Pages Function의 session/OAuth/GitHub App/Turnstile 값은 Cloudflare Pages production 환경 secret으로 저장합니다.
 
 ## 5. 배포 전후 확인
@@ -52,4 +52,4 @@
 - [ ] `/api/ready`가 production의 `APP_ENV`, 정확한 canonical HTTPS `APP_ORIGIN`, session secret, OAuth/GitHub App 자격 증명과 Turnstile secret/hostname을 검증하고 `x-miku-readiness-contract: runtime-config-v1`과 정확히 `{ "ready": true }`만 반환하는지 확인합니다. 미준비 응답은 값이나 누락된 변수 이름을 공개하지 않는 `{ "error": "service_not_ready", "requestId": "..." }` 503이어야 합니다.
 - [ ] 빌드 artifact의 `release.json`이 GitHub commit SHA와 일치하는지 확인합니다. 배포 smoke는 Wrangler의 고유 `deployment-url`과 canonical origin에서 이 값을 각각 확인하므로 이전 정상 배포가 새 배포를 대신해 통과할 수 없습니다.
 
-`main` push는 품질 검사만 실행합니다. production 배포는 main의 input 없는 `workflow_dispatch`에서만 시작하며, dispatch된 `github.sha`로 한 번 생성한 artifact를 enforced-CSP preview와 production이 순서대로 공유합니다. preview smoke가 통과한 뒤 production에 배포하고, post-deploy smoke가 고유 deployment URL과 canonical origin의 release marker 및 readiness를 확인합니다. 실패하면 이전 Pages deployment로 rollback합니다. 이 수동 경계를 유지하려면 Cloudflare Pages의 native Git production 자동 배포를 비활성화해야 합니다.
+`main` push는 production 설정을 검증한 뒤 한 번 생성한 artifact로 품질 검사와 E2E를 실행하고, 같은 artifact를 enforced-CSP preview와 production이 순서대로 공유합니다. preview smoke가 통과한 뒤 production에 자동 배포하고, post-deploy smoke가 고유 deployment URL과 canonical origin의 release marker 및 readiness를 확인합니다. main의 input 없는 `workflow_dispatch`도 복구를 위해 같은 절차를 재실행합니다. 실패하면 이전 Pages deployment로 rollback합니다. 중복 배포와 경합을 막기 위해 Cloudflare Pages의 native Git production 자동 배포는 비활성화해야 합니다.

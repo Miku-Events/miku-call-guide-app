@@ -141,13 +141,13 @@ npm run test:e2e:ci
 
 ### 3. CI 및 배포
 
-GitHub Actions는 저장소에 vendoring된 생성 계약과 `data-contracts.lock.json`의 파일 hash를 먼저 검증합니다. lock의 데이터 저장소 commit은 생성물의 provenance 기록이며 CI checkout 지시가 아닙니다. 이어서 `npm run check`와 high-severity 의존성 감사를 통과한 `dist`를 한 번만 artifact로 생성합니다. Playwright E2E, enforced-CSP Pages preview, production 배포가 이 동일 artifact와 `github.sha`를 사용합니다. 빌드에는 `GITHUB_SHA` 기반 `release.json`이 포함됩니다. 배포 후 smoke는 Wrangler가 반환한 고유 deployment URL과 canonical origin 양쪽에서 동일 release ID, 엄격한 CSP/HSTS/nosniff/Referrer/Permissions 헤더, OG 이미지, manifest, `runtime-config-v1` JSON readiness Function을 확인합니다.
+GitHub Actions는 저장소에 vendoring된 생성 계약과 `data-contracts.lock.json`의 파일 hash를 먼저 검증합니다. lock의 데이터 저장소 commit은 생성물의 provenance 기록이며 CI checkout 지시가 아닙니다. 이어서 `npm run check`와 high-severity 의존성 감사를 통과한 `dist`를 한 번만 artifact로 생성합니다. pull request는 품질 검사와 E2E까지만 실행하고, `main` push는 production 환경 검증을 거쳐 enforced-CSP Pages preview와 production에 자동 배포합니다. input 없는 `workflow_dispatch`는 같은 절차를 수동으로 재실행합니다. Playwright E2E, preview, production 배포는 동일 artifact와 `github.sha`를 사용하며 빌드에는 `GITHUB_SHA` 기반 `release.json`이 포함됩니다. 배포 후 smoke는 Wrangler가 반환한 고유 deployment URL과 canonical origin 양쪽에서 동일 release ID, 엄격한 CSP/HSTS/nosniff/Referrer/Permissions 헤더, OG 이미지, manifest, `runtime-config-v1` JSON readiness Function을 확인합니다.
 
 계약을 갱신할 때는 데이터 저장소가 생성한 contract bundle을 명시적으로 동기화하고 lock의 provenance와 파일 hash를 함께 commit합니다. 앱 CI는 이 vendored snapshot을 자체 검증하므로 다른 비공개 저장소 token이나 cross-repository checkout이 필요하지 않습니다.
 
 `VITE_APP_ORIGIN`은 후행 `/` 없는 정확한 HTTPS `URL.origin` 형식으로 root canonical과 절대 OG URL을 생성합니다. `public/og-image.png`는 실제 1200×630 PNG이며 metadata test가 크기와 경로를 검사합니다.
 
-Cloudflare Dashboard 보호 범위, Turnstile hostname, GitHub App 최소 권한, 배포 token과 수동 production 승격처럼 저장소 밖에서 적용해야 하는 항목은 [운영 보안 체크리스트](docs/operations-security.md)를 따릅니다.
+Cloudflare Dashboard 보호 범위, Turnstile hostname, GitHub App 최소 권한, 배포 token과 `main` push 자동 production 승격처럼 저장소 밖에서 적용해야 하는 항목은 [운영 보안 체크리스트](docs/operations-security.md)를 따릅니다.
 
 ---
 

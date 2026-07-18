@@ -14,23 +14,39 @@ async function projectReadme() {
   return readFile(path.join(process.cwd(), 'README.md'), 'utf8')
 }
 
+async function operationsSecurityGuide() {
+  return readFile(path.join(process.cwd(), 'docs/operations-security.md'), 'utf8')
+}
+
 async function wranglerConfig() {
   return readFile(path.join(process.cwd(), 'wrangler.toml'), 'utf8')
 }
 
 describe('production deployment workflow', () => {
-  it('keeps main pushes quality-only and uses an inputless manual production dispatch', async () => {
+  it('deploys validated main pushes and supports an inputless manual rerun', async () => {
     const workflow = await deploymentWorkflow()
+    const releaseExpression =
+      "github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
+    const previewJob = workflow.slice(
+      workflow.indexOf('\n  preview:'),
+      workflow.indexOf('\n  deploy:'),
+    )
+    const deployJob = workflow.slice(workflow.indexOf('\n  deploy:'))
 
     expect(workflow).toMatch(/workflow_dispatch:\s*(?:\n|$)/)
+    expect(workflow).toMatch(/\n  push:\n    branches:\n      - main\n/)
     expect(workflow).not.toContain('release_sha:')
     expect(workflow).not.toContain('production_hostname_confirmation:')
     expect(workflow).not.toContain('operations_checklist_url:')
     expect(workflow).not.toContain('bootstrap_readiness_contract:')
     expect(workflow).not.toContain('validate-production-deploy-inputs.mjs')
-    expect(workflow).toContain("github.event_name == 'workflow_dispatch'")
-    expect(workflow).toContain("github.ref == 'refs/heads/main'")
-    expect(workflow).not.toContain("github.event_name == 'push' && github.ref == 'refs/heads/main') ||")
+    expect(workflow).toContain(`PRODUCTION_RELEASE: \${{ ${releaseExpression} }}`)
+    expect(workflow).toContain('if [[ "$PRODUCTION_RELEASE" != "true" ]]; then')
+    expect(previewJob).toContain(`    if: ${releaseExpression}`)
+    expect(deployJob).toContain(`    if: ${releaseExpression}`)
+    expect(workflow).not.toContain(
+      'if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then',
+    )
   })
 
   it('never cancels an active release workflow when another run starts', async () => {
@@ -56,6 +72,7 @@ describe('production deployment workflow', () => {
 
     expect(preview).toBeGreaterThan(-1)
     expect(production).toBeGreaterThan(preview)
+    expect(workflow.slice(production)).toMatch(/\n    needs: preview\n/)
     expect(workflow).not.toContain('VITE_CSP_MODE')
     expect(workflow).not.toContain('preview-dist-')
     expect(workflow.match(/name: web-dist-\$\{\{ github\.sha \}\}/g)).toHaveLength(4)
@@ -64,7 +81,7 @@ describe('production deployment workflow', () => {
     expect(workflow).not.toContain('environment: production')
   })
 
-  it('uses the dispatched main commit SHA throughout build, preview, and production smoke', async () => {
+  it('uses the selected main commit SHA throughout build, preview, and production smoke', async () => {
     const workflow = await deploymentWorkflow()
 
     expect(workflow).toContain('VITE_RELEASE_ID=$GITHUB_SHA')
@@ -109,10 +126,17 @@ describe('production deployment workflow', () => {
     )
   })
 
-  it('documents runtime-config readiness and manual dispatch without stale guards', async () => {
-    const readme = await projectReadme()
+  it('documents automatic main releases and manual reruns without stale guards', async () => {
+    const [readme, operationsGuide] = await Promise.all([
+      projectReadme(),
+      operationsSecurityGuide(),
+    ])
 
     expect(readme).toContain('runtime-config-v1')
+    expect(readme).toContain('`main` push')
+    expect(operationsGuide).toContain('input 없는 `workflow_dispatch`')
+    expect(operationsGuide).not.toContain('`main` push는 품질 검사만 실행합니다.')
+    expect(operationsGuide).not.toContain('`workflow_dispatch`에서만 시작')
     expect(readme).not.toContain('expected canonical origin')
     expect(readme).not.toContain('환경 승인')
   })

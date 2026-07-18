@@ -1,4 +1,4 @@
-name: Quality and manual production release
+name: Quality and production release
 
 on:
   pull_request:
@@ -37,13 +37,14 @@ jobs:
       - name: Configure frontend build
         shell: bash
         env:
+          PRODUCTION_RELEASE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
           PRODUCTION_APP_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
           PRODUCTION_DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
           PRODUCTION_SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
           PRODUCTION_TURNSTILE_SITE_KEY: ${{ vars.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY || secrets.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
         run: |
           echo "VITE_RELEASE_ID=$GITHUB_SHA" >> "$GITHUB_ENV"
-          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+          if [[ "$PRODUCTION_RELEASE" != "true" ]]; then
             {
               echo "VITE_APP_ORIGIN=http://127.0.0.1:4173"
               echo "VITE_DATA_MANIFEST_URL=https://example.test/manifest.json"
@@ -103,7 +104,7 @@ jobs:
 
   preview:
     name: Deploy and browser-smoke enforced-CSP preview
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs:
       - quality
       - e2e
@@ -159,7 +160,7 @@ jobs:
 
   deploy:
     name: Deploy production artifact
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: preview
     runs-on: ubuntu-latest
     timeout-minutes: 10
