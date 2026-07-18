@@ -251,7 +251,12 @@ test('recovers from a YouTube script error and keeps the external fallback avail
     await route.fulfill({
       body: `
         window.YT = {
-          Player: function (_element, options) {
+          Player: function (element, options) {
+            var iframe = document.createElement('iframe');
+            iframe.setAttribute('title', 'Mock YouTube player');
+            iframe.setAttribute('width', '640');
+            iframe.setAttribute('height', '390');
+            element.replaceWith(iframe);
             var player = {
               destroy: function () {},
               getCurrentTime: function () { return 0; },
@@ -282,6 +287,25 @@ test('recovers from a YouTube script error and keeps the external fallback avail
   await playerAlert.getByRole('button', { name: '다시 시도' }).click()
   await expect(player.getByRole('status')).toContainText('YouTube 플레이어가 준비되었습니다.')
   await expect(player).toHaveAttribute('aria-busy', 'false')
+  const videoFrame = page.locator('.video-frame')
+  const iframe = player.locator('.youtube-player-host > iframe')
+  await expect(iframe).toBeVisible()
+
+  const dimensions = await videoFrame.evaluate((frame) => {
+    const embeddedPlayer = frame.querySelector('iframe')
+    if (!embeddedPlayer) return null
+
+    const iframeRect = embeddedPlayer.getBoundingClientRect()
+    return {
+      frameWidth: frame.clientWidth,
+      frameHeight: frame.clientHeight,
+      iframeWidth: iframeRect.width,
+      iframeHeight: iframeRect.height,
+    }
+  })
+  expect(dimensions).not.toBeNull()
+  expect(Math.abs(dimensions!.iframeWidth - dimensions!.frameWidth)).toBeLessThanOrEqual(1)
+  expect(Math.abs(dimensions!.iframeHeight - dimensions!.frameHeight)).toBeLessThanOrEqual(1)
   expect(scriptAttempts).toBe(2)
 })
 
