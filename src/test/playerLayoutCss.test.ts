@@ -261,6 +261,16 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(lyricToken, 'white-space', 'nowrap')
   })
 
+  it('keeps the YouTube iframe at the full video placeholder size', () => {
+    const playerHost = getBlock(css, '.video-frame .youtube-player-host:not(:empty)')
+    expectDeclaration(playerHost, 'height', '100%')
+
+    const playerIframe = getBlock(css, '.video-frame iframe')
+    expectDeclaration(playerIframe, 'display', 'block')
+    expectDeclaration(playerIframe, 'width', '100%')
+    expectDeclaration(playerIframe, 'height', '100%')
+  })
+
   it('prevents desktop player containers from expanding to the full lyric content height', () => {
     const playerGrid = getBlock(css, '.player-grid')
     expectDeclaration(playerGrid, 'min-height', '0')

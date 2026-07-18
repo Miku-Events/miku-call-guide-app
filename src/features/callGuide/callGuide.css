@@ -14,7 +14,12 @@
   background: #101819;
 }
 
+.video-frame .youtube-player-host:not(:empty) {
+  height: 100%;
+}
+
 .video-frame iframe {
+  display: block;
   width: 100%;
   height: 100%;
   border: 0;
