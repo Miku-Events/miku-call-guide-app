@@ -11,6 +11,15 @@ export function mainLandmarkLocator(page) {
   return page.getByRole('main')
 }
 
+export async function acknowledgeInitialSpoilerDisclaimer(page) {
+  const dialog = page.getByRole('alertdialog', { name: '스포일러 안내' })
+
+  await dialog.waitFor({ state: 'visible' })
+  await dialog.getByRole('button', { name: '확인하고 계속하기' }).click()
+  await dialog.waitFor({ state: 'detached' })
+  await page.waitForLoadState('networkidle')
+}
+
 function requiredOrigin(value, name, { canonical = false } = {}) {
   if (typeof value !== 'string' || value !== value.trim()) {
     throw new Error(`${name} must be an exact HTTPS origin`)
@@ -173,6 +182,7 @@ export async function runPreviewBrowserSmoke({
           dataOrigin: new URL(normalizedManifestUrl).origin,
           submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
         }, 'Preview root')
+        await acknowledgeInitialSpoilerDisclaimer(page)
       }
       await mainLandmarkLocator(page).waitFor({ state: 'visible' })
       await page.evaluate(() => new Promise((resolve) => {
