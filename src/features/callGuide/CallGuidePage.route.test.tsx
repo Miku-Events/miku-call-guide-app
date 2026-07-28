@@ -11,7 +11,7 @@ const harness = vi.hoisted(() => ({
   songId: 'song-a',
 }))
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: () => ({ songId: harness.songId }),
 }))
 

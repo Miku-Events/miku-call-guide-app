@@ -1,6 +1,6 @@
 import { AlertTriangle, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X, ArrowRight } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import './catalog.css'
 import { getRootManifestUrl } from '../../app/config'
 import { localizedText } from '../../shared/i18n/localizedText'
@@ -11,6 +11,7 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { fetchCallGuideManifest } from '../data/fetchManifest'
 import type { CallGuideManifest, LoadResult, ManifestSong, LocalizedText } from '../data/types'
+import { shuffledCopy } from './shuffle'
 
 const BLACKLIST_TAGS: string[] = []
 
@@ -19,6 +20,11 @@ interface EventFolder {
   title: LocalizedText;
   songCount: number;
   songs: ManifestSong[];
+}
+
+interface ShuffledCatalog {
+  dataVersion: string
+  songs: ManifestSong[]
 }
 
 function formatFallbackEventTitle(tag: string): string {
@@ -53,21 +59,36 @@ function youtubeThumbnailUrl(song: ManifestSong): string {
 
 export function CatalogPage() {
   const [manifestResult, setManifestResult] = useState<LoadResult<CallGuideManifest> | null>(null)
+  const [shuffledCatalog, setShuffledCatalog] = useState<ShuffledCatalog | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [viewMode, setViewMode] = useState<'songs' | 'events'>('songs')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const rootManifestUrl = getRootManifestUrl()
 
+  const acceptManifest = useCallback((result: LoadResult<CallGuideManifest>) => {
+    setManifestResult(result)
+    setShuffledCatalog((current) => {
+      if (current?.dataVersion === result.data.dataVersion) {
+        return current
+      }
+
+      return {
+        dataVersion: result.data.dataVersion,
+        songs: shuffledCopy(result.data.songs),
+      }
+    })
+    setError(null)
+  }, [])
+
   const load = useCallback(async () => {
     try {
-      setManifestResult(await fetchCallGuideManifest(rootManifestUrl))
-      setError(null)
+      acceptManifest(await fetchCallGuideManifest(rootManifestUrl))
     } catch (loadError) {
       setManifestResult(null)
       setError(loadError instanceof Error ? loadError.message : 'Manifest load failed.')
     }
-  }, [rootManifestUrl])
+  }, [acceptManifest, rootManifestUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -76,8 +97,7 @@ export function CatalogPage() {
       try {
         const result = await fetchCallGuideManifest(rootManifestUrl)
         if (!cancelled) {
-          setManifestResult(result)
-          setError(null)
+          acceptManifest(result)
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -92,7 +112,7 @@ export function CatalogPage() {
     return () => {
       cancelled = true
     }
-  }, [rootManifestUrl])
+  }, [acceptManifest, rootManifestUrl])
 
   useEffect(() => {
     document.title = '곡 카탈로그 - 하츠네 미쿠 콜 가이드'
@@ -156,17 +176,17 @@ export function CatalogPage() {
   }, [manifestResult])
 
   const filteredSongs = useMemo(() => {
-    if (!manifestResult) {
+    if (!manifestResult || shuffledCatalog?.dataVersion !== manifestResult.data.dataVersion) {
       return []
     }
 
-    let list = manifestResult.data.songs
+    let list = shuffledCatalog.songs
     if (selectedTag) {
       list = list.filter((song) => song.tags.includes(selectedTag))
     }
 
     return list.filter((song) => songMatches(song, query))
-  }, [manifestResult, selectedTag, query])
+  }, [manifestResult, query, selectedTag, shuffledCatalog])
 
   const songCount = manifestResult?.data.songs.length ?? 0
   const resultCount = filteredSongs.length
