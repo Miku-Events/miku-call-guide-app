@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  acknowledgeInitialSpoilerDisclaimer,
   assertNoBrowserSecurityErrors,
   formatPreviewSmokeReport,
   mainLandmarkLocator,
@@ -17,6 +18,25 @@ describe('preview browser smoke diagnostics', () => {
 
     expect(mainLandmarkLocator({ getByRole })).toBe(landmark)
     expect(getByRole).toHaveBeenCalledWith('main')
+  })
+
+  it('acknowledges the required spoiler disclaimer before waiting for route requests', async () => {
+    const click = vi.fn()
+    const waitFor = vi.fn()
+    const button = { click }
+    const dialogGetByRole = vi.fn(() => button)
+    const dialog = { getByRole: dialogGetByRole, waitFor }
+    const getByRole = vi.fn(() => dialog)
+    const waitForLoadState = vi.fn()
+
+    await acknowledgeInitialSpoilerDisclaimer({ getByRole, waitForLoadState })
+
+    expect(getByRole).toHaveBeenCalledWith('alertdialog', { name: '스포일러 안내' })
+    expect(waitFor).toHaveBeenNthCalledWith(1, { state: 'visible' })
+    expect(dialogGetByRole).toHaveBeenCalledWith('button', { name: '확인하고 계속하기' })
+    expect(click).toHaveBeenCalledOnce()
+    expect(waitFor).toHaveBeenNthCalledWith(2, { state: 'detached' })
+    expect(waitForLoadState).toHaveBeenCalledWith('networkidle')
   })
 
   it('records console diagnostics without treating them as promotion failures', () => {
