@@ -20,6 +20,8 @@ interface MockSession {
 const mockedSongs = new WeakMap<Page, unknown>()
 const mockedSessions = new WeakMap<Page, MockSession>()
 
+export const SPOILER_DISCLAIMER_STORAGE_KEY = 'miku-call-guide:spoiler-disclaimer-acknowledged'
+
 export const VERSIONED_LEAF_ROUTES = Object.freeze({
   multiDayEvent: /\/event-calendar\/events\/miku-multi-day-popup-sample\.json(?:\?.*)?$/,
   dateOnlyEvent: /\/event-calendar\/events\/second-miku-thanks-festival-2026\.json(?:\?.*)?$/,
@@ -42,10 +44,20 @@ export function setMockedSession(page: Page, session: MockSession): void {
   mockedSessions.set(page, session)
 }
 
-export const test = base.extend<{ appMocks: void }>({
-  appMocks: [async ({ page }, use) => {
+export const test = base.extend<{
+  appMocks: void
+  spoilerDisclaimerAcknowledged: boolean
+}>({
+  spoilerDisclaimerAcknowledged: [true, { option: true }],
+  appMocks: [async ({ page, spoilerDisclaimerAcknowledged }, use) => {
     setMockedSong(page, song)
     setMockedSession(page, { authenticated: false })
+
+    if (spoilerDisclaimerAcknowledged) {
+      await page.addInitScript((storageKey) => {
+        window.localStorage.setItem(storageKey, '1')
+      }, SPOILER_DISCLAIMER_STORAGE_KEY)
+    }
 
     await page.route('**/manifest.json', async (route) => {
       await route.fulfill({ json: rootManifest })

@@ -1,7 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter, useNavigate } from 'react-router-dom'
+import { MemoryRouter, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import {
+  SPOILER_DISCLAIMER_ACKNOWLEDGED_VALUE,
+  SPOILER_DISCLAIMER_STORAGE_KEY,
+} from './features/spoilerDisclaimer/storage'
 
 const harness = vi.hoisted(() => ({ catalogCrashes: false }))
 
@@ -31,6 +35,10 @@ describe('App routes', () => {
 
   beforeEach(() => {
     harness.catalogCrashes = false
+    window.localStorage.setItem(
+      SPOILER_DISCLAIMER_STORAGE_KEY,
+      SPOILER_DISCLAIMER_ACKNOWLEDGED_VALUE,
+    )
     vi.stubGlobal('matchMedia', vi.fn(() => ({
       addEventListener: vi.fn(),
       matches: false,
@@ -40,6 +48,7 @@ describe('App routes', () => {
   })
 
   afterEach(() => {
+    window.localStorage.removeItem(SPOILER_DISCLAIMER_STORAGE_KEY)
     consoleError.mockRestore()
   })
 

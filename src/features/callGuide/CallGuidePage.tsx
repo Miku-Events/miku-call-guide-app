@@ -1,6 +1,6 @@
 import { ListMusic } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams } from 'react-router'
 import './callGuide.css'
 import { getRootManifestUrl, shouldUseMockPlayer } from '../../app/config'
 import { localizedText } from '../../shared/i18n/localizedText'

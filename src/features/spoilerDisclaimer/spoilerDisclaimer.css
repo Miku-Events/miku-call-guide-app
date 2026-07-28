@@ -1,0 +1,24 @@
+.spoiler-disclaimer-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-background-body, #09090b);
+  color-scheme: dark;
+}
+
+dialog.spoiler-disclaimer-dialog {
+  color-scheme: dark;
+}
+
+dialog.spoiler-disclaimer-dialog::backdrop {
+  background: var(--color-background-body, #09090b);
+  backdrop-filter: none;
+}
+
+.spoiler-disclaimer-confirm {
+  width: 100%;
+  min-height: var(--app-touch-target, 2.75rem);
+}

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components, @typescript-eslint/no-explicit-any */
 import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { HashRouter, Link } from 'react-router-dom'
+import { HashRouter, Link } from 'react-router'
 import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 import { LinkProvider } from '@astryxdesign/core/Link'
@@ -9,7 +9,7 @@ import { HashRouterSkipLinkGuard } from './shared/layout/HashRouterSkipLinkGuard
 import './index.css'
 import App from './App.tsx'
 
-// Map Astryx's href prop to react-router-dom's to prop
+// Map Astryx's href prop to React Router's to prop
 function RouterLink({ href, ...props }: { href: string; [key: string]: any }) {
   // Check if it's an external link or hash link that should use standard <a> behavior
   if (href.startsWith('http') || href.startsWith('//') || href.startsWith('#')) {
