@@ -1,7 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SongGuide } from '../data/types'
+import { createPlaybackTimeStore } from '../player/playbackTimeStore'
 import { LyricList } from './LyricList'
+
+const countdownProps = {
+  countdownSchedule: [],
+  playbackTimeStore: createPlaybackTimeStore(),
+}
 
 const song: SongGuide = {
   schemaVersion: 1,
@@ -101,7 +107,7 @@ const segmentedSong: SongGuide = {
 
 describe('LyricList', () => {
   it('renders active call markers and inactive call previews', () => {
-    const { container } = render(<LyricList currentMs={1000} onSeekToLine={vi.fn()} song={song} />)
+    const { container } = render(<LyricList {...countdownProps} currentMs={1000} onSeekToLine={vi.fn()} song={song} />)
 
     expect(screen.getByText('하이! 하이!')).toBeInTheDocument()
     expect(screen.getByText('오-!')).toBeInTheDocument()
@@ -111,14 +117,14 @@ describe('LyricList', () => {
   })
 
   it('renders segmented calls as active markers and inactive previews per line', () => {
-    const { container, rerender } = render(<LyricList currentMs={1000} onSeekToLine={vi.fn()} song={segmentedSong} />)
+    const { container, rerender } = render(<LyricList {...countdownProps} currentMs={1000} onSeekToLine={vi.fn()} song={segmentedSong} />)
 
     expect(screen.getAllByText('하이! 하이! 하이하이!')).toHaveLength(2)
     expect(container.querySelectorAll('.call-marker[data-variant="active"]')).toHaveLength(1)
     expect(container.querySelectorAll('.call-marker[data-variant="preview"]')).toHaveLength(1)
     expect(container.querySelector('.lyric-line[data-active="true"] .call-marker[data-variant="preview"]')).toBeNull()
 
-    rerender(<LyricList currentMs={7000} onSeekToLine={vi.fn()} song={segmentedSong} />)
+    rerender(<LyricList {...countdownProps} currentMs={7000} onSeekToLine={vi.fn()} song={segmentedSong} />)
 
     expect(container.querySelectorAll('.call-marker[data-variant="active"]')).toHaveLength(1)
     expect(container.querySelectorAll('.call-marker[data-variant="preview"]')).toHaveLength(1)
@@ -129,7 +135,7 @@ describe('LyricList', () => {
 
   it('sends the clicked lyric line to the seek callback', () => {
     const onSeekToLine = vi.fn()
-    render(<LyricList currentMs={1000} onSeekToLine={onSeekToLine} song={song} />)
+    render(<LyricList {...countdownProps} currentMs={1000} onSeekToLine={onSeekToLine} song={song} />)
 
     fireEvent.click(screen.getByRole('button', { name: /声を重ねよう/ }))
 
@@ -138,7 +144,7 @@ describe('LyricList', () => {
 
   it('restores current lyric tracking when a lyric line is clicked', () => {
     const onSeekToLine = vi.fn()
-    const { container } = render(<LyricList currentMs={1000} onSeekToLine={onSeekToLine} song={song} />)
+    const { container } = render(<LyricList {...countdownProps} currentMs={1000} onSeekToLine={onSeekToLine} song={song} />)
 
     const lyricList = container.querySelector('.lyric-list')
     expect(lyricList).not.toBeNull()
@@ -161,9 +167,9 @@ describe('LyricList', () => {
     HTMLElement.prototype.scrollTo = scrollTo
 
     try {
-      const { rerender } = render(<LyricList currentMs={1000} onSeekToLine={vi.fn()} song={song} />)
+      const { rerender } = render(<LyricList {...countdownProps} currentMs={1000} onSeekToLine={vi.fn()} song={song} />)
 
-      rerender(<LyricList currentMs={7000} onSeekToLine={vi.fn()} song={song} />)
+      rerender(<LyricList {...countdownProps} currentMs={7000} onSeekToLine={vi.fn()} song={song} />)
 
       expect(scrollIntoView).not.toHaveBeenCalled()
       expect(scrollTo).toHaveBeenCalled()

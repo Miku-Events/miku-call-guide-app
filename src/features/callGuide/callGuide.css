@@ -65,6 +65,44 @@
   overflow: hidden;
 }
 
+.lyric-countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  display: grid;
+  width: clamp(5.5rem, 16vw, 7rem);
+  aspect-ratio: 1;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--player-outline);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--player-surface-raised) 84%, transparent);
+  color: var(--player-text);
+  box-shadow: var(--shadow-high);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.lyric-countdown-number {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 10vw, 4.5rem);
+  font-weight: 900;
+  line-height: 1;
+  animation: countdown-pop 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes countdown-pop {
+  from {
+    transform: scale(0.72);
+    opacity: 0.5;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .follow-active-button {
   position: absolute;
   top: 0.4rem;

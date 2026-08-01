@@ -306,6 +306,81 @@ const song = {
   notes: { author: 'e2e', source: 'e2e', reviewComment: '', copyrightNote: '' },
 }
 
+const longIntroCountdownSong = {
+  ...song,
+  lyrics: [
+    {
+      ...song.lyrics[0],
+      time: '00:00:06,000 --> 00:00:12,000',
+      startMs: 6000,
+      endMs: 12000,
+    },
+    {
+      ...song.lyrics[1],
+      time: '00:00:12,000 --> 00:00:18,000',
+      startMs: 12000,
+      endMs: 18000,
+    },
+  ],
+}
+
+const shortIntro60MsSong = {
+  ...song,
+  lyrics: [
+    {
+      ...song.lyrics[0],
+      time: '00:00:00,060 --> 00:00:06,060',
+      startMs: 60,
+      endMs: 6060,
+    },
+    {
+      ...song.lyrics[1],
+      time: '00:00:06,060 --> 00:00:12,060',
+      startMs: 6060,
+      endMs: 12060,
+    },
+  ],
+}
+
+const shortIntro180MsSong = {
+  ...song,
+  lyrics: [
+    {
+      ...song.lyrics[0],
+      time: '00:00:00,180 --> 00:00:06,180',
+      startMs: 180,
+      endMs: 6180,
+    },
+    {
+      ...song.lyrics[1],
+      time: '00:00:06,180 --> 00:00:12,180',
+      startMs: 6180,
+      endMs: 12180,
+    },
+  ],
+}
+
+const explicitCountdownSong = {
+  ...song,
+  lyrics: [
+    song.lyrics[0],
+    {
+      ...song.lyrics[1],
+      time: '00:00:12,000 --> 00:00:18,000',
+      startMs: 12000,
+      endMs: 18000,
+    },
+  ],
+  countdownEvents: [
+    {
+      id: 'countdown-second-line',
+      time: '00:00:06,000 --> 00:00:12,000',
+      startMs: 6000,
+      endMs: 12000,
+    },
+  ],
+}
+
 const longLyricSong = {
   ...song,
   lyrics: [
@@ -657,11 +732,13 @@ export {
   dateOnlyEventDetail,
   dateOnlyEventSummary,
   endAnchorSong,
+  explicitCountdownSong,
   eventCalendarIndex,
   eventCalendarMayMonth,
   eventCalendarMonth,
   eventDetail,
   leftAnchorSong,
+  longIntroCountdownSong,
   longLyricSong,
   multiDayEventDetail,
   overlappingKindSong,
@@ -669,6 +746,8 @@ export {
   rootManifest,
   segmentedSong,
   separatedInactivePreviewSong,
+  shortIntro180MsSong,
+  shortIntro60MsSong,
   song,
   spaceAnchorSong,
   wordWrapSong,

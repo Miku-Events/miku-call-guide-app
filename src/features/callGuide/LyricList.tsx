@@ -1,7 +1,10 @@
 import { LocateFixed } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import type { LyricLine as LyricLineType, SongGuide } from '../data/types'
+import type { PlaybackTimeStore } from '../player/playbackTimeStore'
 import { callsForLine, findActiveLyric, type RenderableCall } from './callPositioning'
+import { CountdownOverlay } from './CountdownOverlay'
+import type { CountdownCue } from './countdownSchedule'
 import { LyricLine } from './LyricLine'
 import { Button } from '@astryxdesign/core/Button'
 
@@ -9,12 +12,20 @@ interface LyricListProps {
   song: SongGuide
   currentMs: number
   onSeekToLine: (line: LyricLineType) => void
+  countdownSchedule: readonly CountdownCue[]
+  playbackTimeStore: PlaybackTimeStore
 }
 
 const dragThresholdPx = 6
 const programmaticScrollTimeoutMs = 450
 
-export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
+export function LyricList({
+  song,
+  currentMs,
+  onSeekToLine,
+  countdownSchedule,
+  playbackTimeStore,
+}: LyricListProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const lineElementsRef = useRef(new Map<string, HTMLElement>())
   const dragStateRef = useRef<{
@@ -186,6 +197,7 @@ export function LyricList({ song, currentMs, onSeekToLine }: LyricListProps) {
           className="follow-active-button"
         />
       ) : null}
+      <CountdownOverlay schedule={countdownSchedule} store={playbackTimeStore} />
       <div
         aria-live="polite"
         className="lyric-list"

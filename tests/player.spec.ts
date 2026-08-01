@@ -1,19 +1,148 @@
+import type { Page } from '@playwright/test'
 import { expect, setMockedSong, test } from './fixtures/app-test'
 import {
   attakaitoWrappedEndAnchorSong,
   autoFollowSong,
   crossLaneAnchorRailSong,
   endAnchorSong,
+  explicitCountdownSong,
   leftAnchorSong,
+  longIntroCountdownSong,
   longLyricSong,
   overlappingKindSong,
   ppphLeftAnchorSong,
   segmentedSong,
   separatedInactivePreviewSong,
+  shortIntro180MsSong,
+  shortIntro60MsSong,
   spaceAnchorSong,
   wordWrapSong,
   wrappedRangeSong,
 } from './fixtures/data'
+
+async function setMockPlaybackTime(page: Page, timeMs: number): Promise<void> {
+  const slider = page.getByRole('slider', { name: '재생 위치' })
+  await slider.fill(String(timeMs))
+  await expect(slider).toHaveValue(String(timeMs))
+}
+
+test('shows an automatic 3-2-1 countdown for a long intro and removes it at the first lyric', async ({ page }) => {
+  setMockedSong(page, longIntroCountdownSong)
+
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+  const countdown = page.getByRole('timer')
+
+  await expect(countdown).toHaveCount(0)
+
+  await setMockPlaybackTime(page, 3000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 3')
+  await expect(countdown).toHaveText('3')
+
+  const layout = await countdown.evaluate((element) => {
+    const countdownRect = element.getBoundingClientRect()
+    const shellRect = element.closest('.lyric-list-shell')?.getBoundingClientRect()
+
+    return shellRect
+      ? {
+          bottom: countdownRect.bottom,
+          left: countdownRect.left,
+          pointerEvents: getComputedStyle(element).pointerEvents,
+          right: countdownRect.right,
+          shellBottom: shellRect.bottom,
+          shellLeft: shellRect.left,
+          shellRight: shellRect.right,
+          shellTop: shellRect.top,
+          top: countdownRect.top,
+        }
+      : null
+  })
+
+  expect(layout).not.toBeNull()
+  expect(layout!.pointerEvents).toBe('none')
+  expect(layout!.left).toBeGreaterThanOrEqual(layout!.shellLeft - 1)
+  expect(layout!.right).toBeLessThanOrEqual(layout!.shellRight + 1)
+  expect(layout!.top).toBeGreaterThanOrEqual(layout!.shellTop - 1)
+  expect(layout!.bottom).toBeLessThanOrEqual(layout!.shellBottom + 1)
+
+  await setMockPlaybackTime(page, 4000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 2')
+  await expect(countdown).toHaveText('2')
+
+  await setMockPlaybackTime(page, 5000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 1')
+  await expect(countdown).toHaveText('1')
+
+  await setMockPlaybackTime(page, 6000)
+  await expect(countdown).toHaveCount(0)
+  await expect(page.locator('.lyric-line[data-position="current"]').getByLabel('光るステージへ')).toBeVisible()
+})
+
+test('reduces countdown number motion when reduced motion is requested', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  setMockedSong(page, longIntroCountdownSong)
+
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+  await setMockPlaybackTime(page, 3000)
+
+  const countdownNumber = page.locator('.lyric-countdown-number')
+  await expect(countdownNumber).toHaveText('3')
+  const animationDurationMs = await countdownNumber.evaluate((element) => {
+    const duration = getComputedStyle(element).animationDuration
+    return duration.endsWith('ms') ? Number.parseFloat(duration) : Number.parseFloat(duration) * 1000
+  })
+
+  expect(animationDurationMs).toBeLessThanOrEqual(1)
+})
+
+for (const [introMs, candidate] of [
+  [60, shortIntro60MsSong],
+  [180, shortIntro180MsSong],
+] as const) {
+  test(`does not show a partial countdown for a ${introMs}ms intro`, async ({ page }) => {
+    setMockedSong(page, candidate)
+
+    await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+
+    await expect(page.getByRole('timer')).toHaveCount(0)
+    await expect(page.getByText('0:00.0').first()).toBeVisible()
+  })
+}
+
+test('divides an explicit six-second countdown into thirds and restores it after rewinding', async ({ page }) => {
+  setMockedSong(page, explicitCountdownSong)
+
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+  const countdown = page.locator('.lyric-countdown')
+
+  await setMockPlaybackTime(page, 6000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 3')
+  await expect(countdown).toHaveText('3')
+
+  await setMockPlaybackTime(page, 8000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 2')
+  await expect(countdown).toHaveText('2')
+
+  await setMockPlaybackTime(page, 10000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 1')
+  await expect(countdown).toHaveText('1')
+
+  await setMockPlaybackTime(page, 12000)
+  await expect(countdown).toHaveCount(0)
+
+  await setMockPlaybackTime(page, 8000)
+  await expect(countdown).toHaveAttribute('aria-label', '카운트다운 2')
+  await expect(countdown).toHaveText('2')
+})
+
+test('seeks to a countdown start when its end matches the clicked lyric start', async ({ page }) => {
+  setMockedSong(page, explicitCountdownSong)
+
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+  await page.getByRole('button', { name: /声を重ねよう/ }).click()
+
+  await expect(page.getByText('0:06.0').first()).toBeVisible()
+  await expect(page.getByRole('timer', { name: '카운트다운 3' })).toBeVisible()
+})
 
 test('renders the mock player and places an above call marker over the lyric line', async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')

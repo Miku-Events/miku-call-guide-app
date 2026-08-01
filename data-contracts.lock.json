@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "source": {
     "repository": "Miku-Events/miku-call-guide-data",
-    "commit": "2a6272ba38feff70c1c79c9d97c6871a19415d21"
+    "commit": "685698ad34b42d93fc386fe51b35683c10f5f20c"
   },
   "files": [
     {
       "file": "contract-manifest.json",
-      "sha256": "411887795e5b4a271094d2e7a1b0697f8736d81cf03984ce2611cc6cbdd60fda"
+      "sha256": "c942be4879577ba736992da45d275973503b111a70cf61e6223babd8cb4640fc"
     },
     {
       "file": "event-types.d.mts",
@@ -19,7 +19,7 @@
     },
     {
       "file": "types.ts",
-      "sha256": "fd5ae2f2369ac1069ada338212f548df427b5941cd6c935f4245e7d228f404bd"
+      "sha256": "77bbf6d30cd7371b2e5b0c62260f4462aab71e92a2ffaaa13e656bf12bb63f50"
     },
     {
       "file": "validators.d.mts",
@@ -27,7 +27,7 @@
     },
     {
       "file": "validators.mjs",
-      "sha256": "44a530f9b86a9c3bd6a3598e541b77169e4717ec11e6e2dd7369be1e3a39b8fc"
+      "sha256": "a55b0b58fda0b0829185bed1711db60188546a6c8e26d2a6074395ce62ee0ec0"
     }
   ]
 }
