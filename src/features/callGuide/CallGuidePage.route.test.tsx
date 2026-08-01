@@ -1,13 +1,19 @@
 import type { ReactNode } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CallGuideManifest, LoadResult, SongGuide } from '../data/types'
+import type { CallGuideManifest, LoadResult, LyricLine, SongGuide } from '../data/types'
+import type { PlaybackTimeStore } from '../player/playbackTimeStore'
+import type { CountdownCue } from './countdownSchedule'
 
 const harness = vi.hoisted(() => ({
   fetchCallGuideManifest: vi.fn(),
   fetchSong: vi.fn(),
   lyricRenderTimes: [] as number[],
+  countdownSchedules: [] as readonly CountdownCue[][],
   playbackUpdate: null as ((timeMs: number) => void) | null,
+  playbackTimeStore: null as PlaybackTimeStore | null,
+  seekToLine: null as ((line: LyricLine) => void) | null,
+  startOffsetMs: null as number | null,
   songId: 'song-a',
 }))
 
@@ -29,15 +35,29 @@ vi.mock('../data/fetchSong', () => ({
 }))
 
 vi.mock('../player/YouTubePlayer', () => ({
-  YouTubePlayer: ({ onTimeUpdate }: { onTimeUpdate: (timeMs: number) => void }) => {
+  YouTubePlayer: ({ onTimeUpdate, startOffsetMs }: { onTimeUpdate: (timeMs: number) => void; startOffsetMs: number }) => {
     harness.playbackUpdate = onTimeUpdate
+    harness.startOffsetMs = startOffsetMs
     return null
   },
 }))
 
 vi.mock('./LyricList', () => ({
-  LyricList: ({ currentMs }: { currentMs: number }) => {
+  LyricList: ({
+    countdownSchedule,
+    currentMs,
+    onSeekToLine,
+    playbackTimeStore,
+  }: {
+    countdownSchedule: readonly CountdownCue[]
+    currentMs: number
+    onSeekToLine: (line: LyricLine) => void
+    playbackTimeStore: PlaybackTimeStore
+  }) => {
     harness.lyricRenderTimes.push(currentMs)
+    harness.countdownSchedules.push(countdownSchedule)
+    harness.seekToLine = onSeekToLine
+    harness.playbackTimeStore = playbackTimeStore
     return <div data-testid="lyric-time">{currentMs}</div>
   },
 }))
@@ -143,7 +163,11 @@ beforeEach(() => {
   harness.fetchCallGuideManifest.mockReset()
   harness.fetchSong.mockReset()
   harness.lyricRenderTimes = []
+  harness.countdownSchedules = []
   harness.playbackUpdate = null
+  harness.playbackTimeStore = null
+  harness.seekToLine = null
+  harness.startOffsetMs = null
   harness.songId = 'song-a'
   harness.fetchCallGuideManifest.mockResolvedValue(manifestResult())
 })
@@ -251,6 +275,46 @@ describe('CallGuidePage route identity', () => {
     act(() => harness.playbackUpdate?.(1000))
     await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1))
     expect(harness.lyricRenderTimes.at(-1)).toBe(1000)
+  })
+
+  it('seeks a lyric to its effective countdown start without changing the player start offset', async () => {
+    const result = songResult('song-a', 'Song A')
+    result.data.youtube.startOffsetMs = 1000
+    result.data.timing.durationMs = 8000
+    result.data.lyrics = [
+      { id: 'line-1', startMs: 6000, endMs: 8000, text: { ja: 'one' } },
+    ]
+    harness.fetchSong.mockResolvedValueOnce(result)
+
+    render(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+
+    expect(harness.startOffsetMs).toBe(1000)
+    expect(harness.countdownSchedules.at(-1)).toEqual([
+      { id: 'auto:first-lyric:line-1', startMs: 3000, endMs: 6000, source: 'auto' },
+    ])
+
+    act(() => harness.seekToLine?.(result.data.lyrics[0]))
+
+    expect(screen.getByText('0:03.0')).toBeInTheDocument()
+  })
+
+  it('initializes playback state at the player start offset', async () => {
+    const result = songResult('song-a', 'Song A')
+    result.data.youtube.startOffsetMs = 1000
+    result.data.countdownEvents = [{
+      id: 'before-start-offset',
+      time: '00:00:00,000 --> 00:00:00,500',
+      startMs: 0,
+      endMs: 500,
+    }]
+    harness.fetchSong.mockResolvedValueOnce(result)
+
+    render(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+
+    expect(screen.getByTestId('lyric-time')).toHaveTextContent('1000')
+    expect(harness.playbackTimeStore?.getSnapshot()).toBe(1000)
   })
 
   it('rerenders only at global call start and end boundaries within one lyric', async () => {

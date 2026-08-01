@@ -17,6 +17,7 @@ import {
   findActiveLyric,
   normalizedCallKind,
 } from './callPositioning'
+import { buildCountdownSchedule, countdownStartForLyric } from './countdownSchedule'
 import { LyricList } from './LyricList'
 import { AppShell } from '@astryxdesign/core/AppShell'
 import { AppHeader } from '../../shared/layout/AppHeader'
@@ -79,10 +80,11 @@ export function CallGuidePage() {
         })
 
         if (!cancelled) {
+          const initialPlaybackMs = loadedSong.data.youtube.startOffsetMs
           setLoaded({ requestKey, manifestResult: loadedManifest, songResult: loadedSong })
-          playbackTimeStore.set(0)
-          playbackBoundaryKeyRef.current = playbackBoundaryKey(loadedSong.data, 0)
-          setBoundaryMs(0)
+          playbackTimeStore.set(initialPlaybackMs)
+          playbackBoundaryKeyRef.current = playbackBoundaryKey(loadedSong.data, initialPlaybackMs)
+          setBoundaryMs(initialPlaybackMs)
           setSeekRequest(null)
           setLoadError(null)
         }
@@ -127,6 +129,7 @@ export function CallGuidePage() {
   const activeLine = useMemo(() => (song ? findActiveLyric(song.lyrics, boundaryMs) : null), [boundaryMs, song])
   const globalCalls = useMemo(() => (song ? activeGlobalCalls(song.callEvents, boundaryMs) : []), [boundaryMs, song])
   const callLegendKinds = useMemo(() => (song ? callKindsInSong(song.callEvents) : []), [song])
+  const countdownSchedule = useMemo(() => (song ? buildCountdownSchedule(song) : []), [song])
 
   const publishPlaybackTime = useCallback((timeMs: number) => {
     playbackTimeStore.set(timeMs)
@@ -144,11 +147,12 @@ export function CallGuidePage() {
   }, [playbackTimeStore, song])
   
   const seekToLine = useCallback((line: LyricLine) => {
+    const targetMs = countdownStartForLyric(countdownSchedule, line.startMs) ?? line.startMs
     seekRequestIdRef.current += 1
-    publishPlaybackTime(line.startMs)
-    setSeekRequest({ id: seekRequestIdRef.current, timeMs: line.startMs })
-    playerRef.current?.seekTo(line.startMs)
-  }, [publishPlaybackTime])
+    publishPlaybackTime(targetMs)
+    setSeekRequest({ id: seekRequestIdRef.current, timeMs: targetMs })
+    playerRef.current?.seekTo(targetMs)
+  }, [countdownSchedule, publishPlaybackTime])
 
   return (
     <Theme theme={neutralTheme} mode="dark">
@@ -272,7 +276,13 @@ export function CallGuidePage() {
                     ))}
                   </div>
                 ) : null}
-                <LyricList currentMs={boundaryMs} onSeekToLine={seekToLine} song={song} />
+                <LyricList
+                  countdownSchedule={countdownSchedule}
+                  currentMs={boundaryMs}
+                  onSeekToLine={seekToLine}
+                  playbackTimeStore={playbackTimeStore}
+                  song={song}
+                />
               </section>
             </div>
           ) : !error ? (

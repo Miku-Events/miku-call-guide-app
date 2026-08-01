@@ -204,6 +204,7 @@ export interface RuntimeSong {
     defaultLyricsLanguage: string;
     defaultPronunciationLanguage: string;
     defaultCallLanguage: string;
+    autoFirstLyricCountdown?: boolean;
   };
   timing: {
     unit: "ms";
@@ -410,6 +411,12 @@ export interface RuntimeSong {
         time: string;
       }
   )[];
+  countdownEvents?: {
+    id: string;
+    time: string;
+    startMs: number;
+    endMs: number;
+  }[];
   notes?: {
     author?: string;
     source?: string;

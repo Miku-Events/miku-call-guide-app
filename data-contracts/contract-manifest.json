@@ -47,11 +47,11 @@
     },
     {
       "file": "schemas/runtime-song.schema.json",
-      "sha256": "ed7f211d57838c1f7a4c889431ea1c5ad7f29c9fee7d0af1302dd7541cdb539c"
+      "sha256": "421e36c715178020b6d46fdeadff4cbcdd1709aea26b69837c405387e25c323f"
     },
     {
       "file": "schemas/song.schema.json",
-      "sha256": "233f9f739e7f7050e81f2e9f26882bde551534fb7f50fefe2b7eb5ee07219615"
+      "sha256": "c02fa54ace600f9e03c7a7a2d67b80f45bff71c3a8fb5c231f34f0010cbe95e1"
     }
   ]
 }
