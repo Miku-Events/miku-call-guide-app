@@ -183,3 +183,37 @@ test('shows catalog retry when cached manifest data is being used', async ({ pag
   await expect(page.locator('.app-status-banner')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '다시 시도' })).toHaveCount(0)
 })
+
+test('shares manifest and prefetched song data when navigating from catalog to practice', async ({ page }) => {
+  const requests = {
+    childManifest: 0,
+    rootManifest: 0,
+    song: 0,
+  }
+
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname
+    if (pathname.endsWith('/call-guide-manifest.json')) {
+      requests.childManifest += 1
+    } else if (pathname.endsWith('/manifest.json')) {
+      requests.rootManifest += 1
+    } else if (pathname.endsWith('/songs/future-light-sample.json')) {
+      requests.song += 1
+    }
+  })
+
+  await page.goto('/?mockPlayer=1')
+  const songCard = page.locator('.catalog-song-card', { hasText: '퓨처 라이트 샘플' })
+  await expect(songCard).toBeVisible()
+  await expect.poll(() => requests.rootManifest).toBe(1)
+  await expect.poll(() => requests.childManifest).toBe(1)
+
+  await songCard.hover()
+  await expect.poll(() => requests.song).toBe(1)
+  await songCard.click()
+
+  await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
+  expect(requests.rootManifest).toBe(1)
+  expect(requests.childManifest).toBe(1)
+  expect(requests.song).toBe(1)
+})

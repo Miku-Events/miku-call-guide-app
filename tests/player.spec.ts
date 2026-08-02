@@ -3,6 +3,7 @@ import { expect, setMockedSong, test } from './fixtures/app-test'
 import {
   attakaitoWrappedEndAnchorSong,
   autoFollowSong,
+  closeNonOverlappingAnchorSong,
   crossLaneAnchorRailSong,
   endAnchorSong,
   explicitCountdownSong,
@@ -11,6 +12,7 @@ import {
   longLyricSong,
   overlappingKindSong,
   ppphLeftAnchorSong,
+  progressiveDetailSong,
   segmentedSong,
   separatedInactivePreviewSong,
   shortIntro180MsSong,
@@ -74,7 +76,7 @@ test('shows an automatic 3-2-1 countdown for a long intro and removes it at the 
 
   await setMockPlaybackTime(page, 6000)
   await expect(countdown).toHaveCount(0)
-  await expect(page.locator('.lyric-line[data-position="current"]').getByLabel('光るステージへ')).toBeVisible()
+  await expect(page.locator('.lyric-line[data-position="current"]')).toContainText('光るステージへ')
 })
 
 test('reduces countdown number motion when reduced motion is requested', async ({ page }) => {
@@ -150,12 +152,14 @@ test('renders the mock player and places an above call marker over the lyric lin
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
   await expect(page.getByTestId('mock-player')).toBeVisible()
   await expect(page.locator('.lyric-original:not(.lyric-original-measure)', { hasText: '光るステージへ' })).toBeVisible()
-  await expect(page.getByText('하이! 하이!')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: '하이! 하이!' })).toBeVisible()
   await expect(page.locator('.call-marker[data-variant="preview"]', { hasText: '오-!' })).toBeVisible()
   await expect(page.locator('.call-range-end-arrow')).toBeVisible()
 
   const callBox = await page.locator('.call-marker-text', { hasText: '하이! 하이!' }).boundingBox()
-  const lyricBox = await page.locator('.lyric-original[aria-label="光るステージへ"]').boundingBox()
+  const lyricBox = await page.locator(
+    '.lyric-line[data-position="current"] .lyric-original:not(.lyric-original-measure)',
+  ).boundingBox()
   expect(callBox).not.toBeNull()
   expect(lyricBox).not.toBeNull()
   expect(callBox!.y).toBeLessThan(lyricBox!.y)
@@ -203,11 +207,11 @@ test('renders a compact legend for the call kinds used in the song', async ({ pa
 test('moves the active lyric into the current position as playback advances', async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
-  await expect(page.getByText('하이! 하이!')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: '하이! 하이!' })).toBeVisible()
   await page.getByRole('button', { name: '+6s' }).click()
 
   const activeLyric = page.locator('.lyric-line[data-position="current"]')
-  await expect(activeLyric.getByLabel('声を重ねよう')).toBeVisible()
+  await expect(activeLyric).toContainText('声を重ねよう')
   await expect(activeLyric.locator('.call-marker', { hasText: '오-!' })).toBeVisible()
   await expect(page.locator('.call-marker[data-variant="preview"]', { hasText: '하이! 하이!' })).toBeVisible()
 })
@@ -221,8 +225,8 @@ test('stacks overlapping call kinds as separate colored marker rows', async ({ p
   await expect(activeLine.locator('.call-marker[data-kind="chant"]', { hasText: '하이!' })).toBeVisible()
   await expect(activeLine.locator('.call-marker[data-kind="penlight"]', { hasText: '펜라이트!' })).toBeVisible()
 
-  const metrics = await activeLine.evaluate((line) => {
-    const markers = Array.from(line.querySelectorAll<HTMLElement>('.call-marker[data-variant="active"]')).map((marker) => {
+  const readMetrics = () => activeLine.evaluate((line) => {
+    return Array.from(line.querySelectorAll<HTMLElement>('.call-marker[data-variant="active"]')).map((marker) => {
       const rect = marker.getBoundingClientRect()
       const chip = marker.querySelector<HTMLElement>('.call-marker-text')
       return {
@@ -231,13 +235,44 @@ test('stacks overlapping call kinds as separate colored marker rows', async ({ p
         background: chip ? getComputedStyle(chip).backgroundColor : '',
       }
     })
-
-    return markers
   })
+
+  await expect.poll(async () => {
+    const markers = await readMetrics()
+    return markers.length === 2 ? Math.abs(markers[0].top - markers[1].top) : 0
+  }).toBeGreaterThan(0)
+  const metrics = await readMetrics()
 
   expect(metrics.map((marker) => marker.kind)).toEqual(['chant', 'penlight'])
   expect(metrics[0].top).not.toBe(metrics[1].top)
   expect(metrics[0].background).not.toBe(metrics[1].background)
+})
+
+test('keeps nearby active call chips on one row when their rendered bounds do not overlap', async ({ page }) => {
+  setMockedSong(page, closeNonOverlappingAnchorSong)
+
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+
+  const activeLine = page.locator('.lyric-line[data-position="current"]')
+  await expect(activeLine.locator('.call-marker', { hasText: '유쿠!' })).toBeVisible()
+  await expect(activeLine.locator('.call-marker', { hasText: '마데!' })).toBeVisible()
+
+  const metrics = await activeLine.evaluate((line) => {
+    const chips = Array.from(line.querySelectorAll<HTMLElement>('.call-marker-text')).map((chip) => {
+      const rect = chip.getBoundingClientRect()
+      return { left: rect.left, right: rect.right, top: rect.top }
+    })
+
+    return {
+      chipCount: chips.length,
+      horizontalGap: chips[1].left - chips[0].right,
+      topDifference: Math.abs(chips[0].top - chips[1].top),
+    }
+  })
+
+  expect(metrics.chipCount).toBe(2)
+  expect(metrics.horizontalGap).toBeGreaterThanOrEqual(4)
+  expect(metrics.topDifference).toBeLessThan(2)
 })
 
 test('keeps cross-lane call anchor rails from covering lyrics or pronunciation', async ({ page }) => {
@@ -246,7 +281,7 @@ test('keeps cross-lane call anchor rails from covering lyrics or pronunciation',
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   const activeLine = page.locator('.lyric-line[data-position="current"]')
-  await expect(activeLine.getByLabel('Wo woo woo')).toBeVisible()
+  await expect(activeLine).toContainText('Wo woo woo')
   await expect(activeLine.locator('.call-marker[data-kind="chant"][data-lane="above"]', { hasText: '워 우우 우우' })).toBeVisible()
   await expect(activeLine.locator('.call-marker[data-kind="penlight"][data-lane="below"]', { hasText: '오른손->왼손->O->흔들기' })).toBeVisible()
 
@@ -295,7 +330,7 @@ test('seeks the mock player when a lyric line is clicked', async ({ page }) => {
   await page.getByRole('button', { name: /声を重ねよう/ }).click()
 
   await expect(page.getByText('0:06.0').first()).toBeVisible()
-  await expect(page.locator('.lyric-line[data-position="current"]').getByLabel('声を重ねよう')).toBeVisible()
+  await expect(page.locator('.lyric-line[data-position="current"]')).toContainText('声を重ねよう')
 })
 
 test('shows and clears the current lyric follow button after manual lyric scrolling', async ({ page }) => {
@@ -328,7 +363,7 @@ test('keeps long active lyrics inside the lyric panel', async ({ page }) => {
   setMockedSong(page, longLyricSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('키라리토 카가야쿠')).toBeVisible()
+  await expect(page.locator('.lyric-pronunciation', { hasText: '키라리토 카가야쿠' })).toBeVisible()
 
   const overflowCount = await page.evaluate(() => {
     const panel = document.querySelector('.live-lyrics-panel')?.getBoundingClientRect()
@@ -351,7 +386,9 @@ test('keeps lyric words from breaking into character-level flex wraps', async ({
   await expect(page.locator('.lyric-original:not(.lyric-original-measure)', { hasText: 'METEOR Future Light' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
-    const lyric = document.querySelector('.lyric-original[aria-label="METEOR Future Light"]')
+    const lyric = document.querySelector(
+      '.lyric-line[data-position="current"] .lyric-original:not(.lyric-original-measure)',
+    )
     const token = Array.from(lyric?.querySelectorAll<HTMLElement>('.lyric-token') ?? []).find((element) =>
       element.textContent?.startsWith('METEOR'),
     )
@@ -375,7 +412,7 @@ test('keeps wrapped call range markers out of lyric glyph bounds', async ({ page
   setMockedSong(page, wrappedRangeSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('하이 세노!')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: '하이 세노!' })).toBeVisible()
   await expect(page.locator('.call-range-end-arrow')).toBeVisible()
 
   const overlapCount = await page.evaluate(() => {
@@ -413,7 +450,7 @@ test('anchors a pointChar after the final grapheme to the wrapped lyric end', as
   setMockedSong(page, endAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('끝점 콜!')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: '끝점 콜!' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const activeLine = document.querySelector('.lyric-line[data-active="true"]')
@@ -449,7 +486,7 @@ test('keeps an attakaito wrapped end anchor on the second visual lyric line', as
   setMockedSong(page, attakaitoWrappedEndAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('Hey!')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: 'Hey!' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const activeLine = document.querySelector('.lyric-line[data-active="true"]')
@@ -493,7 +530,7 @@ test('keeps a left-anchored call marker inside the lyric lane', async ({ page })
   setMockedSong(page, leftAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('왼쪽에서도 잘리지 않는')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: '왼쪽에서도 잘리지 않는' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const activeLine = document.querySelector('.lyric-line[data-active="true"]')
@@ -521,7 +558,7 @@ test('keeps a left-anchored PPPH call chip from clipping its text', async ({ pag
   setMockedSong(page, ppphLeftAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  await expect(page.getByText('하이 세노! 하이! 하이! 하이하이하이하이!')).toBeVisible()
+  await expect(page.locator('.call-marker-text', { hasText: '하이 세노! 하이! 하이! 하이하이하이하이!' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const activeLine = document.querySelector('.lyric-line[data-active="true"]')
@@ -552,15 +589,11 @@ test('places inactive call chips at their lyric anchor instead of a leading row'
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   await expect(page.locator('.call-preview-chip')).toHaveCount(0)
-  const inactiveLine = page.locator('.lyric-line', {
-    has: page.locator('.lyric-original[aria-label="声を重ねよう"]'),
-  })
+  const inactiveLine = page.getByRole('button', { name: /声を重ねよう/ })
   await expect(inactiveLine.locator('.call-marker[data-variant="preview"]', { hasText: '오-!' })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
-    const inactiveLine = Array.from(document.querySelectorAll('.lyric-line')).find(
-      (line) => line.querySelector('.lyric-original')?.getAttribute('aria-label') === '声を重ねよう',
-    )
+    const inactiveLine = document.querySelector('.lyric-line[data-line-id="line-002"]')
     const marker = inactiveLine?.querySelector('.call-marker[data-variant="preview"]')
     const target = inactiveLine?.querySelector('[data-grapheme-index="4"]')
     const markerRect = marker?.getBoundingClientRect()
@@ -582,9 +615,7 @@ test('keeps separated inactive call chips on the same vertical level', async ({ 
   setMockedSong(page, separatedInactivePreviewSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
-  const inactiveLine = page.locator('.lyric-line', {
-    has: page.locator('.lyric-original[aria-label="声を重ねよう"]'),
-  })
+  const inactiveLine = page.getByRole('button', { name: /声を重ねよう/ })
   await expect(inactiveLine.locator('.call-marker[data-variant="preview"]')).toHaveCount(2)
 
   const metrics = await inactiveLine.evaluate((line) => {
@@ -637,7 +668,7 @@ test('keeps lyric auto-follow from scrolling the page and clipping the video', a
   await page.evaluate(() => window.scrollTo(0, 0))
 
   await page.getByRole('button', { name: '+6s' }).click()
-  await expect(page.locator('.lyric-line[data-position="current"]').getByLabel('星へ進む三番目')).toBeVisible()
+  await expect(page.locator('.lyric-line[data-position="current"]')).toContainText('星へ進む三番目')
 
   const metrics = await page.evaluate(() => {
     const topBarRect = document.querySelector('.player-top-bar')?.getBoundingClientRect()
@@ -657,19 +688,61 @@ test('keeps lyric auto-follow from scrolling the page and clipping the video', a
   expect(metrics!.videoTop).toBeGreaterThanOrEqual(metrics!.topBarBottom - 1)
 })
 
+test('keeps 100 lyric shells keyboard-seekable while detail DOM follows the viewport', async ({ page }) => {
+  setMockedSong(page, progressiveDetailSong)
+  await page.setViewportSize({ width: 1280, height: 800 })
+
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+
+  const list = page.locator('.lyric-list')
+  const lines = list.locator('.lyric-line')
+  await expect(lines).toHaveCount(100)
+  await expect.poll(() => lines.evaluateAll((elements) => elements.every((element) => (element as HTMLElement).tabIndex === 0))).toBe(true)
+  await expect.poll(() => list.locator('.lyric-line[data-detailed="true"]').count()).toBeGreaterThan(0)
+  expect(await list.locator('.lyric-line[data-detailed="true"]').count()).toBeLessThan(50)
+
+  await list.evaluate((element) => {
+    element.scrollTop = element.scrollHeight * 0.7
+    element.dispatchEvent(new Event('scroll'))
+  })
+  await expect.poll(() => list.locator('.lyric-line[data-detailed="true"]').count()).toBeGreaterThan(0)
+
+  const distantLine = lines.nth(89)
+  await distantLine.focus()
+  await expect(distantLine).toBeFocused()
+  await distantLine.press('Enter')
+
+  await expect(list).toHaveAttribute('data-programmatic-line-id', 'long-line-090')
+  const currentLine = list.locator('.lyric-line[data-position="current"]')
+  await expect(currentLine).toContainText('090')
+  await expect(distantLine).toBeFocused()
+  await expect(list).not.toHaveAttribute('data-programmatic-line-id')
+  await expect.poll(async () => {
+    return list.evaluate((element) => {
+      const current = element.querySelector<HTMLElement>('.lyric-line[data-position="current"]')
+      if (!current) return Number.POSITIVE_INFINITY
+      const listRect = element.getBoundingClientRect()
+      const currentRect = current.getBoundingClientRect()
+      return Math.abs((currentRect.top + currentRect.height / 2) - (listRect.top + listRect.height / 2))
+    })
+  }).toBeLessThanOrEqual(1)
+  await expect(page.getByRole('button', { name: '현재 가사' })).toHaveCount(0)
+  expect(await list.locator('.lyric-line[data-detailed="true"]').count()).toBeLessThan(50)
+})
+
 test('renders segmented lyricTrack calls as previews and active segment markers', async ({ page }) => {
   setMockedSong(page, segmentedSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
-  await expect(page.locator('.lyric-line[data-position="current"]').getByLabel('光るステージへ')).toBeVisible()
+  await expect(page.locator('.lyric-line[data-position="current"]')).toContainText('光るステージへ')
   await expect(page.locator('.lyric-line[data-position="current"]').locator('.call-marker', { hasText: '연속 콜!' })).toBeVisible()
   await expect(page.locator('.call-marker[data-variant="preview"]', { hasText: '연속 콜!' })).toBeVisible()
 
   await page.getByRole('button', { name: '+6s' }).click()
 
   const activeLine = page.locator('.lyric-line[data-position="current"]')
-  await expect(activeLine.getByLabel('声を重ねよう')).toBeVisible()
+  await expect(activeLine).toContainText('声を重ねよう')
   await expect(activeLine.locator('.call-marker', { hasText: '연속 콜!' })).toBeVisible()
   await expect(activeLine.locator('.call-range-end-arrow')).toBeVisible()
   await expect(activeLine.locator('.call-arrow')).toHaveCount(0)

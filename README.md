@@ -29,7 +29,7 @@
 
 ### 1. Node.js 준비
 
-이 저장소는 `.node-version`에 고정된 **Node.js 24.11.1**을 사용합니다.
+이 저장소는 `.node-version`에 고정된 **Node.js 26.5.1**과 `packageManager`에 고정된 **npm 11.17.0**을 사용합니다.
 
 ### 2. 의존성 설치
 ```bash

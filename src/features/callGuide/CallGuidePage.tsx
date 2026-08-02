@@ -1,101 +1,161 @@
-import { ListMusic } from 'lucide-react'
+import { AlertTriangle, CircleAlert, ListMusic } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams } from 'react-router'
 import './callGuide.css'
 import { getRootManifestUrl, shouldUseMockPlayer } from '../../app/config'
 import { localizedText } from '../../shared/i18n/localizedText'
-import { fetchCallGuideManifest } from '../data/fetchManifest'
-import { fetchSong } from '../data/fetchSong'
+import { loadCallGuideManifest, loadCallGuideSong } from '../data/callGuideSession'
+import type { ResolvedLoadResult } from '../data/fetchCallGuideManifest'
 import type { CallGuideManifest, LoadResult, LyricLine, SongGuide } from '../data/types'
 import { PlaybackClock } from '../player/PlaybackClock'
-import { createPlaybackTimeStore } from '../player/playbackTimeStore'
-import { YouTubePlayer, type YouTubePlayerHandle } from '../player/YouTubePlayer'
 import {
-  activeGlobalCalls,
+  createPlaybackBoundaryIndex,
+  type PlaybackBoundaryIndex,
+  type PlaybackBoundarySnapshot,
+} from '../player/playbackBoundaryIndex'
+import { createPlaybackTimeStore } from '../player/playbackTimeStore'
+import { YouTubePlayer } from '../player/YouTubePlayer'
+import {
   callKindLegend,
   callKindsInSong,
-  findActiveLyric,
   normalizedCallKind,
 } from './callPositioning'
 import { buildCountdownSchedule, countdownStartForLyric } from './countdownSchedule'
 import { LyricList } from './LyricList'
-import { AppShell } from '@astryxdesign/core/AppShell'
 import { AppHeader } from '../../shared/layout/AppHeader'
+import { AccessibleAppShell } from '../../shared/layout/AccessibleAppShell'
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout'
-import { Banner } from '@astryxdesign/core/Banner'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Button } from '@astryxdesign/core/Button'
 import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 
-function playbackBoundaryKey(song: SongGuide, currentMs: number): string {
-  const activeLineId = findActiveLyric(song.lyrics, currentMs)?.id ?? ''
-  const globalCallIds = activeGlobalCalls(song.callEvents, currentMs).map((call) => call.id)
-  return JSON.stringify([activeLineId, globalCallIds])
+type LoadStage = 'manifest' | 'song'
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return fallback
 }
 
 export function CallGuidePage() {
   const { songId } = useParams()
   const [loaded, setLoaded] = useState<{
     requestKey: string
-    manifestResult: LoadResult<CallGuideManifest>
+    manifestResult: ResolvedLoadResult<CallGuideManifest>
     songResult: LoadResult<SongGuide>
   } | null>(null)
-  const [boundaryMs, setBoundaryMs] = useState(0)
+  const [playbackSnapshot, setPlaybackSnapshot] = useState<PlaybackBoundarySnapshot | null>(null)
   const [playbackTimeStore] = useState(() => createPlaybackTimeStore())
   const [seekRequest, setSeekRequest] = useState<{ id: number; timeMs: number } | null>(null)
-  const [loadError, setLoadError] = useState<{ requestKey: string; message: string } | null>(null)
-  const [retryRevision, setRetryRevision] = useState(0)
-  const playerRef = useRef<YouTubePlayerHandle | null>(null)
-  const playbackBoundaryKeyRef = useRef('')
+  const [loadError, setLoadError] = useState<{
+    requestKey: string
+    message: string
+    stage: LoadStage
+  } | null>(null)
+  const [retryRequest, setRetryRequest] = useState<{
+    revision: number
+    rootManifestUrl: string | null
+    songId: string | null
+    stage: LoadStage | null
+  }>({ revision: 0, rootManifestUrl: null, songId: null, stage: null })
+  const playbackBoundaryIndexRef = useRef<PlaybackBoundaryIndex | null>(null)
+  const playbackSnapshotRef = useRef<PlaybackBoundarySnapshot | null>(null)
+  const consumedRetryRevisionRef = useRef<number | null>(null)
   const seekRequestIdRef = useRef(0)
   const rootManifestUrl = getRootManifestUrl()
   const mockPlayer = shouldUseMockPlayer()
-  const requestKey = `${rootManifestUrl}\u0000${songId ?? ''}\u0000${retryRevision}`
+  const requestKey = `${rootManifestUrl}\u0000${songId ?? ''}\u0000${retryRequest.revision}`
 
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
+    const retryStage = (
+      retryRequest.rootManifestUrl === rootManifestUrl
+      && retryRequest.songId === songId
+      && consumedRetryRevisionRef.current !== retryRequest.revision
+    ) ? retryRequest.stage : null
 
     async function loadInitialSong() {
       if (!songId) {
         await Promise.resolve()
         if (!cancelled) {
-          setLoadError({ requestKey, message: 'Song id was missing.' })
+          setLoadError({ requestKey, message: 'Song id was missing.', stage: 'manifest' })
         }
         return
       }
 
+      let loadedManifest: ResolvedLoadResult<CallGuideManifest>
       try {
-        const loadedManifest = await fetchCallGuideManifest(rootManifestUrl)
-        const manifestSong = loadedManifest.data.songs.find((song) => song.id === songId)
-        if (!manifestSong) {
-          throw new Error(`Song "${songId}" was not found in manifest.`)
-        }
-
-        const loadedSong = await fetchSong(loadedManifest.url, manifestSong.path, songId, {
-          expectedDataVersion: loadedManifest.data.dataVersion,
+        loadedManifest = await loadCallGuideManifest(rootManifestUrl, {
+          force: retryStage === 'manifest',
           signal: controller.signal,
         })
-
-        if (!cancelled) {
-          const initialPlaybackMs = loadedSong.data.youtube.startOffsetMs
-          setLoaded({ requestKey, manifestResult: loadedManifest, songResult: loadedSong })
-          playbackTimeStore.set(initialPlaybackMs)
-          playbackBoundaryKeyRef.current = playbackBoundaryKey(loadedSong.data, initialPlaybackMs)
-          setBoundaryMs(initialPlaybackMs)
-          setSeekRequest(null)
-          setLoadError(null)
+        if (retryStage === 'manifest') {
+          consumedRetryRevisionRef.current = retryRequest.revision
         }
       } catch (loadError) {
-        if (loadError && typeof loadError === 'object' && 'name' in loadError && loadError.name === 'AbortError') {
+        if (isAbortError(loadError) && controller.signal.aborted) {
           return
         }
         if (!cancelled) {
           setLoadError({
             requestKey,
-            message: loadError instanceof Error ? loadError.message : 'Song load failed.',
+            message: errorMessage(loadError, 'Manifest load failed.'),
+            stage: 'manifest',
+          })
+        }
+        return
+      }
+
+      const manifestSong = loadedManifest.data.songs.find((song) => song.id === songId)
+      if (!manifestSong) {
+        if (!cancelled) {
+          setLoadError({
+            requestKey,
+            message: `Song "${songId}" was not found in manifest.`,
+            stage: 'manifest',
+          })
+        }
+        return
+      }
+
+      try {
+        const loadedSong = await loadCallGuideSong(loadedManifest, manifestSong, {
+          force: retryStage === 'song',
+          signal: controller.signal,
+        })
+
+        if (!cancelled) {
+          const initialPlaybackMs = loadedSong.data.youtube.startOffsetMs
+          const playbackBoundaryIndex = createPlaybackBoundaryIndex(loadedSong.data)
+          const initialSnapshot = playbackBoundaryIndex.snapshotAt(initialPlaybackMs)
+          playbackBoundaryIndexRef.current = playbackBoundaryIndex
+          playbackSnapshotRef.current = initialSnapshot
+          if (retryStage === 'song') {
+            consumedRetryRevisionRef.current = retryRequest.revision
+          }
+          setLoaded({ requestKey, manifestResult: loadedManifest, songResult: loadedSong })
+          playbackTimeStore.set(initialPlaybackMs)
+          setPlaybackSnapshot(initialSnapshot)
+          setSeekRequest(null)
+          setLoadError(null)
+        }
+      } catch (loadError) {
+        if (isAbortError(loadError) && controller.signal.aborted) {
+          return
+        }
+        if (!cancelled) {
+          setLoadError({
+            requestKey,
+            message: errorMessage(loadError, 'Song load failed.'),
+            stage: 'song',
           })
         }
       }
@@ -107,7 +167,7 @@ export function CallGuidePage() {
       cancelled = true
       controller.abort()
     }
-  }, [playbackTimeStore, requestKey, rootManifestUrl, songId])
+  }, [playbackTimeStore, requestKey, retryRequest, rootManifestUrl, songId])
 
   const currentLoad = loaded?.requestKey === requestKey ? loaded : null
   const currentSongResult = currentLoad && currentLoad.songResult.data.id === songId ? currentLoad.songResult : null
@@ -126,91 +186,89 @@ export function CallGuidePage() {
     }
   }, [song])
 
-  const activeLine = useMemo(() => (song ? findActiveLyric(song.lyrics, boundaryMs) : null), [boundaryMs, song])
-  const globalCalls = useMemo(() => (song ? activeGlobalCalls(song.callEvents, boundaryMs) : []), [boundaryMs, song])
+  const activeLine = playbackSnapshot?.activeLine ?? null
+  const globalCalls = playbackSnapshot?.globalCalls ?? []
   const callLegendKinds = useMemo(() => (song ? callKindsInSong(song.callEvents) : []), [song])
   const countdownSchedule = useMemo(() => (song ? buildCountdownSchedule(song) : []), [song])
 
   const publishPlaybackTime = useCallback((timeMs: number) => {
     playbackTimeStore.set(timeMs)
-    if (!song) {
+    const playbackBoundaryIndex = playbackBoundaryIndexRef.current
+    if (!playbackBoundaryIndex) {
       return
     }
 
-    const nextBoundaryKey = playbackBoundaryKey(song, timeMs)
-    if (nextBoundaryKey === playbackBoundaryKeyRef.current) {
+    const nextSnapshot = playbackBoundaryIndex.snapshotAt(timeMs)
+    if (nextSnapshot === playbackSnapshotRef.current) {
       return
     }
 
-    playbackBoundaryKeyRef.current = nextBoundaryKey
-    setBoundaryMs(timeMs)
-  }, [playbackTimeStore, song])
+    playbackSnapshotRef.current = nextSnapshot
+    setPlaybackSnapshot(nextSnapshot)
+  }, [playbackTimeStore])
   
   const seekToLine = useCallback((line: LyricLine) => {
     const targetMs = countdownStartForLyric(countdownSchedule, line.startMs) ?? line.startMs
     seekRequestIdRef.current += 1
-    publishPlaybackTime(targetMs)
     setSeekRequest({ id: seekRequestIdRef.current, timeMs: targetMs })
-    playerRef.current?.seekTo(targetMs)
-  }, [countdownSchedule, publishPlaybackTime])
+  }, [countdownSchedule])
 
   return (
     <Theme theme={neutralTheme} mode="dark">
-      <AppShell
-        height="fill"
-        variant="elevated"
-        contentPadding={0}
+      <AccessibleAppShell
         className="player-shell"
-      topNav={
-        <AppHeader
-          activeNav="practice"
-          endContent={
-            <div className="flex items-center gap-3">
-              <StatusDot
-                variant={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'accent' : 'success'}
-                label={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'cached' : 'live'}
-              />
-              <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
-                <PlaybackClock active={Boolean(song)} store={playbackTimeStore} />
+        topNav={
+          <AppHeader
+            activeNav="practice"
+            endContent={
+              <div className="flex items-center gap-3">
+                <StatusDot
+                  variant={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'accent' : 'success'}
+                  label={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'cached' : 'live'}
+                />
+                <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
+                  <PlaybackClock active={Boolean(song)} store={playbackTimeStore} />
+                </div>
               </div>
-            </div>
-          }
-        />
-      }
-    >
+            }
+          />
+        }
+      >
       <Layout className="player-main">
         {currentManifestResult?.warning || currentSongResult?.warning ? (
           <div className="mx-4 my-2">
-            <Banner
-              status="warning"
-              title={currentManifestResult?.warning ?? currentSongResult?.warning ?? ''}
-              container="card"
-            />
+            <div className="status-banner flex items-center gap-3" role="alert">
+              <AlertTriangle aria-hidden="true" className="shrink-0" size={20} />
+              <p className="m-0">
+                {currentManifestResult?.warning ?? currentSongResult?.warning ?? ''}
+              </p>
+            </div>
           </div>
         ) : null}
 
         {error ? (
           <div className="mx-4 my-2">
-            <Banner
-              status="error"
-              title={error}
-              container="card"
-              role="alert"
-              endContent={(
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    label="다시 시도"
-                    onClick={() => setRetryRevision((revision) => revision + 1)}
-                    variant="secondary"
-                  />
-                  <Button
-                    href="/"
-                    label="카탈로그로 돌아가기"
-                    variant="ghost"
-                  />
-                </div>
-              )}
-            />
+            <div className="status-banner flex flex-wrap items-center gap-3" role="alert">
+              <CircleAlert aria-hidden="true" className="shrink-0" size={20} />
+              <p className="m-0 min-w-72 flex-1">{error}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  label="다시 시도"
+                  onClick={() => setRetryRequest((current) => ({
+                    revision: current.revision + 1,
+                    rootManifestUrl,
+                    songId: songId ?? null,
+                    stage: loadError?.requestKey === requestKey ? loadError.stage : 'manifest',
+                  }))}
+                  variant="secondary"
+                />
+                <Button
+                  href="/"
+                  label="카탈로그로 돌아가기"
+                  variant="ghost"
+                />
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -229,7 +287,6 @@ export function CallGuidePage() {
                       durationMs={song.timing.durationMs}
                       mock={mockPlayer}
                       onTimeUpdate={publishPlaybackTime}
-                      ref={playerRef}
                       seekRequest={seekRequest}
                       startOffsetMs={song.youtube.startOffsetMs}
                       videoId={song.youtube.videoId}
@@ -277,8 +334,8 @@ export function CallGuidePage() {
                   </div>
                 ) : null}
                 <LyricList
+                  activeLineId={playbackSnapshot?.activeLineId ?? null}
                   countdownSchedule={countdownSchedule}
-                  currentMs={boundaryMs}
                   onSeekToLine={seekToLine}
                   playbackTimeStore={playbackTimeStore}
                   song={song}
@@ -324,7 +381,7 @@ export function CallGuidePage() {
           ) : null}
         </LayoutContent>
       </Layout>
-    </AppShell>
+    </AccessibleAppShell>
   </Theme>
 )
 }

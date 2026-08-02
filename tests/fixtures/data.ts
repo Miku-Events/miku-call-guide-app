@@ -541,6 +541,42 @@ const overlappingKindSong = {
   ],
 }
 
+const closeNonOverlappingAnchorSong = {
+  ...song,
+  lyrics: [
+    {
+      ...song.lyrics[0],
+      text: {
+        ja: '心ゆくまで……お召し上がれ！',
+        koPronunciation: '코코로유쿠마데 오메시아가레',
+      },
+    },
+    song.lyrics[1],
+  ],
+  callEvents: [
+    {
+      ...song.callEvents[0],
+      id: 'call-yuku',
+      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 3 },
+      text: { ko: '유쿠!' },
+      markers: {
+        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
+        range: { enabled: false, style: 'none' },
+      },
+    },
+    {
+      ...song.callEvents[0],
+      id: 'call-made',
+      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 5 },
+      text: { ko: '마데!' },
+      markers: {
+        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
+        range: { enabled: false, style: 'none' },
+      },
+    },
+  ],
+}
+
 const crossLaneAnchorRailSong = {
   ...song,
   lyrics: [
@@ -690,6 +726,41 @@ const autoFollowSong = {
   callEvents: [song.callEvents[0], song.callEvents[1]],
 }
 
+function formatFixtureTimestamp(timeMs: number): string {
+  const hours = Math.floor(timeMs / 3_600_000)
+  const minutes = Math.floor((timeMs % 3_600_000) / 60_000)
+  const seconds = Math.floor((timeMs % 60_000) / 1000)
+  const milliseconds = timeMs % 1000
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`
+}
+
+const progressiveDetailSong = {
+  ...song,
+  timing: { unit: 'ms', durationMs: 300_000 },
+  lyrics: Array.from({ length: 100 }, (_, index) => {
+    const startMs = index * 3000
+    const endMs = startMs + 3000
+
+    return {
+      id: `long-line-${String(index + 1).padStart(3, '0')}`,
+      time: `${formatFixtureTimestamp(startMs)} --> ${formatFixtureTimestamp(endMs)}`,
+      startMs,
+      endMs,
+      text: {
+        ja: `長い練習リストの歌詞 ${String(index + 1).padStart(3, '0')}`,
+        koPronunciation: `나가이 렌슈 리스트노 카시 ${String(index + 1).padStart(3, '0')}`,
+      },
+    }
+  }),
+  callEvents: Array.from({ length: 20 }, (_, index) => ({
+    ...song.callEvents[0],
+    id: `long-call-${String(index + 1).padStart(3, '0')}`,
+    lyricLineId: `long-line-${String(index * 5 + 1).padStart(3, '0')}`,
+    text: { ko: `콜 ${index + 1}` },
+  })),
+}
+
 const segmentedSong = {
   ...song,
   callEvents: [
@@ -728,6 +799,7 @@ export {
   attakaitoWrappedEndAnchorSong,
   autoFollowSong,
   callGuideManifest,
+  closeNonOverlappingAnchorSong,
   crossLaneAnchorRailSong,
   dateOnlyEventDetail,
   dateOnlyEventSummary,
@@ -743,6 +815,7 @@ export {
   multiDayEventDetail,
   overlappingKindSong,
   ppphLeftAnchorSong,
+  progressiveDetailSong,
   rootManifest,
   segmentedSong,
   separatedInactivePreviewSong,

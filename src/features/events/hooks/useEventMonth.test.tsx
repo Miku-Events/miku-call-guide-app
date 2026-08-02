@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const fetchEventCalendarMonth = vi.hoisted(() => vi.fn())
 
-vi.mock('../../data/fetchManifest', () => ({ fetchEventCalendarMonth }))
+vi.mock('../../data/fetchEventManifest', () => ({ fetchEventCalendarMonth }))
 
 import { useEventMonth } from './useEventMonth'
 

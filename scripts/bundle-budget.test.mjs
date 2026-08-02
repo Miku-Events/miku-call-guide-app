@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_BUNDLE_BUDGET,
   checkBundleBudget,
+  collectCallRouteManifestClosure,
   formatBundleBudgetReport,
 } from './bundle-budget.mjs'
 
@@ -23,6 +24,10 @@ async function writeAsset(root, relativePath, contents) {
   await writeFile(target, contents)
 }
 
+async function writeViteManifest(root, manifest) {
+  await writeAsset(root, '.vite/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, {
     force: true,
@@ -31,9 +36,11 @@ afterEach(async () => {
 })
 
 describe('bundle budget', () => {
-  it('measures the HTML module entry and sums every emitted CSS asset', async () => {
+  it('measures existing budgets and the unique transitive call-route closure', async () => {
     const dist = await temporaryDist()
     const mainJavaScript = 'console.log("main entry")\n'.repeat(80)
+    const sharedJavaScript = 'export const shared = true\n'.repeat(60)
+    const callJavaScript = 'console.log("call route")\n'.repeat(50)
     const firstCss = '.first { color: #39c5bb; }\n'.repeat(40)
     const secondCss = '.second { display: grid; }\n'.repeat(30)
     await writeAsset(dist, 'index.html', [
@@ -42,9 +49,31 @@ describe('bundle budget', () => {
       '<script type="module" crossorigin src="/assets/main.js"></script>',
     ].join('\n'))
     await writeAsset(dist, 'assets/main.js', mainJavaScript)
+    await writeAsset(dist, 'assets/shared.js', sharedJavaScript)
+    await writeAsset(dist, 'assets/call.js', callJavaScript)
     await writeAsset(dist, 'assets/first.css', firstCss)
     await writeAsset(dist, 'assets/nested/second.css', secondCss)
     await writeAsset(dist, 'assets/lazy.js', 'console.log("not the entry")\n'.repeat(200))
+    await writeViteManifest(dist, {
+      'index.html': {
+        file: 'assets/main.js',
+        isEntry: true,
+        src: 'index.html',
+        imports: ['_shared.js'],
+        css: ['assets/first.css'],
+      },
+      '_shared.js': {
+        file: 'assets/shared.js',
+        css: ['assets/first.css'],
+      },
+      'src/features/callGuide/CallGuidePage.tsx': {
+        file: 'assets/call.js',
+        isDynamicEntry: true,
+        src: 'src/features/callGuide/CallGuidePage.tsx',
+        imports: ['_shared.js'],
+        css: ['assets/first.css', 'assets/nested/second.css'],
+      },
+    })
 
     const result = await checkBundleBudget({
       distDirectory: dist,
@@ -63,13 +92,36 @@ describe('bundle budget', () => {
     expect(result.css.gzipBytes).toBe(
       gzipSync(firstCss).byteLength + gzipSync(secondCss).byteLength,
     )
+    expect(result.callRoute.js.assets.map(({ path }) => path)).toEqual([
+      'assets/call.js',
+      'assets/main.js',
+      'assets/shared.js',
+    ])
+    expect(result.callRoute.js.gzipBytes).toBe(
+      gzipSync(callJavaScript).byteLength
+      + gzipSync(mainJavaScript).byteLength
+      + gzipSync(sharedJavaScript).byteLength,
+    )
+    expect(result.callRoute.css.assets.map(({ path }) => path)).toEqual([
+      'assets/first.css',
+      'assets/nested/second.css',
+    ])
   })
 
   it('fails with an actionable report when either limit is exceeded', async () => {
     const dist = await temporaryDist()
     await writeAsset(dist, 'index.html', '<script type="module" src="/assets/main.js"></script>')
     await writeAsset(dist, 'assets/main.js', 'const payload = "abcdefghijklmnopqrstuvwxyz";\n'.repeat(40))
+    await writeAsset(dist, 'assets/call.js', 'export const call = true\n')
     await writeAsset(dist, 'assets/main.css', '.item { padding: 123456789px; }\n'.repeat(40))
+    await writeViteManifest(dist, {
+      'index.html': { file: 'assets/main.js', isEntry: true, src: 'index.html' },
+      'src/features/callGuide/CallGuidePage.tsx': {
+        file: 'assets/call.js',
+        isDynamicEntry: true,
+        src: 'src/features/callGuide/CallGuidePage.tsx',
+      },
+    })
 
     await expect(checkBundleBudget({
       distDirectory: dist,
@@ -103,12 +155,38 @@ describe('bundle budget', () => {
       mainJsGzipBytes: Math.floor(Math.round(101.66 * 1024) * 1.1),
       totalCssBaselineBytes: Math.round(39.09 * 1024),
       totalCssGzipBytes: Math.floor(Math.round(39.09 * 1024) * 1.1),
+      callRouteJsGzipBytes: 161_383,
+      callRouteCssGzipBytes: 39_312,
     })
 
     expect(formatBundleBudgetReport({
       main: { path: 'assets/index.js', gzipBytes: 1024 },
       css: { paths: ['assets/index.css'], gzipBytes: 2048 },
-      budget: { mainJsGzipBytes: 4096, totalCssGzipBytes: 4096 },
+      callRoute: {
+        js: { assets: [{ path: 'assets/index.js', gzipBytes: 1024 }], gzipBytes: 1024 },
+        css: { assets: [{ path: 'assets/index.css', gzipBytes: 2048 }], gzipBytes: 2048 },
+      },
+      budget: {
+        mainJsGzipBytes: 4096,
+        totalCssGzipBytes: 4096,
+        callRouteJsGzipBytes: 4096,
+        callRouteCssGzipBytes: 4096,
+      },
     })).toContain('PASS')
+  })
+
+  it('rejects missing transitive manifest imports instead of undercounting', () => {
+    expect(() => collectCallRouteManifestClosure({
+      'index.html': {
+        file: 'assets/main.js',
+        isEntry: true,
+        src: 'index.html',
+        imports: ['_missing.js'],
+      },
+      'src/features/callGuide/CallGuidePage.tsx': {
+        file: 'assets/call.js',
+        src: 'src/features/callGuide/CallGuidePage.tsx',
+      },
+    })).toThrow(/missing import/i)
   })
 })

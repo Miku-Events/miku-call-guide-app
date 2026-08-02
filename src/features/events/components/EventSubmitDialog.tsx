@@ -1,6 +1,7 @@
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { Github, Send } from 'lucide-react'
+import { Send } from 'lucide-react'
 import { TurnstileWidget } from '../../../components/TurnstileWidget'
+import { GitHubMarkIcon } from '../../../shared/icons/GitHubMarkIcon'
 import type { SubmissionSession } from '../submissionClient'
 import { submitEditRequest, submitEventSubmission, githubLoginUrl } from '../submissionClient'
 import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
@@ -239,11 +240,11 @@ export function EventSubmitDialog({
               <EmptyState
                 title="GitHub 로그인 필요"
                 description="GitHub 로그인 후 요청을 제출할 수 있습니다."
-                icon={<Github size={28} />}
+                icon={<GitHubMarkIcon size={28} />}
                 actions={
                   <Button
                     label="GitHub 로그인"
-                    icon={<Github size={16} />}
+                    icon={<GitHubMarkIcon size={16} />}
                     onClick={openLogin}
                     variant="primary"
                   />

@@ -27,7 +27,7 @@ vi.mock('../../shared/layout/AppPageShell', () => ({
   StatusBanner: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))
 
-vi.mock('../data/fetchManifest', () => ({
+vi.mock('../data/fetchEventManifest', () => ({
   fetchEventCalendarIndex: harness.fetchEventCalendarIndex,
   fetchEventDetail: harness.fetchEventDetail,
 }))

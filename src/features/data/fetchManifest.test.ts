@@ -92,21 +92,30 @@ describe('fetch manifest helpers', () => {
   })
 
   it('falls back to the last successful call-guide manifest cache when the child manifest fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => rootManifest })
-        .mockResolvedValueOnce({ ok: true, json: async () => callGuideManifest })
-        .mockResolvedValueOnce({ ok: true, json: async () => rootManifest })
-        .mockRejectedValueOnce(new Error('offline')),
-    )
-
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => rootManifest })
+      .mockResolvedValueOnce({ ok: true, json: async () => callGuideManifest }))
     await fetchCallGuideManifest('https://example.test/manifest.json')
+    const offlineFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => rootManifest })
+      .mockRejectedValueOnce(new Error('offline'))
+    vi.stubGlobal('fetch', offlineFetch)
     const result = await fetchCallGuideManifest('https://example.test/manifest.json')
 
     expect(result.source).toBe('cache')
     expect(result.warning).toContain('캐시')
+    expect(offlineFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry the same speculative URL after child validation fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => rootManifest })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...callGuideManifest, songs: null }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchCallGuideManifest('https://example.test/manifest.json')).rejects.toThrow()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('loads event index, month shard, and event detail through relative paths', async () => {
@@ -188,6 +197,24 @@ describe('fetch manifest helpers', () => {
 
     await expect(fetchCallGuideManifest('https://example.test/manifest.json')).rejects.toThrow()
     expect(window.localStorage.length).toBe(0)
+  })
+
+  it('aborts the unused speculative child when the root request fails', async () => {
+    let childSignal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((url: string, options: RequestInit) => {
+      if (url === 'https://example.test/manifest.json') {
+        return Promise.reject(new Error('root offline'))
+      }
+      childSignal = options.signal as AbortSignal
+      return new Promise((_resolve, reject) => {
+        childSignal?.addEventListener('abort', () => reject(childSignal?.reason), { once: true })
+      })
+    }))
+
+    await expect(fetchCallGuideManifest('https://example.test/manifest.json')).rejects.toThrow('root offline')
+
+    expect(childSignal).toBeDefined()
+    expect(childSignal?.aborted).toBe(true)
   })
 
   it('rejects wrong requested month and dataVersion payloads', async () => {

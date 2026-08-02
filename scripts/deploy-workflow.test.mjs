@@ -14,6 +14,12 @@ async function projectReadme() {
   return readFile(path.join(process.cwd(), 'README.md'), 'utf8')
 }
 
+async function projectManifest() {
+  return JSON.parse(
+    await readFile(path.join(process.cwd(), 'package.json'), 'utf8'),
+  )
+}
+
 async function operationsSecurityGuide() {
   return readFile(path.join(process.cwd(), 'docs/operations-security.md'), 'utf8')
 }
@@ -60,6 +66,7 @@ describe('production deployment workflow', () => {
     const workflow = await deploymentWorkflow()
 
     expect(workflow).toContain('npm run check')
+    expect(workflow).toContain('npm run check:functions')
     expect(workflow).not.toContain('compat/data')
     expect(workflow).not.toContain('COMPAT_REPOSITORY_TOKEN')
     expect(workflow).not.toContain('Checkout compatible data repository')
@@ -79,6 +86,82 @@ describe('production deployment workflow', () => {
     expect(workflow).toContain('npm run smoke:preview')
     expect(workflow).toContain('npx playwright install --with-deps chromium')
     expect(workflow).not.toContain('environment: production')
+  })
+
+  it('pins Node 24 actions, stable runners, and strict artifact digest verification', async () => {
+    const workflow = await deploymentWorkflow()
+    const checkout =
+      'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'
+    const setupNode =
+      'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0'
+    const uploadArtifact =
+      'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1'
+    const downloadArtifact =
+      'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1'
+
+    expect(workflow.match(/runs-on: ubuntu-24\.04/g)).toHaveLength(5)
+    expect(workflow).not.toContain('ubuntu-latest')
+    expect(workflow.split(checkout)).toHaveLength(6)
+    expect(workflow.split(setupNode)).toHaveLength(6)
+    expect(workflow.split(uploadArtifact)).toHaveLength(2)
+    expect(workflow.split(downloadArtifact)).toHaveLength(4)
+    expect(workflow.match(/digest-mismatch: error/g)).toHaveLength(3)
+    expect(workflow).not.toContain('continue-on-error: true')
+  })
+
+  it('keeps a non-publishing Node 24 compatibility gate during the Node 26 transition', async () => {
+    const workflow = await deploymentWorkflow()
+    const compatibilityJob = workflow.slice(
+      workflow.indexOf('\n  compatibility:'),
+      workflow.indexOf('\n  e2e:'),
+    )
+    const previewJob = workflow.slice(
+      workflow.indexOf('\n  preview:'),
+      workflow.indexOf('\n  deploy:'),
+    )
+
+    expect(compatibilityJob).toContain('node-version: 24.18.1')
+    expect(compatibilityJob).toContain('npm install --global npm@11.17.0')
+    expect(compatibilityJob).toContain('npm ci')
+    expect(compatibilityJob).toContain('npm run check')
+    expect(compatibilityJob).toContain('npm run check:functions')
+    expect(compatibilityJob).not.toContain('upload-artifact')
+    expect(compatibilityJob).not.toContain('dist')
+    expect(previewJob).toMatch(
+      /needs:\n      - quality\n      - compatibility\n      - e2e\n/,
+    )
+  })
+
+  it('pins Wrangler across dependencies, function builds, preview, and production', async () => {
+    const [workflow, manifest, wrangler] = await Promise.all([
+      deploymentWorkflow(),
+      projectManifest(),
+      wranglerConfig(),
+    ])
+    const wranglerAction =
+      'cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0'
+    const expectedFunctionCommand =
+      'wrangler pages functions build functions --outdir node_modules/.tmp/pages-functions-build --compatibility-date 2024-09-23 --compatibility-flags nodejs_compat'
+    const qualityJob = workflow.slice(
+      workflow.indexOf('\n  quality:'),
+      workflow.indexOf('\n  compatibility:'),
+    )
+
+    expect(manifest.devDependencies.wrangler).toBe('4.118.0')
+    expect(manifest.scripts['check:functions']).toBe(expectedFunctionCommand)
+    expect(workflow.split(wranglerAction)).toHaveLength(3)
+    expect(workflow.match(/wranglerVersion: 4\.118\.0/g)).toHaveLength(2)
+    expect(qualityJob.indexOf('npm run check:functions')).toBeGreaterThan(
+      qualityJob.indexOf('npm run check'),
+    )
+    expect(qualityJob.indexOf('npm run check:functions')).toBeLessThan(
+      qualityJob.indexOf('actions/upload-artifact@'),
+    )
+    expect(wrangler).toContain('compatibility_date = "2024-09-23"')
+    expect(wrangler).toContain('compatibility_flags = [ "nodejs_compat" ]')
+    expect(expectedFunctionCommand).toContain(
+      '--outdir node_modules/.tmp/pages-functions-build',
+    )
   })
 
   it('uses the selected main commit SHA throughout build, preview, and production smoke', async () => {

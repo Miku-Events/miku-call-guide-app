@@ -1,9 +1,29 @@
 export const YOUTUBE_IFRAME_API_SRC = 'https://www.youtube.com/iframe_api'
 
+export const YOUTUBE_PLAYER_STATE = {
+  UNSTARTED: -1,
+  ENDED: 0,
+  PLAYING: 1,
+  PAUSED: 2,
+  BUFFERING: 3,
+  CUED: 5,
+} as const
+
+export type YouTubePlayerState = typeof YOUTUBE_PLAYER_STATE[keyof typeof YOUTUBE_PLAYER_STATE]
+
 export type YouTubePlayerInstance = {
   getCurrentTime: () => number
+  getPlayerState: () => YouTubePlayerState | number
   seekTo: (seconds: number, allowSeekAhead?: boolean) => void
   destroy: () => void
+}
+
+export interface YouTubePlayerEvent<T = YouTubePlayerInstance> {
+  target: T
+}
+
+export interface YouTubePlayerStateChangeEvent extends YouTubePlayerEvent {
+  data: YouTubePlayerState | number
 }
 
 export type YouTubeConstructor = new (
@@ -12,8 +32,9 @@ export type YouTubeConstructor = new (
     videoId: string
     playerVars: Record<string, string | number>
     events: {
-      onError?: () => void
-      onReady?: () => void
+      onError?: (event: YouTubePlayerEvent) => void
+      onReady?: (event: YouTubePlayerEvent) => void
+      onStateChange?: (event: YouTubePlayerStateChangeEvent) => void
     }
   },
 ) => YouTubePlayerInstance

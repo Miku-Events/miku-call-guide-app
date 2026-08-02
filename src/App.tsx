@@ -4,12 +4,13 @@ import { AppErrorBoundary } from './shared/errors/AppErrorBoundary'
 import { NotFoundPage } from './shared/errors/NotFoundPage'
 import { PageShellSkeleton } from './shared/layout/PageShellSkeleton'
 import { SpoilerDisclaimerGate } from './features/spoilerDisclaimer/SpoilerDisclaimerGate'
+import { loadCallGuideRoute } from './features/callGuide/loadCallGuideRoute'
 
 const CatalogPage = lazy(() =>
   import('./features/catalog/CatalogPage').then((m) => ({ default: m.CatalogPage }))
 )
 const CallGuidePage = lazy(() =>
-  import('./features/callGuide/CallGuidePage').then((m) => ({ default: m.CallGuidePage }))
+  loadCallGuideRoute().then((m) => ({ default: m.CallGuidePage }))
 )
 const EventCalendarPage = lazy(() =>
   import('./features/events/EventCalendarPage').then((m) => ({ default: m.EventCalendarPage }))

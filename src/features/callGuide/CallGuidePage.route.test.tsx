@@ -8,11 +8,12 @@ import type { CountdownCue } from './countdownSchedule'
 const harness = vi.hoisted(() => ({
   fetchCallGuideManifest: vi.fn(),
   fetchSong: vi.fn(),
-  lyricRenderTimes: [] as number[],
+  lyricRenderStates: [] as Array<string | null>,
   countdownSchedules: [] as readonly CountdownCue[][],
   playbackUpdate: null as ((timeMs: number) => void) | null,
   playbackTimeStore: null as PlaybackTimeStore | null,
   seekToLine: null as ((line: LyricLine) => void) | null,
+  seekRequest: null as { id: number; timeMs: number } | null,
   startOffsetMs: null as number | null,
   songId: 'song-a',
 }))
@@ -26,17 +27,23 @@ vi.mock('../../app/config', () => ({
   shouldUseMockPlayer: () => true,
 }))
 
-vi.mock('../data/fetchManifest', () => ({
-  fetchCallGuideManifest: harness.fetchCallGuideManifest,
-}))
-
-vi.mock('../data/fetchSong', () => ({
-  fetchSong: harness.fetchSong,
+vi.mock('../data/callGuideSession', () => ({
+  loadCallGuideManifest: harness.fetchCallGuideManifest,
+  loadCallGuideSong: harness.fetchSong,
 }))
 
 vi.mock('../player/YouTubePlayer', () => ({
-  YouTubePlayer: ({ onTimeUpdate, startOffsetMs }: { onTimeUpdate: (timeMs: number) => void; startOffsetMs: number }) => {
+  YouTubePlayer: ({
+    onTimeUpdate,
+    seekRequest,
+    startOffsetMs,
+  }: {
+    onTimeUpdate: (timeMs: number) => void
+    seekRequest: { id: number; timeMs: number } | null
+    startOffsetMs: number
+  }) => {
     harness.playbackUpdate = onTimeUpdate
+    harness.seekRequest = seekRequest
     harness.startOffsetMs = startOffsetMs
     return null
   },
@@ -45,20 +52,20 @@ vi.mock('../player/YouTubePlayer', () => ({
 vi.mock('./LyricList', () => ({
   LyricList: ({
     countdownSchedule,
-    currentMs,
+    activeLineId,
     onSeekToLine,
     playbackTimeStore,
   }: {
     countdownSchedule: readonly CountdownCue[]
-    currentMs: number
+    activeLineId: string | null
     onSeekToLine: (line: LyricLine) => void
     playbackTimeStore: PlaybackTimeStore
   }) => {
-    harness.lyricRenderTimes.push(currentMs)
+    harness.lyricRenderStates.push(activeLineId)
     harness.countdownSchedules.push(countdownSchedule)
     harness.seekToLine = onSeekToLine
     harness.playbackTimeStore = playbackTimeStore
-    return <div data-testid="lyric-time">{currentMs}</div>
+    return <div data-testid="active-lyric">{activeLineId ?? 'none'}</div>
   },
 }))
 
@@ -162,11 +169,12 @@ function songResult(id: string, title: string): LoadResult<SongGuide> {
 beforeEach(() => {
   harness.fetchCallGuideManifest.mockReset()
   harness.fetchSong.mockReset()
-  harness.lyricRenderTimes = []
+  harness.lyricRenderStates = []
   harness.countdownSchedules = []
   harness.playbackUpdate = null
   harness.playbackTimeStore = null
   harness.seekToLine = null
+  harness.seekRequest = null
   harness.startOffsetMs = null
   harness.songId = 'song-a'
   harness.fetchCallGuideManifest.mockResolvedValue(manifestResult())
@@ -238,12 +246,76 @@ describe('CallGuidePage route identity', () => {
 
     expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
     expect(harness.fetchCallGuideManifest).toHaveBeenCalledTimes(2)
+    expect(harness.fetchCallGuideManifest.mock.calls[1][1]).toMatchObject({ force: true })
+  })
+
+  it('forces only the song load when retrying a valid manifest after a song failure', async () => {
+    harness.fetchSong
+      .mockRejectedValueOnce(new Error('Song data failed.'))
+      .mockResolvedValueOnce(songResult('song-a', 'Song A'))
+
+    render(<CallGuidePage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Song data failed.')
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+    expect(harness.fetchCallGuideManifest).toHaveBeenCalledTimes(2)
+    expect(harness.fetchCallGuideManifest.mock.calls[1][1]).toMatchObject({ force: false })
+    expect(harness.fetchSong).toHaveBeenCalledTimes(2)
+    expect(harness.fetchSong.mock.calls[1][2]).toMatchObject({ force: true })
+  })
+
+  it('consumes a successful retry so returning to the route does not force it again', async () => {
+    harness.fetchSong
+      .mockRejectedValueOnce(new Error('Song A failed.'))
+      .mockResolvedValueOnce(songResult('song-a', 'Song A'))
+      .mockResolvedValueOnce(songResult('song-b', 'Song B'))
+      .mockResolvedValueOnce(songResult('song-a', 'Song A again'))
+
+    const { rerender } = render(<CallGuidePage />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Song A failed.')
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
+    expect(harness.fetchSong.mock.calls[1][2]).toMatchObject({ force: true })
+
+    harness.songId = 'song-b'
+    rerender(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song B' })).toBeInTheDocument()
+
+    harness.songId = 'song-a'
+    rerender(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A again' })).toBeInTheDocument()
+    expect(harness.fetchSong.mock.calls[3][2]).toMatchObject({ force: false })
+  })
+
+  it('consumes a manifest retry before a pending song load when leaving and returning', async () => {
+    harness.fetchCallGuideManifest.mockRejectedValueOnce(new Error('Manifest failed.'))
+    harness.fetchSong
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce(songResult('song-b', 'Song B'))
+      .mockResolvedValueOnce(songResult('song-a', 'Song A after return'))
+
+    const { rerender } = render(<CallGuidePage />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Manifest failed.')
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(harness.fetchSong).toHaveBeenCalledTimes(1))
+    expect(harness.fetchCallGuideManifest.mock.calls[1][1]).toMatchObject({ force: true })
+
+    harness.songId = 'song-b'
+    rerender(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song B' })).toBeInTheDocument()
+
+    harness.songId = 'song-a'
+    rerender(<CallGuidePage />)
+    expect(await screen.findByRole('heading', { name: 'Song A after return' })).toBeInTheDocument()
+    expect(harness.fetchCallGuideManifest.mock.calls[3][1]).toMatchObject({ force: false })
   })
 
   it('aborts an in-flight song request on unmount', async () => {
     let requestSignal: AbortSignal | undefined
     harness.fetchSong.mockImplementationOnce((...args) => {
-      requestSignal = args[3].signal
+      requestSignal = args[2].signal
       return new Promise(() => {})
     })
 
@@ -253,6 +325,14 @@ describe('CallGuidePage route identity', () => {
     unmount()
 
     expect(requestSignal?.aborted).toBe(true)
+  })
+
+  it('shows an unexpected upstream AbortError when its own request is still active', async () => {
+    harness.fetchCallGuideManifest.mockRejectedValueOnce(new DOMException('Upstream aborted.', 'AbortError'))
+
+    render(<CallGuidePage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Upstream aborted.')
   })
 
   it('rerenders the guide only when playback crosses a lyric boundary', async () => {
@@ -266,15 +346,15 @@ describe('CallGuidePage route identity', () => {
 
     render(<CallGuidePage />)
     expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
-    const rendersAfterLoad = harness.lyricRenderTimes.length
+    const rendersAfterLoad = harness.lyricRenderStates.length
 
     act(() => harness.playbackUpdate?.(100))
     act(() => harness.playbackUpdate?.(200))
-    expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad)
+    expect(harness.lyricRenderStates).toHaveLength(rendersAfterLoad)
 
     act(() => harness.playbackUpdate?.(1000))
-    await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1))
-    expect(harness.lyricRenderTimes.at(-1)).toBe(1000)
+    await waitFor(() => expect(harness.lyricRenderStates).toHaveLength(rendersAfterLoad + 1))
+    expect(harness.lyricRenderStates.at(-1)).toBe('line-2')
   })
 
   it('seeks a lyric to its effective countdown start without changing the player start offset', async () => {
@@ -296,6 +376,9 @@ describe('CallGuidePage route identity', () => {
 
     act(() => harness.seekToLine?.(result.data.lyrics[0]))
 
+    expect(harness.seekRequest?.timeMs).toBe(3000)
+    expect(screen.getByText('0:01.0')).toBeInTheDocument()
+    act(() => harness.playbackUpdate?.(3000))
     expect(screen.getByText('0:03.0')).toBeInTheDocument()
   })
 
@@ -313,7 +396,7 @@ describe('CallGuidePage route identity', () => {
     render(<CallGuidePage />)
     expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
 
-    expect(screen.getByTestId('lyric-time')).toHaveTextContent('1000')
+    expect(screen.getByTestId('active-lyric')).toHaveTextContent('none')
     expect(harness.playbackTimeStore?.getSnapshot()).toBe(1000)
   })
 
@@ -342,21 +425,21 @@ describe('CallGuidePage route identity', () => {
 
     render(<CallGuidePage />)
     expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
-    const rendersAfterLoad = harness.lyricRenderTimes.length
+    const rendersAfterLoad = harness.lyricRenderStates.length
 
     act(() => harness.playbackUpdate?.(100))
     act(() => harness.playbackUpdate?.(400))
-    expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad)
+    expect(harness.lyricRenderStates).toHaveLength(rendersAfterLoad)
 
     act(() => harness.playbackUpdate?.(500))
-    await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1))
+    await waitFor(() => expect(harness.lyricRenderStates).toHaveLength(rendersAfterLoad + 1))
     expect(screen.getByText('콜')).toBeInTheDocument()
     act(() => harness.playbackUpdate?.(700))
     act(() => harness.playbackUpdate?.(900))
-    expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 1)
+    expect(harness.lyricRenderStates).toHaveLength(rendersAfterLoad + 1)
 
     act(() => harness.playbackUpdate?.(1000))
-    await waitFor(() => expect(harness.lyricRenderTimes).toHaveLength(rendersAfterLoad + 2))
+    await waitFor(() => expect(harness.lyricRenderStates).toHaveLength(rendersAfterLoad + 2))
     expect(screen.queryByText('콜')).not.toBeInTheDocument()
   })
 
@@ -378,13 +461,13 @@ describe('CallGuidePage route identity', () => {
     const { rerender } = render(<CallGuidePage />)
     expect(await screen.findByRole('heading', { name: 'Song A' })).toBeInTheDocument()
     act(() => harness.playbackUpdate?.(750))
-    await waitFor(() => expect(harness.lyricRenderTimes.at(-1)).toBe(750))
+    await waitFor(() => expect(harness.lyricRenderStates.at(-1)).toBe('line-a-2'))
 
     harness.songId = 'song-b'
     rerender(<CallGuidePage />)
 
     expect(await screen.findByRole('heading', { name: 'Song B' })).toBeInTheDocument()
-    expect(harness.lyricRenderTimes.at(-1)).toBe(0)
+    expect(harness.lyricRenderStates.at(-1)).toBe('line-b')
     expect(screen.getByText('0:00.0')).toBeInTheDocument()
   })
 })

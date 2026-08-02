@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import type { Page, Route } from '@playwright/test'
-import { expect, setMockedSession, test, VERSIONED_LEAF_ROUTES } from './fixtures/app-test'
-import { eventCalendarMayMonth, multiDayEventDetail, song } from './fixtures/data'
+import { expect, setMockedSession, setMockedSong, test, VERSIONED_LEAF_ROUTES } from './fixtures/app-test'
+import { eventCalendarMayMonth, multiDayEventDetail, progressiveDetailSong, song } from './fixtures/data'
 
 type TurnstileHarnessWindow = Window & {
   __completeTurnstile: (token?: string) => void
@@ -58,6 +58,22 @@ test('has no serious automated accessibility violations on catalog and event dia
   expect(
     seriousOrCriticalViolations(dialogResults),
     JSON.stringify(seriousOrCriticalViolations(dialogResults), null, 2),
+  ).toEqual([])
+})
+
+test('has no serious automated accessibility violations on the progressive practice list', async ({ page }) => {
+  setMockedSong(page, progressiveDetailSong)
+  await page.goto('/?mockPlayer=1#/songs/future-light-sample')
+
+  const list = page.locator('.lyric-list')
+  await expect(list.locator('.lyric-line')).toHaveCount(100)
+  await expect.poll(() => list.locator('.lyric-line[data-detailed="true"]').count()).toBeGreaterThan(0)
+  expect(await list.locator('.lyric-line[data-detailed="false"]').count()).toBeGreaterThan(0)
+
+  const results = await new AxeBuilder({ page }).analyze()
+  expect(
+    seriousOrCriticalViolations(results),
+    JSON.stringify(seriousOrCriticalViolations(results), null, 2),
   ).toEqual([])
 })
 

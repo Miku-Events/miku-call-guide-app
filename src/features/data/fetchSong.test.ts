@@ -80,7 +80,7 @@ describe('fetchSong', () => {
     expect(window.localStorage.length).toBe(1)
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.test/songs/sample-song.json?_miku_data_version=v1',
-      { cache: 'no-cache' },
+      { cache: 'force-cache' },
     )
   })
 
