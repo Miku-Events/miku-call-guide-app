@@ -1,7 +1,7 @@
 import { validateRuntimeSong } from '../../../data-contracts/validators.mjs'
 import { loadCache, removeCache, resourceCacheKey, saveCache } from './cacheStore'
 import { assertContract } from './contractValidation'
-import { resolveVersionedLeafUrl, type VersionedLoadOptions } from './fetchManifest'
+import { resolveVersionedLeafUrl, type VersionedLoadOptions } from './manifestShared'
 import type { LoadResult, SongGuide } from './types'
 
 const pendingSongs = new Map<string, Promise<LoadResult<SongGuide>>>()
@@ -65,7 +65,7 @@ export function fetchSong(
         throw abortReason(options.signal)
       }
       const response = await fetch(url, {
-        cache: 'no-cache',
+        cache: 'force-cache',
         ...(options.signal ? { signal: options.signal } : {}),
       })
       if (!response.ok) {
@@ -75,7 +75,7 @@ export function fetchSong(
       const data: unknown = await response.json()
       assertSong(data)
       assertSongIdentity(data, songId, options.expectedDataVersion)
-      saveCache(cacheKey, data)
+      saveCache(cacheKey, data, { currentDataVersion: options.expectedDataVersion })
       return { data, source: 'network' }
     } catch (error) {
       if (isAbortError(error) || options.signal?.aborted) {

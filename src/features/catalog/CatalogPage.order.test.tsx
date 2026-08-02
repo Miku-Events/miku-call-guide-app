@@ -6,14 +6,21 @@ import type { CallGuideManifest, LoadResult } from '../data/types'
 
 const harness = vi.hoisted(() => ({
   fetchCallGuideManifest: vi.fn(),
+  loadCallGuideRoute: vi.fn(() => Promise.resolve({})),
+  prefetchCallGuideSong: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('../../app/config', () => ({
   getRootManifestUrl: () => 'https://example.test/manifest.json',
 }))
 
-vi.mock('../data/fetchManifest', () => ({
-  fetchCallGuideManifest: harness.fetchCallGuideManifest,
+vi.mock('../data/callGuideSession', () => ({
+  loadCallGuideManifest: harness.fetchCallGuideManifest,
+  prefetchCallGuideSong: harness.prefetchCallGuideSong,
+}))
+
+vi.mock('../callGuide/loadCallGuideRoute', () => ({
+  loadCallGuideRoute: harness.loadCallGuideRoute,
 }))
 
 vi.mock('../../shared/layout/AppPageShell', () => ({
@@ -140,6 +147,8 @@ function renderedSongTitles(): string[] {
 
 beforeEach(() => {
   harness.fetchCallGuideManifest.mockReset()
+  harness.loadCallGuideRoute.mockClear()
+  harness.prefetchCallGuideSong.mockClear()
   vi.stubGlobal('IntersectionObserver', class {
     observe() {}
     disconnect() {}
@@ -149,6 +158,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -197,5 +207,38 @@ describe('CatalogPage randomized display order', () => {
     await waitFor(() => expect(harness.fetchCallGuideManifest).toHaveBeenCalledTimes(3))
     await waitFor(() => expect(renderedSongTitles()).toEqual(['Alpha', 'Beta']))
     expect(random).toHaveBeenCalledTimes(4)
+  })
+
+  it('prefetches the route and song after hover delay or immediately on focus and pointer down', async () => {
+    harness.fetchCallGuideManifest.mockResolvedValueOnce(catalogResult('v1'))
+
+    render(
+      <MemoryRouter>
+        <CatalogPage />
+      </MemoryRouter>,
+    )
+
+    const alphaCard = await screen.findByRole('link', { name: /Alpha/ })
+    vi.useFakeTimers()
+
+    fireEvent.mouseEnter(alphaCard)
+    vi.advanceTimersByTime(99)
+    expect(harness.loadCallGuideRoute).not.toHaveBeenCalled()
+    expect(harness.prefetchCallGuideSong).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1)
+    expect(harness.loadCallGuideRoute).toHaveBeenCalledTimes(1)
+    expect(harness.prefetchCallGuideSong).toHaveBeenCalledWith(
+      'https://example.test/manifest.json',
+      'song-a',
+    )
+
+    fireEvent.focus(alphaCard)
+    expect(harness.loadCallGuideRoute).toHaveBeenCalledTimes(2)
+    expect(harness.prefetchCallGuideSong).toHaveBeenCalledTimes(2)
+
+    fireEvent.pointerDown(alphaCard)
+    expect(harness.loadCallGuideRoute).toHaveBeenCalledTimes(3)
+    expect(harness.prefetchCallGuideSong).toHaveBeenCalledTimes(3)
   })
 })

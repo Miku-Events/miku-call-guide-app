@@ -1,5 +1,5 @@
 import { AlertTriangle, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X, ArrowRight } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import './catalog.css'
 import { getRootManifestUrl } from '../../app/config'
@@ -9,8 +9,9 @@ import { TextInput } from '@astryxdesign/core/TextInput'
 import { Button } from '@astryxdesign/core/Button'
 import { Banner } from '@astryxdesign/core/Banner'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
-import { fetchCallGuideManifest } from '../data/fetchManifest'
+import { loadCallGuideManifest, prefetchCallGuideSong } from '../data/callGuideSession'
 import type { CallGuideManifest, LoadResult, ManifestSong, LocalizedText } from '../data/types'
+import { loadCallGuideRoute } from '../callGuide/loadCallGuideRoute'
 import { shuffledCopy } from './shuffle'
 
 const BLACKLIST_TAGS: string[] = []
@@ -64,6 +65,7 @@ export function CatalogPage() {
   const [query, setQuery] = useState('')
   const [viewMode, setViewMode] = useState<'songs' | 'events'>('songs')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const hoverPrefetchTimerRef = useRef<number | null>(null)
   const rootManifestUrl = getRootManifestUrl()
 
   const acceptManifest = useCallback((result: LoadResult<CallGuideManifest>) => {
@@ -83,7 +85,7 @@ export function CatalogPage() {
 
   const load = useCallback(async () => {
     try {
-      acceptManifest(await fetchCallGuideManifest(rootManifestUrl))
+      acceptManifest(await loadCallGuideManifest(rootManifestUrl, { force: true }))
     } catch (loadError) {
       setManifestResult(null)
       setError(loadError instanceof Error ? loadError.message : 'Manifest load failed.')
@@ -92,14 +94,18 @@ export function CatalogPage() {
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
 
     async function loadInitialManifest() {
       try {
-        const result = await fetchCallGuideManifest(rootManifestUrl)
+        const result = await loadCallGuideManifest(rootManifestUrl, { signal: controller.signal })
         if (!cancelled) {
           acceptManifest(result)
         }
       } catch (loadError) {
+        if (controller.signal.aborted) {
+          return
+        }
         if (!cancelled) {
           setManifestResult(null)
           setError(loadError instanceof Error ? loadError.message : 'Manifest load failed.')
@@ -111,8 +117,36 @@ export function CatalogPage() {
 
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [acceptManifest, rootManifestUrl])
+
+  const prefetchPractice = useCallback((songId: string) => {
+    void loadCallGuideRoute().catch(() => undefined)
+    void prefetchCallGuideSong(rootManifestUrl, songId).catch(() => undefined)
+  }, [rootManifestUrl])
+
+  const cancelHoverPrefetch = useCallback(() => {
+    if (hoverPrefetchTimerRef.current !== null) {
+      window.clearTimeout(hoverPrefetchTimerRef.current)
+      hoverPrefetchTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleHoverPrefetch = useCallback((songId: string) => {
+    cancelHoverPrefetch()
+    hoverPrefetchTimerRef.current = window.setTimeout(() => {
+      hoverPrefetchTimerRef.current = null
+      prefetchPractice(songId)
+    }, 100)
+  }, [cancelHoverPrefetch, prefetchPractice])
+
+  const prefetchPracticeImmediately = useCallback((songId: string) => {
+    cancelHoverPrefetch()
+    prefetchPractice(songId)
+  }, [cancelHoverPrefetch, prefetchPractice])
+
+  useEffect(() => cancelHoverPrefetch, [cancelHoverPrefetch])
 
   useEffect(() => {
     document.title = '곡 카탈로그 - 하츠네 미쿠 콜 가이드'
@@ -345,6 +379,10 @@ export function CatalogPage() {
                     <Link
                       className={`catalog-song-card${usesOriginalArtwork ? ' catalog-song-card--original-art' : ''}`}
                       key={song.id}
+                      onFocus={() => prefetchPracticeImmediately(song.id)}
+                      onMouseEnter={() => scheduleHoverPrefetch(song.id)}
+                      onMouseLeave={cancelHoverPrefetch}
+                      onPointerDown={() => prefetchPracticeImmediately(song.id)}
                       to={`/songs/${song.id}`}
                     >
                       <div className="catalog-song-media" aria-hidden="true">

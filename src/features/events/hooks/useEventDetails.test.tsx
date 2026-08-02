@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const fetchEventDetail = vi.hoisted(() => vi.fn())
 
-vi.mock('../../data/fetchManifest', () => ({ fetchEventDetail }))
+vi.mock('../../data/fetchEventManifest', () => ({ fetchEventDetail }))
 
 import { useEventDetails } from './useEventDetails'
 

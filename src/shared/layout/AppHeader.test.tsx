@@ -18,5 +18,23 @@ describe('AppHeader', () => {
     expect(link.tagName).toBe('A')
     expect(link).toHaveAttribute('href', 'https://github.com/Miku-Events/miku-call-guide-app')
     expect(within(link).queryAllByRole('button')).toHaveLength(0)
+    expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(link.querySelector('svg')).toHaveAttribute('focusable', 'false')
+  })
+
+  it('keeps the HashRouter navigation and current practice item keyboard accessible', () => {
+    window.location.hash = '#/songs/future-light-sample'
+
+    render(<AppHeader activeNav="practice" />)
+
+    expect(screen.getByRole('link', { name: 'Catalog' })).toHaveAttribute('href', '#/')
+    expect(screen.getByRole('link', { name: 'Catalog' })).toHaveAttribute('data-active', 'false')
+    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', '#/events')
+    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('data-active', 'false')
+    expect(screen.getByRole('link', { name: 'Practice' })).toHaveAttribute(
+      'href',
+      '#/songs/future-light-sample',
+    )
+    expect(screen.getByRole('link', { name: 'Practice' })).toHaveAttribute('aria-current', 'page')
   })
 })

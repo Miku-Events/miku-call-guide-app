@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, process.cwd(), '')
 
   return {
+    build: {
+      manifest: true,
+    },
     plugins: [
       react(),
       tailwindcss(),

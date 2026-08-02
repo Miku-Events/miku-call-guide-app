@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchEventCalendarMonth } from '../../data/fetchManifest'
+import { fetchEventCalendarMonth } from '../../data/fetchEventManifest'
 import type { EventCalendarMonth, LoadResult } from '../../data/types'
 
 interface MonthLoadResult extends LoadResult<EventCalendarMonth> {

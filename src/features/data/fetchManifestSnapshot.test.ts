@@ -122,6 +122,7 @@ describe('complete manifest family snapshots', () => {
       .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
+      .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
 
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({
@@ -129,6 +130,7 @@ describe('complete manifest family snapshots', () => {
       data: { songs: [{ id: 'song-replacement' }] },
     })
     expect(window.localStorage.getItem(pointerKey)).toBe(pointerBefore)
+    expect(window.localStorage.length).toBe(3)
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline-after-stage-failure')))
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({
@@ -151,11 +153,13 @@ describe('complete manifest family snapshots', () => {
       .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
+      .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
 
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({ source: 'network' })
     expect(setItemSpy).toHaveBeenCalledTimes(1)
     expect(window.localStorage.getItem(pointerKey)).toBe(pointerBefore)
+    expect(window.localStorage.length).toBe(3)
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline-after-root-stage-failure')))
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({
@@ -175,6 +179,7 @@ describe('complete manifest family snapshots', () => {
 
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
+      .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
     await fetchCallGuideManifest(rootUrl)
 
@@ -200,10 +205,12 @@ describe('complete manifest family snapshots', () => {
       .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
+      .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
 
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({ source: 'network' })
     expect(window.localStorage.getItem(pointerKey)).toBe(pointerBefore)
+    expect(window.localStorage.length).toBe(3)
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline-after-pointer-failure')))
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({
@@ -251,6 +258,7 @@ describe('complete manifest family snapshots', () => {
     })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
+      .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({ source: 'network' })
 
@@ -288,6 +296,7 @@ describe('complete manifest family snapshots', () => {
 
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
+      .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
     await fetchCallGuideManifest(rootUrl)
 

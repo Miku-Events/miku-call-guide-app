@@ -40,7 +40,7 @@ vi.mock('../../shared/layout/AppPageShell', () => ({
   ),
 }))
 
-vi.mock('../data/fetchManifest', () => ({
+vi.mock('../data/fetchEventManifest', () => ({
   fetchEventCalendarIndex: harness.fetchEventCalendarIndex,
   fetchEventDetail: harness.fetchEventDetail,
 }))

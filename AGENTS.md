@@ -2,7 +2,7 @@
 
 ## Package Manager
 
-- Use npm with Node.js from `.node-version` (24.11.1).
+- Use npm 11.17.0 with Node.js from `.node-version` (26.5.1).
 - Install reproducibly with `npm ci`; do not switch package managers.
 
 ## Repository Map

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AppShell } from '@astryxdesign/core/AppShell'
+import { AccessibleAppShell } from '../layout/AccessibleAppShell'
 import { AppHeader } from '../layout/AppHeader'
 
 interface RecoveryPageShellProps {
@@ -8,14 +8,11 @@ interface RecoveryPageShellProps {
 
 export function RecoveryPageShell({ children }: RecoveryPageShellProps) {
   return (
-    <AppShell
-      className="catalog-shell"
-      contentPadding={0}
-      height="fill"
+    <AccessibleAppShell
+      className="app-page-shell catalog-shell"
       topNav={<AppHeader activeNav="catalog" />}
-      variant="elevated"
     >
       {children}
-    </AppShell>
+    </AccessibleAppShell>
   )
 }

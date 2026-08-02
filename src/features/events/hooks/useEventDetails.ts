@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { resourceCacheKey } from '../../data/cacheStore'
-import { fetchEventDetail } from '../../data/fetchManifest'
+import { fetchEventDetail } from '../../data/fetchEventManifest'
 import type {
   CalendarEventSummary,
   EventCalendarMonth,

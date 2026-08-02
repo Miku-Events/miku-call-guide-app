@@ -1,32 +1,24 @@
-import { AppShell } from '@astryxdesign/core/AppShell'
-import { TopNav, TopNavHeading } from '@astryxdesign/core/TopNav'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout'
+import { AccessibleAppShell } from './AccessibleAppShell'
 
 export function PageShellSkeleton() {
   return (
-    <AppShell
-      height="fill"
-      variant="elevated"
-      contentPadding={0}
-      className="catalog-shell"
+    <AccessibleAppShell
+      className="app-page-shell catalog-shell"
       topNav={
-        <TopNav
-          label="Main navigation"
-          heading={
-            <TopNavHeading
-              heading="Miku Call Guide"
-              logo={<span className="app-brand-mark" aria-hidden="true" />}
-              href="/"
-            />
-          }
-          startContent={
-            <>
-              <span className="opacity-50 px-3 py-1 text-sm font-semibold">Catalog</span>
-              <span className="opacity-50 px-3 py-1 text-sm font-semibold">Events</span>
-            </>
-          }
-        />
+        <header className="app-top-bar sticky top-0 z-10">
+          <div className="flex h-full min-w-0 items-center gap-3 sm:gap-6">
+            <a className="app-brand" href="#/">
+              <span className="app-brand-mark" aria-hidden="true" />
+              <span>Miku Call Guide</span>
+            </a>
+            <nav aria-label="Main navigation" className="flex items-center gap-4">
+              <span className="px-3 py-1 text-sm font-semibold opacity-50">Catalog</span>
+              <span className="px-3 py-1 text-sm font-semibold opacity-50">Events</span>
+            </nav>
+          </div>
+        </header>
       }
     >
       <Layout className="app-main">
@@ -74,6 +66,6 @@ export function PageShellSkeleton() {
           </div>
         </LayoutContent>
       </Layout>
-    </AppShell>
+    </AccessibleAppShell>
   )
 }

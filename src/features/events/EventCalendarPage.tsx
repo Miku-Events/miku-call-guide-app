@@ -17,7 +17,7 @@ import { getRootManifestUrl, getSubmissionApiBaseUrl } from '../../app/config'
 import { AppPageShell, StatusBanner } from '../../shared/layout/AppPageShell'
 import {
   fetchEventCalendarIndex,
-} from '../data/fetchManifest'
+} from '../data/fetchEventManifest'
 import type {
   CalendarEventSummary,
   EventCalendarIndex,

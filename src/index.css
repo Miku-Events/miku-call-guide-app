@@ -66,57 +66,6 @@ button {
   min-height: 100vh;
 }
 
-.app-shell {
-  min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(246, 243, 237, 0.92)),
-    #f6f3ed;
-}
-
-.top-bar {
-  border-bottom: 1px solid rgba(20, 32, 33, 0.12);
-  background: rgba(246, 243, 237, 0.92);
-  backdrop-filter: blur(14px);
-}
-
-.surface {
-  border: 1px solid rgba(20, 32, 33, 0.12);
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: var(--shadow-med);
-}
-
-.control-button {
-  display: inline-flex;
-  min-height: 2.5rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: var(--radius-element);
-  border: 1px solid rgba(20, 32, 33, 0.14);
-  background: #ffffff;
-  color: #142021;
-  padding: 0.5rem 0.8rem;
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.control-button:hover {
-  border-color: rgba(0, 146, 155, 0.48);
-  background: #f3fbfa;
-}
-
-.control-button:active {
-  transform: translateY(1px);
-}
-
-.control-button[data-active="true"] {
-  border-color: #00929b;
-  background: #dff7f5;
-  color: #063f43;
-}
-
 .app-page-shell {
   /* Static Fallbacks for Tests */
   --app-bg: #09090b;
