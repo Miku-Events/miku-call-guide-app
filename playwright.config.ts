@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
+export const DESKTOP_E2E_GREP = /@(?:desktop|both)\b/
+export const MOBILE_E2E_GREP = /@(?:mobile|both)\b/
+
 export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
@@ -22,10 +25,12 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
+      grep: DESKTOP_E2E_GREP,
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'mobile',
+      grep: MOBILE_E2E_GREP,
       use: { ...devices['Pixel 7'] },
     },
   ],

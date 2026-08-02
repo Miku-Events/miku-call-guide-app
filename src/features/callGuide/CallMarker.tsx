@@ -49,6 +49,7 @@ export function CallMarker({
   const callKind = normalizedCallKind(call)
   const showPointArrow = call.markers.point.enabled && call.markers.point.style !== 'none'
   const fallbackPercent = fallbackAnchorPercent(call.anchor?.pointChar ?? 1, graphemeCount)
+  const geometryState = layout ? 'ready' : 'measuring'
   const markerStyle = {
     left: layout ? `${layout.pointLeft}px` : `${fallbackPercent}%`,
     top: layout ? `${layout.pointTop}px` : undefined,
@@ -91,6 +92,7 @@ export function CallMarker({
       <span
         className="call-marker"
         data-call-id={call.id}
+        data-geometry-state={geometryState}
         data-kind={callKind}
         data-intensity={call.cue.intensity}
         data-lane={call.placement.lane}

@@ -449,6 +449,14 @@
   pointer-events: none;
 }
 
+.call-marker[data-geometry-state="measuring"] {
+  visibility: hidden;
+}
+
+.call-marker[data-geometry-state="ready"] {
+  visibility: visible;
+}
+
 .call-marker-text {
   display: inline-flex;
   max-width: 100%;

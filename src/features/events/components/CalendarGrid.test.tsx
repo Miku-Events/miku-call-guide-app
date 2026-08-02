@@ -90,6 +90,8 @@ describe('CalendarGrid accessibility', () => {
     stubMatchMedia(true)
     const openDateDetail = renderCalendar()
 
+    expect(window.matchMedia).toHaveBeenCalledWith('(max-width: 620px)')
+
     const visualBar = document.querySelector<HTMLElement>('.event-span-bar')
     expect(visualBar).toHaveAttribute('aria-hidden', 'true')
     expect(screen.queryByRole('button', { name: /샘플 이벤트/ })).not.toBeInTheDocument()
@@ -105,7 +107,11 @@ describe('CalendarGrid accessibility', () => {
     stubMatchMedia(false)
     const openDateDetail = renderCalendar()
 
-    fireEvent.click(screen.getByRole('button', { name: /샘 이벤트|샘플 이벤트/ }))
+    const visualBar = screen.getByRole('button', { name: /샘 이벤트|샘플 이벤트/ })
+    expect(visualBar).toHaveStyle({ gridColumn: '7 / 8' })
+    expect(visualBar.style.getPropertyValue('--event-bar-lane')).toBe('0')
+
+    fireEvent.click(visualBar)
     expect(openDateDetail).toHaveBeenCalledWith('2026-07-11')
   })
 })
