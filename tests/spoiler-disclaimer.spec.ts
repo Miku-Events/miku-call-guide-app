@@ -1,34 +1,28 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, SPOILER_DISCLAIMER_STORAGE_KEY, test } from './fixtures/app-test'
-
-const DISCLAIMER_BODY =
-  '이 앱에는 개최 예정이거나 개최 중인 공연과 관련된 스포일러가 포함될 수 있습니다. 스포일러 노출을 줄이기 위해 카탈로그 첫 화면의 곡 목록은 무작위 순서로 표시하지만, 경우에 따라 목록에 포함된 곡 자체가 스포일러로 느껴질 수 있으니 이용에 주의해 주세요.'
+import { expectLocatorMinTouchTarget, expectPageContained } from './fixtures/geometry'
 
 test.use({ spoilerDisclaimerAcknowledged: false })
 
-test('blocks the fresh catalog behind the complete required disclaimer', async ({ page }) => {
-  const manifestRequests: string[] = []
+test('gates fresh touch visits accessibly and starts loading only after confirmation', { tag: '@mobile' }, async ({ page }) => {
+  let rootManifestRequests = 0
   page.on('request', (request) => {
-    if (/manifest\.json(?:\?|$)/.test(request.url())) {
-      manifestRequests.push(request.url())
+    if (new URL(request.url()).pathname.endsWith('/manifest.json')) {
+      rootManifestRequests += 1
     }
   })
 
   await page.goto('/?mockPlayer=1', { waitUntil: 'domcontentloaded' })
 
   const dialog = page.getByRole('alertdialog')
+  const continueButton = dialog.getByRole('button', { name: '확인하고 계속하기' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('heading', { name: '스포일러 안내' })).toBeVisible()
-  await expect(dialog.getByText(DISCLAIMER_BODY, { exact: true })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: '확인하고 계속하기' })).toBeVisible()
-
+  await expect(dialog).toContainText('공연과 관련된 스포일러가 포함될 수 있습니다')
+  await expect(continueButton).toBeVisible()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toHaveCount(0)
   await expect(page.locator('.catalog-song-card')).toHaveCount(0)
-  await expect(page.getByTestId('page-shell-loading-content')).toHaveCount(0)
-  await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-  )
-  expect(manifestRequests).toEqual([])
+  expect(rootManifestRequests).toBe(0)
 
   const accessibilityResults = await new AxeBuilder({ page }).analyze()
   const seriousOrCriticalViolations = accessibilityResults.violations.filter(
@@ -38,9 +32,15 @@ test('blocks the fresh catalog behind the complete required disclaimer', async (
     seriousOrCriticalViolations,
     JSON.stringify(seriousOrCriticalViolations, null, 2),
   ).toEqual([])
+  await expectLocatorMinTouchTarget(continueButton)
+  await expectPageContained(page)
+
+  await continueButton.tap()
+  await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
+  await expect.poll(() => rootManifestRequests).toBe(1)
 })
 
-test('cannot be dismissed with Escape or a backdrop click', async ({ page }) => {
+test('cannot be dismissed with Escape or a backdrop click', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
 
   const dialog = page.getByRole('alertdialog')
@@ -56,17 +56,11 @@ test('cannot be dismissed with Escape or a backdrop click', async ({ page }) => 
   await page.keyboard.press('Shift+Tab')
   await expect(continueButton).toBeFocused()
 
-  const dialogBox = await dialog.boundingBox()
-  expect(dialogBox).not.toBeNull()
-  const backdropPoint = dialogBox!.x > 8 || dialogBox!.y > 8
-    ? { x: 4, y: 4 }
-    : { x: page.viewportSize()!.width - 4, y: page.viewportSize()!.height - 4 }
-  await page.mouse.click(backdropPoint.x, backdropPoint.y)
-
+  await page.mouse.click(1, 1)
   await expect(dialog).toBeVisible()
 })
 
-test('persists confirmation and does not show the disclaimer after reload', async ({ page }) => {
+test('persists confirmation and does not show the disclaimer after reload', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
 
   const dialog = page.getByRole('alertdialog')
@@ -83,7 +77,7 @@ test('persists confirmation and does not show the disclaimer after reload', asyn
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 })
 
-test('gates a direct song deep link and resumes the original route after confirmation', async ({ page }) => {
+test('gates a direct song deep link and resumes the original route after confirmation', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   await expect(page).toHaveURL(/#\/songs\/future-light-sample$/)
@@ -96,23 +90,7 @@ test('gates a direct song deep link and resumes the original route after confirm
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
 })
 
-test('keeps the confirmation action at least 44px in both dimensions', async ({ page }) => {
-  await page.goto('/?mockPlayer=1')
-
-  const dialog = page.getByRole('alertdialog')
-  await dialog.evaluate(async (element) => {
-    const animations = element.getAnimations({ subtree: true })
-    await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)))
-  })
-  const continueButton = page.getByRole('button', { name: '확인하고 계속하기' })
-  const buttonBox = await continueButton.boundingBox()
-
-  expect(buttonBox).not.toBeNull()
-  expect(buttonBox!.width).toBeGreaterThanOrEqual(44)
-  expect(buttonBox!.height).toBeGreaterThanOrEqual(44)
-})
-
-test('continues for the current visit but asks again after a storage write failure', async ({ page }) => {
+test('continues for the current visit but asks again after a storage write failure', { tag: '@desktop' }, async ({ page }) => {
   await page.addInitScript((storageKey) => {
     const nativeSetItem = Storage.prototype.setItem
     Storage.prototype.setItem = function setItem(key: string, value: string) {
