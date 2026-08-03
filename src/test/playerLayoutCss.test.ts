@@ -191,6 +191,22 @@ describe('player layout CSS contracts', () => {
     expect(playerCss).not.toContain('rgba(2, 13, 14')
   })
 
+  it('keeps event lane positioning and the compact calendar breakpoint in static CSS', () => {
+    const spanBars = getBlock(css, '.event-span-bars')
+    expectDeclaration(spanBars, 'position', 'absolute')
+    expectDeclaration(spanBars, 'top', '2.45rem')
+
+    const spanBar = getBlock(css, '.event-span-bar {')
+    expectDeclaration(spanBar, 'height', 'var(--event-calendar-ticker-height)')
+    expectDeclaration(
+      spanBar,
+      'margin-top',
+      'calc(var(--event-bar-lane, 0) * var(--event-bar-lane-height, var(--event-calendar-ticker-height)))',
+    )
+
+    expect(css).toContain('@media (max-width: 620px)')
+  })
+
   it('defines distinct call kind colors for chant, penlight, and custom calls', () => {
     expect(css).toContain('.call-marker[data-kind="penlight"]')
     expect(css).toContain('.call-marker[data-kind="custom"]')
@@ -259,6 +275,21 @@ describe('player layout CSS contracts', () => {
     const lyricToken = getBlock(css, '.lyric-token {')
     expectDeclaration(lyricToken, 'display', 'inline-flex')
     expectDeclaration(lyricToken, 'white-space', 'nowrap')
+  })
+
+  it('keeps countdown input-transparent and collapses its motion for reduced-motion users', () => {
+    const countdown = getBlock(css, '.lyric-countdown')
+    expectDeclaration(countdown, 'position', 'absolute')
+    expectDeclaration(countdown, 'top', '50%')
+    expectDeclaration(countdown, 'left', '50%')
+    expectDeclaration(countdown, 'pointer-events', 'none')
+
+    const reducedMotion = getBlock(baseCss, '@media (prefers-reduced-motion: reduce)')
+    const reducedElements = getBlock(reducedMotion, '*')
+    expectDeclaration(reducedElements, 'animation-duration', '1ms !important')
+    expectDeclaration(reducedElements, 'animation-iteration-count', '1 !important')
+    expectDeclaration(reducedElements, 'scroll-behavior', 'auto !important')
+    expectDeclaration(reducedElements, 'transition-duration', '0s !important')
   })
 
   it('keeps the YouTube iframe at the full video placeholder size', () => {

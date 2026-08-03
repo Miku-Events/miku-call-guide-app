@@ -87,6 +87,13 @@ describe('local and release scripts', () => {
   })
 
   it('starts only the reserved-port-safe preview server for CI E2E', () => {
+    expect(ciConfig.failOnFlakyTests).toBe(true)
+    expect(ciConfig.retries).toBe(1)
+    expect(ciConfig.workers).toBe(1)
+    expect(ciConfig.reporter).toEqual([
+      ['dot'],
+      ['html', { open: 'never' }],
+    ])
     expect(Array.isArray(ciConfig.webServer)).toBe(false)
     expect(ciConfig.webServer).toMatchObject({
       command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
@@ -94,5 +101,15 @@ describe('local and release scripts', () => {
       reuseExistingServer: false,
     })
     expect(ciConfig.use?.baseURL).toBe('http://127.0.0.1:4173')
+    expect(ciConfig.use?.screenshot).toBe('only-on-failure')
+    expect(ciConfig.use?.trace).toBe('retain-on-failure')
+  })
+
+  it('guards behavioral E2E sources without a repeated stability command', async () => {
+    const manifest = await readJson('package.json')
+
+    expect(manifest.scripts['test:e2e:guard']).toBe('node scripts/check-e2e-source.mjs')
+    expect(manifest.scripts['test:e2e:stability']).toBeUndefined()
+    expect(manifest.scripts.check).toContain('npm run test:e2e:guard')
   })
 })
