@@ -25,6 +25,8 @@ function song(options: {
 
 describe('countdown schedule', () => {
   it('creates an automatic cue only when the intro gap is at least three seconds', () => {
+    expect(buildCountdownSchedule(song({ firstLyricStartMs: 6000, startOffsetMs: 5940 }))).toEqual([])
+    expect(buildCountdownSchedule(song({ firstLyricStartMs: 6000, startOffsetMs: 5820 }))).toEqual([])
     expect(buildCountdownSchedule(song({ firstLyricStartMs: 5999, startOffsetMs: 3000 }))).toEqual([])
     expect(buildCountdownSchedule(song({ firstLyricStartMs: 6000, startOffsetMs: 3000 }))).toEqual([
       {

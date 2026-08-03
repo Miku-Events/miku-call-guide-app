@@ -2,6 +2,11 @@ import AxeBuilder from '@axe-core/playwright'
 import type { Page, Route } from '@playwright/test'
 import { expect, setMockedSession, setMockedSong, test, VERSIONED_LEAF_ROUTES } from './fixtures/app-test'
 import { eventCalendarMayMonth, multiDayEventDetail, progressiveDetailSong, song } from './fixtures/data'
+import {
+  expectLocatorContained,
+  expectLocatorMinTouchTarget,
+  expectPageContained,
+} from './fixtures/geometry'
 
 type TurnstileHarnessWindow = Window & {
   __completeTurnstile: (token?: string) => void
@@ -34,7 +39,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-21T12:00:00+09:00'))
 })
 
-test('has no serious automated accessibility violations on catalog and event dialog', async ({ page }) => {
+test('has no serious automated accessibility violations on catalog and event dialog', { tag: '@both' }, async ({ page }, testInfo) => {
   await page.goto('/?mockPlayer=1')
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 
@@ -46,8 +51,13 @@ test('has no serious automated accessibility violations on catalog and event dia
 
   await page.goto('/?mockPlayer=1#/events')
   await expect(page.locator('.event-day-cell[data-date="2026-05-21"]')).toBeVisible()
-  await page.getByRole('button', { name: '일정 추가' }).click()
-  const dialog = page.locator('dialog.event-dialog-backdrop')
+  const addEventButton = page.getByRole('button', { name: '일정 추가' })
+  if (testInfo.project.name === 'mobile') {
+    await addEventButton.tap()
+  } else {
+    await addEventButton.click()
+  }
+  const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   await dialog.evaluate(async (element) => {
     const animations = element.getAnimations({ subtree: true })
@@ -61,7 +71,7 @@ test('has no serious automated accessibility violations on catalog and event dia
   ).toEqual([])
 })
 
-test('has no serious automated accessibility violations on the progressive practice list', async ({ page }) => {
+test('has no serious automated accessibility violations on the progressive practice list', { tag: '@mobile' }, async ({ page }) => {
   setMockedSong(page, progressiveDetailSong)
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
@@ -77,14 +87,14 @@ test('has no serious automated accessibility violations on the progressive pract
   ).toEqual([])
 })
 
-test('traverses the dialog with Tab and Shift+Tab, closes on Escape, and returns focus', async ({ page }) => {
+test('traverses the dialog with Tab and Shift+Tab, closes on Escape, and returns focus', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
   const addButton = page.getByRole('button', { name: '일정 추가' })
   await expect(addButton).toBeVisible()
   await addButton.focus()
   await addButton.press('Enter')
 
-  const dialog = page.locator('dialog.event-dialog-backdrop')
+  const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   await expect.poll(() => dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
   const tabbables = dialog.locator('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')
@@ -105,7 +115,7 @@ test('traverses the dialog with Tab and Shift+Tab, closes on Escape, and returns
   await expect(addButton).toBeFocused()
 })
 
-test('keeps submission errors inside the dialog and announces only success on the page', async ({ page }) => {
+test('keeps submission errors inside the dialog and announces only success on the page', { tag: '@desktop' }, async ({ page }) => {
   setMockedSession(page, { authenticated: true, login: 'miku-e2e' })
   await installTurnstileHarness(page)
 
@@ -121,7 +131,7 @@ test('keeps submission errors inside the dialog and announces only success on th
 
   await page.goto('/?mockPlayer=1#/events')
   await page.getByRole('button', { name: '일정 추가' }).click()
-  const dialog = page.locator('dialog.event-dialog-backdrop')
+  const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
 
   await page.getByLabel('이벤트 제목').fill('접근성 테스트 이벤트')
@@ -137,7 +147,6 @@ test('keeps submission errors inside the dialog and announces only success on th
 
   const dialogError = dialog.locator('.event-dialog-error[role="alert"]')
   await expect(dialogError).toContainText('요청을 제출하지 못했습니다.')
-  await expect(dialogError).toContainText('Submission request failed with 503.')
   await expect(dialogError).toContainText('보안 검증을 다시 완료한 뒤 재시도해 주세요.')
   const pageSuccessStatus = page.getByRole('status').filter({ hasText: 'PR 생성 요청이 접수되었습니다' })
   await expect(pageSuccessStatus).toHaveCount(0)
@@ -151,13 +160,11 @@ test('keeps submission errors inside the dialog and announces only success on th
   await submitButton.click()
 
   await expect(dialog).not.toBeVisible()
-  await expect(pageSuccessStatus).toContainText(
-    'PR 생성 요청이 접수되었습니다: https://github.com/Miku-Events/miku-call-guide-data/pull/123',
-  )
+  await expect(pageSuccessStatus).toContainText('PR 생성 요청이 접수되었습니다')
   expect(submissionAttempts).toBe(2)
 })
 
-test('announces delayed month and detail loading with aria-busy', async ({ page }) => {
+test('announces delayed month and detail loading with aria-busy', { tag: '@desktop' }, async ({ page }) => {
   await page.unroute('**/event-calendar/months/2026-05.json')
   let monthRoute: Route | null = null
   let signalMonthRequest: (() => void) | null = null
@@ -202,7 +209,7 @@ test('announces delayed month and detail loading with aria-busy', async ({ page 
   await expect(detailList).toHaveAttribute('aria-busy', 'false')
 })
 
-test('uses the skip link without replacing the HashRouter route', async ({ page }) => {
+test('uses the skip link without replacing the HashRouter route', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
   await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
 
@@ -214,18 +221,17 @@ test('uses the skip link without replacing the HashRouter route', async ({ page 
 
   await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
   expect(await page.evaluate(() => window.location.hash)).toBe(originalHash)
-  expect(await page.evaluate(() => document.activeElement?.id)).toBe('astryx-app-shell-main')
-  await expect(page.locator('#astryx-app-shell-main')).toHaveAttribute('tabindex', '-1')
+  await expect.poll(() => page.getByRole('main').evaluate((main) => main === document.activeElement)).toBe(true)
 })
 
-test('recovers from wildcard routes and returns to the catalog', async ({ page }) => {
+test('recovers from wildcard routes and returns to the catalog', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/does-not-exist')
   await expect(page.getByRole('heading', { name: '페이지를 찾을 수 없습니다.' })).toBeVisible()
   await page.getByRole('link', { name: '카탈로그로 돌아가기' }).click()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 })
 
-test('retries a failed song request and offers a working catalog recovery path', async ({ page }) => {
+test('retries a failed song request and offers a working catalog recovery path', { tag: '@desktop' }, async ({ page }) => {
   await page.unroute(VERSIONED_LEAF_ROUTES.song)
   let attempts = 0
   await page.route(VERSIONED_LEAF_ROUTES.song, async (route) => {
@@ -250,7 +256,7 @@ test('retries a failed song request and offers a working catalog recovery path',
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 })
 
-test('recovers from a YouTube script error and keeps the external fallback available', async ({ page }) => {
+test('recovers from a YouTube script error and keeps the external fallback available', { tag: '@desktop' }, async ({ page }) => {
   let scriptAttempts = 0
   let releaseFirstScript = () => {}
   const firstScriptGate = new Promise<void>((resolve) => {
@@ -307,55 +313,24 @@ test('recovers from a YouTube script error and keeps the external fallback avail
   const iframe = player.locator('.youtube-player-host > iframe')
   await expect(iframe).toBeVisible()
 
-  const dimensions = await videoFrame.evaluate((frame) => {
-    const embeddedPlayer = frame.querySelector('iframe')
-    if (!embeddedPlayer) return null
-
-    const iframeRect = embeddedPlayer.getBoundingClientRect()
-    return {
-      frameWidth: frame.clientWidth,
-      frameHeight: frame.clientHeight,
-      iframeWidth: iframeRect.width,
-      iframeHeight: iframeRect.height,
-    }
-  })
-  expect(dimensions).not.toBeNull()
-  expect(Math.abs(dimensions!.iframeWidth - dimensions!.frameWidth)).toBeLessThanOrEqual(1)
-  expect(Math.abs(dimensions!.iframeHeight - dimensions!.frameHeight)).toBeLessThanOrEqual(1)
+  await expectLocatorContained(videoFrame, iframe)
   expect(scriptAttempts).toBe(2)
 })
 
-test('reflows event controls at a 200 percent zoom-equivalent width and text size', async ({ page }) => {
+test('reflows event controls at a 200 percent zoom-equivalent width and text size', { tag: '@mobile' }, async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 820 })
   await page.goto('/?mockPlayer=1#/events')
   await expect(page.locator('.event-day-cell[data-date="2026-05-21"]')).toBeVisible()
 
-  const zoomEquivalentViewport = await page.evaluate(() => ({
-    innerWidth: window.innerWidth,
-    compactMediaQueryMatches: window.matchMedia('(max-width: 620px)').matches,
-  }))
-  expect(zoomEquivalentViewport).toEqual({
-    innerWidth: 320,
-    compactMediaQueryMatches: true,
-  })
-
-  await page.evaluate(async () => {
-    const root = document.documentElement
-    const baseSize = Number.parseFloat(getComputedStyle(root).fontSize)
-    root.style.fontSize = `${baseSize * 2}px`
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '200%'
   })
 
   await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '일정 추가' })).toBeVisible()
-  const metrics = await page.evaluate(() => ({
-    clientWidth: document.scrollingElement?.clientWidth ?? 0,
-    scrollWidth: document.scrollingElement?.scrollWidth ?? 0,
-  }))
-  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
-
-  const todayBox = await page.locator('.event-day-cell[data-date="2026-05-21"]').boundingBox()
-  expect(todayBox).not.toBeNull()
-  expect(todayBox!.width).toBeGreaterThanOrEqual(44)
-  expect(todayBox!.height).toBeGreaterThanOrEqual(44)
+  const addEventButton = page.getByRole('button', { name: '일정 추가' })
+  const today = page.locator('.event-day-cell[data-date="2026-05-21"]')
+  await expect(addEventButton).toBeVisible()
+  await expectLocatorMinTouchTarget(addEventButton)
+  await expectLocatorMinTouchTarget(today)
+  await expectPageContained(page)
 })

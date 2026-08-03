@@ -103,10 +103,39 @@ describe('production deployment workflow', () => {
     expect(workflow).not.toContain('ubuntu-latest')
     expect(workflow.split(checkout)).toHaveLength(6)
     expect(workflow.split(setupNode)).toHaveLength(6)
-    expect(workflow.split(uploadArtifact)).toHaveLength(2)
+    expect(workflow.split(uploadArtifact)).toHaveLength(3)
     expect(workflow.split(downloadArtifact)).toHaveLength(4)
     expect(workflow.match(/digest-mismatch: error/g)).toHaveLength(3)
     expect(workflow).not.toContain('continue-on-error: true')
+  })
+
+  it('retains attempt-scoped Playwright diagnostics when built-artifact E2E fails', async () => {
+    const workflow = await deploymentWorkflow()
+    const e2eJob = workflow.slice(
+      workflow.indexOf('\n  e2e:'),
+      workflow.indexOf('\n  preview:'),
+    )
+    const testStep = e2eJob.indexOf('run: npm run test:e2e:ci')
+    const diagnosticsStep = e2eJob.indexOf('name: Upload E2E diagnostics')
+
+    expect(testStep).toBeGreaterThan(-1)
+    expect(diagnosticsStep).toBeGreaterThan(testStep)
+    expect(e2eJob.slice(diagnosticsStep)).toContain('if: failure()')
+    expect(e2eJob.slice(diagnosticsStep)).toContain(
+      'name: playwright-diagnostics-${{ github.sha }}-attempt-${{ github.run_attempt }}',
+    )
+    expect(e2eJob.slice(diagnosticsStep)).toContain('test-results')
+    expect(e2eJob.slice(diagnosticsStep)).toContain('playwright-report')
+    expect(e2eJob.slice(diagnosticsStep)).toContain('if-no-files-found: warn')
+    expect(e2eJob.slice(diagnosticsStep)).not.toContain('continue-on-error')
+  })
+
+  it('does not schedule a repeated stability matrix', async () => {
+    const workflow = await deploymentWorkflow()
+
+    expect(workflow).not.toContain('e2e_stability')
+    expect(workflow).not.toContain('test:e2e:stability')
+    expect(workflow).not.toContain('playwright-stability')
   })
 
   it('keeps a non-publishing Node 24 compatibility gate during the Node 26 transition', async () => {

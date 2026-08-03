@@ -26,11 +26,12 @@
     "data:check": "node scripts/check-data-dist.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "check": "npm run contracts:check && npm run lint && npm run typecheck && npm test && npm run build && npm run bundle:check",
+    "check": "npm run contracts:check && npm run test:e2e:guard && npm run lint && npm run typecheck && npm test && npm run build && npm run bundle:check",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test --config=playwright.ci.config.ts",
+    "test:e2e:guard": "node scripts/check-e2e-source.mjs",
     "smoke:deploy": "node scripts/post-deploy-smoke.mjs",
     "smoke:preview": "node scripts/preview-browser-smoke.mjs"
   },

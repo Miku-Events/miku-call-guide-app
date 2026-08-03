@@ -92,6 +92,12 @@ export const test = base.extend<{
         contentType: 'application/javascript',
       })
     })
+    await page.route('https://fonts.googleapis.com/**', async (route) => {
+      await route.fulfill({ body: '', contentType: 'text/css' })
+    })
+    await page.route('https://fonts.gstatic.com/**', async (route) => {
+      await route.abort('blockedbyclient')
+    })
     await page.route('https://i.ytimg.com/**', async (route) => {
       await route.fulfill({
         body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'),

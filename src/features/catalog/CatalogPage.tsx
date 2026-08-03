@@ -255,7 +255,7 @@ export function CatalogPage() {
               type="button"
               data-active={viewMode === 'songs' ? 'true' : 'false'}
               onClick={() => setViewMode('songs')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
+              className={`flex min-h-[var(--app-touch-target)] items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
                 viewMode === 'songs'
                   ? 'bg-[var(--color-background-primary)] text-[var(--color-text-primary-on-blend)] shadow-sm'
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
@@ -268,7 +268,7 @@ export function CatalogPage() {
               type="button"
               data-active={viewMode === 'events' ? 'true' : 'false'}
               onClick={() => setViewMode('events')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
+              className={`flex min-h-[var(--app-touch-target)] items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-inner)] transition-all ${
                 viewMode === 'events'
                   ? 'bg-[var(--color-background-primary)] text-[var(--color-text-primary-on-blend)] shadow-sm'
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'

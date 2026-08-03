@@ -29,14 +29,11 @@
   height: 100vh;
 }
 
-h1, h2, h3, h4, h5, h6,
-.app-brand-link,
-.player-brand-link {
+h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
 
 .player-clock,
-.player-timestamp,
 .duration {
   font-family: var(--font-mono);
 }
@@ -122,15 +119,10 @@ button {
 }
 
 .app-brand,
-.app-nav,
-.app-primary-button,
-.app-secondary-button,
 .app-summary-item,
 .app-status-banner,
 .app-toolbar,
 .catalog-search,
-.catalog-segmented,
-.catalog-segment-button,
 .catalog-card-action,
 .event-month-controls,
 .event-type-filters button,
@@ -138,9 +130,6 @@ button {
 .event-detail-card,
 .event-detail-expand-button,
 .event-dialog,
-.event-form input,
-.event-form select,
-.event-form textarea,
 .event-link-row a,
 .event-edit-button {
   border-radius: var(--radius-element);
@@ -205,59 +194,8 @@ button {
   box-shadow: 0 0 0 0.35rem rgba(57, 197, 187, 0.08);
 }
 
-.app-nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border: 1px solid var(--app-outline);
-  background: var(--app-surface);
-}
-
-.app-nav a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--app-touch-target);
-  padding: 0.42rem 0.85rem;
-  border-radius: var(--radius-inner);
-  color: var(--app-text-secondary);
-  font-size: 0.88rem;
-  font-weight: 750;
-}
-
-.app-nav a[data-active="true"] {
-  color: var(--color-on-accent);
-  background: var(--app-accent);
-}
-
 .app-top-bar-action {
   margin-left: auto;
-}
-
-.app-primary-button,
-.app-secondary-button {
-  display: inline-flex;
-  min-height: var(--app-touch-target);
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  border: 1px solid var(--app-outline);
-  padding: 0 0.75rem;
-  font: inherit;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.app-primary-button {
-  border-color: rgba(57, 197, 187, 0.55);
-  color: var(--color-on-accent);
-  background: var(--app-accent);
-}
-
-.app-secondary-button {
-  color: var(--app-text);
-  background: var(--app-panel);
 }
 
 .app-main {
@@ -394,16 +332,6 @@ button {
     padding-bottom: 0.45rem;
   }
 
-  .app-nav {
-    order: 3;
-    width: 100%;
-  }
-
-  .app-nav a {
-    flex: 1;
-    text-align: center;
-  }
-
   .app-summary-strip {
     display: none;
   }
@@ -444,8 +372,6 @@ button {
   }
 }
 
-.app-primary-button:focus-visible,
-.app-secondary-button:focus-visible,
 .app-github-link:focus-visible {
   outline: 2px solid var(--app-accent);
   outline-offset: 3px;

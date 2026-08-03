@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { render, screen, type RenderResult } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { LyricLine as LyricLineType } from '../data/types'
@@ -10,6 +12,11 @@ import {
   readDetailedLineGeometry,
   type LineLayout,
 } from './lyricGeometry'
+
+const callGuideCss = readFileSync(
+  join(process.cwd(), 'src', 'features', 'callGuide', 'callGuide.css'),
+  'utf8',
+)
 
 const line: LyricLineType = {
   id: 'line-001',
@@ -112,6 +119,49 @@ function recompute(view: RenderResult, props: ManagedLineProps) {
 }
 
 describe('LyricLine', () => {
+  it('keeps measuring markers hidden but layout-measurable until geometry is ready', () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let measuredGeometryState: string | undefined
+    HTMLElement.prototype.getBoundingClientRect = function getRect() {
+      if (this.classList.contains('call-lane')) return rect(0, 100, 360, 120)
+      if (this.classList.contains('call-marker')) {
+        measuredGeometryState = this.dataset.geometryState
+        return rect(0, 0, 120, 18)
+      }
+      const index = Number(this.getAttribute('data-grapheme-index'))
+      if (index > 0) return rect(index * 12, 150, 12, 24)
+      return originalRect.call(this)
+    }
+
+    const measuringRule = callGuideCss.match(
+      /\.call-marker\[data-geometry-state="measuring"\]\s*\{([^}]*)\}/,
+    )?.[1]
+    const readyRule = callGuideCss.match(
+      /\.call-marker\[data-geometry-state="ready"\]\s*\{([^}]*)\}/,
+    )?.[1]
+    const props = { calls: [call('call-above', 'above', '하이 세노!')] }
+
+    try {
+      const view = render(lineNode(props))
+      let marker = view.container.querySelector<HTMLElement>('.call-marker')!
+      expect(marker).toHaveAttribute('data-geometry-state', 'measuring')
+      expect(marker.style.left).toMatch(/%$/)
+      expect(measuringRule).toContain('visibility: hidden')
+      expect(measuringRule).not.toContain('display: none')
+
+      const layout = calculateRenderedLayout(view, props)
+      expect(measuredGeometryState).toBe('measuring')
+
+      view.rerender(lineNode(props, layout))
+      marker = view.container.querySelector<HTMLElement>('.call-marker')!
+      expect(marker).toHaveAttribute('data-geometry-state', 'ready')
+      expect(marker.style.left).toMatch(/px$/)
+      expect(readyRule).toContain('visibility: visible')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
   it('keeps one fixed accessible name while switching between fallback and detailed visuals', () => {
     const calls = [call('call-above', 'above', '하이!'), call('call-below', 'below', '오-!')]
     const onSeek = vi.fn()
@@ -209,6 +259,11 @@ describe('LyricLine', () => {
       expect(markers[0].style.top).toBe(markers[1].style.top)
 
       markerWidth = 120
+      recompute(view, props)
+      markers = Array.from(view.container.querySelectorAll<HTMLElement>('.call-marker'))
+      expect(markers[0].style.top).not.toBe(markers[1].style.top)
+
+      markerWidth = 240
       recompute(view, props)
       markers = Array.from(view.container.querySelectorAll<HTMLElement>('.call-marker'))
       expect(markers[0].style.top).not.toBe(markers[1].style.top)
@@ -348,11 +403,12 @@ describe('LyricLine', () => {
     }
   })
 
-  it('keeps a long left-edge marker inside its lane', () => {
+  it('clamps 48px, 120px, and 240px marker widths at the left lane boundary', () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let markerWidth = 48
     HTMLElement.prototype.getBoundingClientRect = function getRect() {
       if (this.classList.contains('call-lane')) return rect(0, 0, 240, 80)
-      if (this.classList.contains('call-marker')) return rect(0, 0, 120, 24)
+      if (this.classList.contains('call-marker')) return rect(0, 0, markerWidth, 24)
       const index = Number(this.getAttribute('data-grapheme-index'))
       if (index > 0) return rect((index - 1) * 12, 48, 12, 24)
       return originalRect.call(this)
@@ -360,10 +416,17 @@ describe('LyricLine', () => {
     const left = call('left', 'above', '왼쪽 긴 콜 태그!')
     left.anchor.pointChar = 1
     try {
-      const { container } = renderMeasured({ calls: [left] })
-      const marker = container.querySelector<HTMLElement>('.call-marker')!
-      expect(marker.style.left).toBe('6px')
-      expect(marker.style.getPropertyValue('--call-marker-label-offset')).toBe('54px')
+      const props = { calls: [left] }
+      const view = renderMeasured(props)
+      const expectedOffsets = new Map([[48, '18px'], [120, '54px'], [240, '114px']])
+
+      for (const width of [48, 120, 240]) {
+        markerWidth = width
+        recompute(view, props)
+        const marker = view.container.querySelector<HTMLElement>('.call-marker')!
+        expect(marker.style.left).toBe('6px')
+        expect(marker.style.getPropertyValue('--call-marker-label-offset')).toBe(expectedOffsets.get(width))
+      }
     } finally {
       HTMLElement.prototype.getBoundingClientRect = originalRect
     }
