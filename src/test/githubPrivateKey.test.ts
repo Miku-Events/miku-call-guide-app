@@ -2,7 +2,7 @@
 
 import { createPrivateKey, webcrypto } from 'node:crypto'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { importGitHubAppPrivateKey } from '../../api/_github-private-key.js'
+import { importGitHubAppPrivateKey } from '../../functions/_lib/github-private-key.js'
 
 let pkcs1PrivateKeyPem = ''
 let pkcs8PrivateKeyPem = ''

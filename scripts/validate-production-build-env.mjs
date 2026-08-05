@@ -1,6 +1,6 @@
 import { isIP } from 'node:net'
 import { pathToFileURL } from 'node:url'
-import { canonicalProductionOrigin } from '../api/_production-hostname.js'
+import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 
 const reservedExampleHosts = ['example.com', 'example.net', 'example.org', 'example.test']
 const PRODUCTION_APP_ORIGIN = 'https://miku-call-guide-app.pages.dev'

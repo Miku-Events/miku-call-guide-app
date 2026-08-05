@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { canonicalProductionOrigin } from '../api/_production-hostname.js'
+import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 
 const DEFAULT_ATTEMPTS = 3
 const DEFAULT_RETRY_DELAY_MS = 500
