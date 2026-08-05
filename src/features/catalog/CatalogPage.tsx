@@ -19,6 +19,7 @@ import {
 } from './catalogModel'
 import { SongCard } from './SongCard'
 import { useCatalogThumbnailObserver } from './useCatalogThumbnailObserver'
+import { CatalogCardGridSkeleton } from './CatalogCardGridSkeleton'
 
 const PREFETCH_KEY_LIMIT = 5
 
@@ -38,7 +39,6 @@ export function CatalogPage() {
   const rootManifestUrl = getRootManifestUrl()
   const {
     loadedSongIds,
-    markThumbnailLoaded,
     observeThumbnail,
     resetThumbnailVersion,
   } = useCatalogThumbnailObserver()
@@ -219,12 +219,6 @@ export function CatalogPage() {
   const resultCount = filteredSongs.length
   const prioritySongId = catalogSnapshot?.songs[0]?.song.id
 
-  useEffect(() => {
-    if (prioritySongId) {
-      markThumbnailLoaded(prioritySongId)
-    }
-  }, [markThumbnailLoaded, prioritySongId])
-
   return (
     <AppPageShell
       activeNav="catalog"
@@ -382,7 +376,7 @@ export function CatalogPage() {
                     <SongCard
                       entry={entry}
                       isPriorityThumbnail={isPriorityThumbnail}
-                      isThumbnailLoaded={isPriorityThumbnail || loadedSongIds.has(entry.song.id)}
+                      isThumbnailLoaded={loadedSongIds.has(entry.song.id)}
                       key={entry.song.id}
                       observeThumbnail={observeThumbnail}
                       onCancelHoverPrefetch={cancelHoverPrefetch}
@@ -411,20 +405,7 @@ export function CatalogPage() {
               ) : null}
             </>
           ) : !error ? (
-            <div className="catalog-song-grid">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div className="catalog-song-card catalog-song-card--skeleton" key={index} aria-hidden="true">
-                  <div className="catalog-song-media skeleton" style={{ minHeight: '8rem' }} />
-                  <div className="catalog-song-content" style={{ marginTop: '0', background: 'transparent', paddingTop: '1rem' }}>
-                    <div className="skeleton" style={{ height: '1.4rem', width: '70%', marginBottom: '0.6rem' }} />
-                    <div className="skeleton" style={{ height: '0.9rem', width: '40%', marginBottom: '1.2rem' }} />
-                    <div className="catalog-card-action" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem', marginTop: 'auto' }}>
-                      <div className="skeleton" style={{ height: '1rem', width: '25%' }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CatalogCardGridSkeleton />
           ) : null}
         </section>
       </div>

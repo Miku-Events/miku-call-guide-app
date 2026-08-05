@@ -88,7 +88,6 @@ function lineNode({ active = true, calls, line: lyric = line }: ManagedLineProps
       layout={layout}
       line={lyric}
       lyricsLanguage="ja"
-      position={active ? 'current' : 'inactive'}
       pronunciationLanguage="koPronunciation"
     />
   )
@@ -174,7 +173,6 @@ describe('LyricLine', () => {
         line={line}
         lyricsLanguage="ja"
         onSeek={onSeek}
-        position="current"
         pronunciationLanguage="koPronunciation"
       />,
     )
@@ -193,7 +191,6 @@ describe('LyricLine', () => {
         line={line}
         lyricsLanguage="ja"
         onSeek={onSeek}
-        position="current"
         pronunciationLanguage="koPronunciation"
       />,
     )

@@ -6,10 +6,9 @@ export type AppNavKey = 'catalog' | 'events' | 'practice'
 export interface AppHeaderProps {
   activeNav: AppNavKey
   endContent?: ReactNode
-  primaryAction?: ReactNode
 }
 
-export function AppHeader({ activeNav, endContent, primaryAction }: AppHeaderProps) {
+export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
   const isPlayer = activeNav === 'practice'
   const className = isPlayer ? 'player-top-bar' : 'app-top-bar'
   const practiceHref = typeof window === 'undefined' || window.location.hash.length === 0
@@ -26,7 +25,6 @@ export function AppHeader({ activeNav, endContent, primaryAction }: AppHeaderPro
 
   const defaultEndContent = (
     <div className="flex items-center gap-3">
-      {primaryAction}
       {(activeNav === 'catalog' || activeNav === 'events') && (
         <a
           aria-label="GitHub Repository"

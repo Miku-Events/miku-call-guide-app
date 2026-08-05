@@ -293,24 +293,6 @@ button {
   margin: 0;
 }
 
-.app-status-banner[data-variant="warning"] {
-  border-color: var(--color-border-yellow);
-  background: var(--color-warning-muted);
-  color: var(--color-text-yellow);
-}
-
-.app-status-banner[data-variant="error"] {
-  border-color: var(--color-border-red);
-  background: var(--color-error-muted);
-  color: var(--color-text-red);
-}
-
-.app-status-banner[data-variant="info"] {
-  border-color: var(--app-outline);
-  background: var(--app-surface);
-  color: var(--app-text-secondary);
-}
-
 @media (max-width: 980px) {
 .app-heading-row,
   .app-toolbar {

@@ -1,5 +1,15 @@
-import { callMarkerStackStepPx, type CallMarkerLayout } from './CallMarker'
 import { callKindPriority, normalizedCallKind, type RenderableCall } from './callPositioning'
+
+export interface CallMarkerLayout {
+  pointLeft: number
+  pointTop: number
+  labelOffset: number
+  pointArrow?: { left: number; top: number }
+  rangeSegments?: Array<{ left: number; top: number; width: number }>
+  endPoint?: { left: number; top: number }
+}
+
+export const callMarkerStackStepPx = 24
 
 export interface RowSplit {
   startIdx: number

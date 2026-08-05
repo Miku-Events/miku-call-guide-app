@@ -2,9 +2,7 @@ import { useActionState, useEffect, useRef, useState } from 'react'
 import { Send } from 'lucide-react'
 import { TurnstileWidget } from '../../../components/TurnstileWidget'
 import { GitHubMarkIcon } from '../../../shared/icons/GitHubMarkIcon'
-import type { SubmissionSession } from '../submissionClient'
-import { submitEditRequest, submitEventSubmission, githubLoginUrl } from '../submissionClient'
-import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
+import { fetchSubmissionSession, submitEditRequest, submitEventSubmission, githubLoginUrl, type SubmissionSession } from '../submissionClient'
 import { COMBINED_TIMEZONES, formatIsoWithOffset } from '../utils/timezone'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -13,36 +11,12 @@ import { Selector } from '@astryxdesign/core/Selector'
 import { Button } from '@astryxdesign/core/Button'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { useFocusTrap } from '@astryxdesign/core/hooks'
-
-const eventTypeLabels: Record<string, string> = {
-  concert: 'Concert',
-  dj: 'DJ',
-  popup: 'Popup',
-  ticketApplication: 'Ticket apply',
-  ticketGeneralSale: 'General sale',
-  livestream: 'Livestream',
-  exhibition: 'Exhibition',
-  collaboration: 'Collab',
-  announcement: 'Notice',
-  other: 'Other',
-}
-
-const selectorOptions = Object.entries(eventTypeLabels).map(([value, label]) => ({
-  value,
-  label,
-}))
-
-type DialogState =
-  | { kind: 'add' }
-  | { kind: 'edit'; event: CalendarEventSummary; occurrence?: EventOccurrence }
-  | null
+import type { EventDialogState } from '../eventDialog'
+import { eventTypeSelectorOptions } from '../eventTypes'
 
 interface EventSubmitDialogProps {
-  dialog: DialogState
-  setDialog: (state: DialogState) => void
-  session: SubmissionSession
-  turnstileToken: string | null
-  setTurnstileToken: (token: string | null) => void
+  dialog: EventDialogState
+  setDialog: (state: EventDialogState) => void
   submissionApiBaseUrl: string
   setSubmissionSuccess: (msg: string | null) => void
 }
@@ -50,13 +24,12 @@ interface EventSubmitDialogProps {
 export function EventSubmitDialog({
   dialog,
   setDialog,
-  session,
-  turnstileToken,
-  setTurnstileToken,
   submissionApiBaseUrl,
   setSubmissionSuccess,
 }: EventSubmitDialogProps) {
   const { containerRef: dialogRef } = useFocusTrap<HTMLDialogElement>({ isActive: Boolean(dialog) })
+  const [session, setSession] = useState<SubmissionSession>({ authenticated: false })
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
   const [turnstileResetNonce, setTurnstileResetNonce] = useState(0)
   const dialogIdentity = dialog
@@ -84,13 +57,23 @@ export function EventSubmitDialog({
   }))
 
   useEffect(() => {
+    const controller = new AbortController()
+    fetchSubmissionSession(submissionApiBaseUrl, controller.signal).then(setSession).catch(() => {
+      if (!controller.signal.aborted) {
+        setSession({ authenticated: false })
+      }
+    })
+    return () => controller.abort()
+  }, [submissionApiBaseUrl])
+
+  useEffect(() => {
     if (previousDialogIdentityRef.current === dialogIdentity) return
     previousDialogIdentityRef.current = dialogIdentity
     dialogGenerationRef.current += 1
     setSubmissionError(null)
     setTurnstileResetNonce(0)
     setTurnstileToken(null)
-  }, [dialogIdentity, setTurnstileToken])
+  }, [dialogIdentity])
 
   const closeDialog = () => {
     dialogGenerationRef.current += 1
@@ -270,7 +253,7 @@ export function EventSubmitDialog({
                 />
                 <Selector
                   label="종류"
-                  options={selectorOptions}
+                  options={eventTypeSelectorOptions}
                   value={addForm.type}
                   onChange={(val) => setAddForm((prev) => ({ ...prev, type: val }))}
                   isRequired

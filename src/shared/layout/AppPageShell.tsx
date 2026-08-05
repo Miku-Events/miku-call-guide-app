@@ -4,7 +4,6 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout'
 import { Toolbar } from '@astryxdesign/core/Toolbar'
 import { Card } from '@astryxdesign/core/Card'
-import { ClickableCard } from '@astryxdesign/core/ClickableCard'
 import { AppHeader } from './AppHeader'
 
 export type { AppNavKey } from './AppHeader'
@@ -13,7 +12,6 @@ export type AppPageNavKey = 'catalog' | 'events'
 export interface SummaryItem {
   icon?: ReactNode
   label: string
-  to?: string
   value: string | number
 }
 
@@ -22,7 +20,6 @@ export interface AppPageShellProps {
   children: ReactNode
   className?: string
   kicker: string
-  primaryAction?: ReactNode
   summaryItems: SummaryItem[]
   title: string
   toolbar?: ReactNode
@@ -60,7 +57,6 @@ export function AppPageShell({
   children,
   className,
   kicker,
-  primaryAction,
   summaryItems,
   title,
   toolbar,
@@ -74,10 +70,7 @@ export function AppPageShell({
       contentPadding={0}
       className={`app-page-shell${className ? ` ${className}` : ''}`}
       topNav={
-        <AppHeader
-          activeNav={activeNav}
-          primaryAction={primaryAction}
-        />
+        <AppHeader activeNav={activeNav} />
       }
     >
       <Layout className="app-main" aria-labelledby={titleId}>
@@ -99,20 +92,8 @@ export function AppPageShell({
                   </div>
                 )
 
-                return item.to ? (
-                  <ClickableCard
-                    key={item.label}
-                    href={item.to}
-                    label={item.label}
-                    className="app-summary-item flex flex-col p-3 min-w-[7rem]"
-                  >
-                    {innerContent}
-                  </ClickableCard>
-                ) : (
-                  <Card
-                    key={item.label}
-                    className="app-summary-item flex flex-col p-3 min-w-[7rem]"
-                  >
+                return (
+                  <Card key={item.label} className="app-summary-item flex flex-col p-3 min-w-[7rem]">
                     {innerContent}
                   </Card>
                 )

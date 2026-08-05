@@ -1,10 +1,9 @@
-import type { CallAnchor, CallEvent, CallMarkers, CallSegment, LyricLine } from '../data/types'
+import type { CallAnchor, CallEvent, CallMarkers, CallSegment } from '../data/types'
 
 export { localizedText } from '../../shared/i18n/localizedText'
 
 type DirectLyricCall = Extract<CallEvent, { anchor: unknown }>
 type SegmentedLyricCall = Extract<CallEvent, { segments: unknown }>
-type GlobalCall = Extract<CallEvent, { startMs: number }>
 type LyricCall = DirectLyricCall | SegmentedLyricCall
 
 export interface RenderableCall {
@@ -47,10 +46,6 @@ function isDirectLyricCall(call: CallEvent): call is DirectLyricCall {
 
 function isSegmentedLyricCall(call: CallEvent): call is SegmentedLyricCall {
   return call.segments !== undefined
-}
-
-function isGlobalCall(call: CallEvent): call is GlobalCall {
-  return call.startMs !== undefined
 }
 
 export function normalizedCallKind(call: { cue?: { kind?: unknown } }): CallKind {
@@ -167,62 +162,16 @@ export function splitGraphemeTokens(value: string): GraphemeToken[] {
   return tokens
 }
 
-export function findActiveLyric(lyrics: LyricLine[], currentMs: number): LyricLine | null {
-  return lyrics.find((line) => line.startMs <= currentMs && currentMs < line.endMs) ?? null
-}
-
-export function visibleLyricWindow(
-  lyrics: LyricLine[],
-  activeLine: LyricLine | null,
-  radius = 2,
-): LyricLine[] {
-  if (!activeLine) {
-    return lyrics.slice(0, radius * 2 + 1)
+export function groupCallsByLineId(callEvents: readonly CallEvent[]): ReadonlyMap<string, RenderableCall[]> {
+  const result = new Map<string, RenderableCall[]>()
+  const append = (lineId: string, call: RenderableCall) => {
+    const existing = result.get(lineId)
+    if (existing) {
+      existing.push(call)
+    } else {
+      result.set(lineId, [call])
+    }
   }
-
-  const activeIndex = lyrics.findIndex((line) => line.id === activeLine.id)
-  const start = Math.max(0, activeIndex - radius)
-  const end = Math.min(lyrics.length, activeIndex + radius + 1)
-  return lyrics.slice(start, end)
-}
-
-export type StreamingLyricPosition = 'previous' | 'current' | 'next'
-
-export interface StreamingLyricItem {
-  line: LyricLine
-  position: StreamingLyricPosition
-}
-
-export function streamingLyricWindow(lyrics: LyricLine[], activeLine: LyricLine | null): StreamingLyricItem[] {
-  if (lyrics.length === 0) {
-    return []
-  }
-
-  const activeIndex = activeLine ? lyrics.findIndex((line) => line.id === activeLine.id) : 0
-  const currentIndex = activeIndex >= 0 ? activeIndex : 0
-  const items: StreamingLyricItem[] = []
-
-  const previous = lyrics[currentIndex - 1]
-  const current = lyrics[currentIndex]
-  const next = lyrics[currentIndex + 1]
-
-  if (previous) {
-    items.push({ line: previous, position: 'previous' })
-  }
-
-  if (current) {
-    items.push({ line: current, position: 'current' })
-  }
-
-  if (next) {
-    items.push({ line: next, position: 'next' })
-  }
-
-  return items
-}
-
-export function callsForLine(callEvents: CallEvent[], lineId: string): RenderableCall[] {
-  const result: RenderableCall[] = []
 
   for (const call of callEvents) {
     if (call.placement.mode !== 'lyricTrack') {
@@ -231,11 +180,7 @@ export function callsForLine(callEvents: CallEvent[], lineId: string): Renderabl
 
     if (isSegmentedLyricCall(call)) {
       call.segments.forEach((segment, index) => {
-        if (segment.lyricLineId !== lineId) {
-          return
-        }
-
-        result.push({
+        append(segment.lyricLineId, {
           id: `${call.id}::segment-${index}`,
           sourceCallId: call.id,
           lyricLineId: segment.lyricLineId,
@@ -252,11 +197,11 @@ export function callsForLine(callEvents: CallEvent[], lineId: string): Renderabl
       continue
     }
 
-    if (!isDirectLyricCall(call) || call.lyricLineId !== lineId) {
+    if (!isDirectLyricCall(call)) {
       continue
     }
 
-    result.push({
+    append(call.lyricLineId, {
       id: call.id,
       sourceCallId: call.id,
       lyricLineId: call.lyricLineId,
@@ -270,15 +215,6 @@ export function callsForLine(callEvents: CallEvent[], lineId: string): Renderabl
   }
 
   return result
-}
-
-export function activeGlobalCalls(callEvents: CallEvent[], currentMs: number): CallEvent[] {
-  return callEvents.filter((call): call is GlobalCall => {
-    if (!isGlobalCall(call)) {
-      return false
-    }
-    return call.startMs <= currentMs && currentMs < call.endMs
-  })
 }
 
 export function arrowForCall(call: { placement: CallEvent['placement']; markers: CallMarkers }): 'up' | 'down' {

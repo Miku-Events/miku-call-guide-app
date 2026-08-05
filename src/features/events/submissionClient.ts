@@ -30,12 +30,12 @@ function apiUrl(apiBaseUrl: string, path: string): string {
   return new URL(path, apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`).toString()
 }
 
-export async function fetchSubmissionSession(apiBaseUrl: string): Promise<SubmissionSession> {
+export async function fetchSubmissionSession(apiBaseUrl: string, signal?: AbortSignal): Promise<SubmissionSession> {
   if (!apiBaseUrl) {
     return { authenticated: false }
   }
 
-  const response = await fetch(apiUrl(apiBaseUrl, 'api/auth/session'), { credentials: 'include' })
+  const response = await fetch(apiUrl(apiBaseUrl, 'api/auth/session'), { credentials: 'include', signal })
   if (!response.ok) {
     return { authenticated: false }
   }
