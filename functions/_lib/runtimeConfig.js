@@ -1,11 +1,11 @@
 import {
   canonicalProductionOrigin,
   canonicalSecureHostname,
+  PRODUCTION_APP_ORIGIN,
 } from './productionHostname.js'
 import { importGitHubAppPrivateKey } from './github-private-key.js'
 
 const SESSION_SECRET_MINIMUM_BYTES = 32
-const PRODUCTION_APP_ORIGIN = 'https://miku-call-guide-app.pages.dev'
 const OFFICIAL_TURNSTILE_TEST_SECRETS = new Set([
   '1x0000000000000000000000000000000AA',
   '2x0000000000000000000000000000000AA',
