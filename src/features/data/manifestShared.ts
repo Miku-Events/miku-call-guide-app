@@ -43,7 +43,7 @@ export { abortReason, isAbortError } from './requestAbort'
 export async function fetchJson<T>(
   url: string,
   assertValue: AssertFn<T>,
-  options: { cache: RequestCache; signal?: AbortSignal },
+  options: { cache: RequestCache; requestLabel?: string; signal?: AbortSignal },
 ): Promise<T> {
   if (options.signal?.aborted) {
     throw abortReason(options.signal)
@@ -53,7 +53,7 @@ export async function fetchJson<T>(
     ...(options.signal ? { signal: options.signal } : {}),
   })
   if (!response.ok) {
-    throw new Error(`Request failed with ${response.status}.`)
+    throw new Error(`${options.requestLabel ?? 'Request'} failed with ${response.status}.`)
   }
   const value: unknown = await response.json()
   assertValue(value)
@@ -78,6 +78,7 @@ interface VersionedResourceConfig<T> {
   options: VersionedLoadOptions
   resourcePath: string
   requestCache?: RequestCache
+  requestLabel?: string
   versionedLeaf?: boolean
 }
 
@@ -95,6 +96,7 @@ export async function loadVersionedResource<T>(
   try {
     const data = await fetchJson(url, config.assertValue, {
       cache: config.requestCache ?? 'no-cache',
+      ...(config.requestLabel ? { requestLabel: config.requestLabel } : {}),
       ...(signal ? { signal } : {}),
     })
     config.checkValue?.(data)

@@ -29,6 +29,7 @@ export async function fetchSong(
     manifestUrl,
     options,
     requestCache: 'force-cache',
+    requestLabel: 'Song request',
     resourcePath: songPath,
     versionedLeaf: true,
   })
