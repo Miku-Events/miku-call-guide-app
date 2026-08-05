@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium } from '@playwright/test'
-import { canonicalProductionOrigin } from '../api/_production-hostname.js'
+import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/

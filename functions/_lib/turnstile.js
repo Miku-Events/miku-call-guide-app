@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { canonicalSecureHostname } from './_production-hostname.js'
-import { requestEnvironment } from './_session.js'
+import { canonicalSecureHostname } from './productionHostname.js'
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_TEST_SECRET_KEY = '1x0000000000000000000000000000000AA'
@@ -28,8 +27,7 @@ function isPlaceholderSecret(value) {
     || normalized.startsWith('your_')
 }
 
-function turnstileConfiguration(req) {
-  const environment = requestEnvironment(req)
+function turnstileConfiguration(environment) {
   const appEnvironment = environment.APP_ENV
   if (!validAppEnvironments.has(appEnvironment)) {
     return null
@@ -57,37 +55,20 @@ function turnstileConfiguration(req) {
   return { expectedHostname, secretKey }
 }
 
-function requestHeader(req, name) {
-  const headers = req?.headers
-  if (!headers) return ''
-
-  if (typeof headers.get === 'function') {
-    return headers.get(name) || ''
-  }
-
-  const exact = headers[name]
-  if (Array.isArray(exact)) return exact[0] || ''
-  if (exact !== undefined) return String(exact)
-
-  const matchingKey = Object.keys(headers).find((key) => key.toLowerCase() === name)
-  const value = matchingKey ? headers[matchingKey] : ''
-  return Array.isArray(value) ? value[0] || '' : String(value || '')
-}
-
-function requestIp(req) {
-  const cloudflareIp = requestHeader(req, 'cf-connecting-ip').trim()
+function requestIp(request) {
+  const cloudflareIp = (request.headers.get('cf-connecting-ip') || '').trim()
   if (cloudflareIp) return cloudflareIp
 
-  const forwardedIp = requestHeader(req, 'x-forwarded-for').split(',')[0].trim()
+  const forwardedIp = (request.headers.get('x-forwarded-for') || '').split(',')[0].trim()
   if (forwardedIp) return forwardedIp
-
-  return req?.socket?.remoteAddress || ''
+  return ''
 }
 
 /**
  * Validate a Turnstile token against a request-scoped environment.
  * @param {unknown} token
- * @param {import('node:http').IncomingMessage & { env?: Record<string, string | undefined> }} req
+ * @param {Request} request
+ * @param {Record<string, string | undefined>} environment
  * @param {'event_submit' | 'event_edit'} expectedAction
  * @param {{
  *   fetchImpl?: typeof fetch,
@@ -96,7 +77,7 @@ function requestIp(req) {
  * }} [options]
  * @returns {Promise<boolean>}
  */
-export async function verifyTurnstileToken(token, req, expectedAction, options = {}) {
+export async function verifyTurnstileToken(token, request, environment, expectedAction, options = {}) {
   if (typeof token !== 'string' || token.length === 0 || token.length > MAX_TOKEN_LENGTH) {
     return false
   }
@@ -104,7 +85,7 @@ export async function verifyTurnstileToken(token, req, expectedAction, options =
     return false
   }
 
-  const configuration = turnstileConfiguration(req)
+  const configuration = turnstileConfiguration(environment)
   if (!configuration) {
     return false
   }
@@ -113,7 +94,7 @@ export async function verifyTurnstileToken(token, req, expectedAction, options =
   const createIdempotencyKey = options.randomUUID || randomUUID
   const createTimeoutSignal = options.timeoutSignal
     || ((milliseconds) => AbortSignal.timeout(milliseconds))
-  const remoteIp = requestIp(req)
+  const remoteIp = requestIp(request)
   const requestBody = {
     secret: configuration.secretKey,
     response: token,

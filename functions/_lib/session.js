@@ -15,15 +15,7 @@ const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 const OAUTH_TTL_MS = OAUTH_TTL_SECONDS * 1000
 const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000
 
-function processEnvironment() {
-  return typeof process !== 'undefined' && process.env ? process.env : {}
-}
-
-export function requestEnvironment(req, explicitEnvironment) {
-  return explicitEnvironment || req?.env || processEnvironment()
-}
-
-function secret(environment = processEnvironment()) {
+function secret(environment) {
   const value = environment.SESSION_SECRET
   if (!value) {
     throw new Error('SESSION_SECRET is not configured')
@@ -126,26 +118,13 @@ function expiredCookie(name, secure) {
   return `${name}=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0${secure ? '; Secure' : ''}`
 }
 
-function appendSetCookie(res, value) {
-  if (typeof res.appendHeader === 'function') {
-    res.appendHeader('set-cookie', value)
-    return
-  }
-
-  const existing = typeof res.getHeader === 'function'
-    ? res.getHeader('set-cookie')
-    : undefined
-  const values = Array.isArray(existing)
-    ? existing
-    : existing === undefined
-      ? []
-      : [existing]
-  res.setHeader('set-cookie', [...values, value])
+function appendSetCookie(headers, value) {
+  headers.append('set-cookie', value)
 }
 
-function parseCookies(req) {
+function parseCookies(request) {
   const cookies = {}
-  for (const item of String(req?.headers?.cookie || '').split(';')) {
+  for (const item of String(request.headers.get('cookie') || '').split(';')) {
     const trimmed = item.trim()
     const separator = trimmed.indexOf('=')
     if (separator <= 0) {
@@ -156,12 +135,12 @@ function parseCookies(req) {
   return cookies
 }
 
-export function signState(payload, environment = processEnvironment()) {
+export function signState(payload, environment) {
   const body = base64Url(JSON.stringify(payload))
   return `${body}.${sign(body, environment)}`
 }
 
-export function verifyState(value, environment = processEnvironment()) {
+export function verifyState(value, environment) {
   const payload = readSignedJson(value, environment)
   if (!payload || !hasValidTimestamp(payload, OAUTH_TTL_MS)) {
     return null
@@ -169,7 +148,7 @@ export function verifyState(value, environment = processEnvironment()) {
   return payload
 }
 
-export function createState(returnTo, environment = processEnvironment()) {
+export function createState(returnTo, environment) {
   return signState({
     nonce: randomBytes(32).toString('base64url'),
     returnTo,
@@ -177,7 +156,7 @@ export function createState(returnTo, environment = processEnvironment()) {
   }, environment)
 }
 
-export function createOAuthTransaction(returnTo, environment = processEnvironment()) {
+export function createOAuthTransaction(returnTo, environment) {
   const ts = Date.now()
   const state = signState({
     nonce: randomBytes(32).toString('base64url'),
@@ -192,20 +171,20 @@ export function createOAuthTransaction(returnTo, environment = processEnvironmen
   return { codeChallenge, codeVerifier, state, ts }
 }
 
-export function setOAuthTransactionCookie(res, transaction, environment = processEnvironment()) {
+export function setOAuthTransactionCookie(headers, transaction, environment) {
   const value = signState({
     state: transaction.state,
     codeVerifier: transaction.codeVerifier,
     ts: transaction.ts,
   }, environment)
   appendSetCookie(
-    res,
+    headers,
     `${oauthCookieName(environment)}=${value}; ${cookieAttributes(OAUTH_TTL_SECONDS, isSecureEnvironment(environment))}`,
   )
 }
 
-export function readOAuthTransaction(req, environment = requestEnvironment(req)) {
-  const value = parseCookies(req)[oauthCookieName(environment)]
+export function readOAuthTransaction(request, environment) {
+  const value = parseCookies(request)[oauthCookieName(environment)]
   const transaction = readSignedJson(value, environment)
   if (
     !transaction
@@ -218,29 +197,29 @@ export function readOAuthTransaction(req, environment = requestEnvironment(req))
   return transaction
 }
 
-export function clearOAuthTransactionCookie(res, environment = processEnvironment()) {
+export function clearOAuthTransactionCookie(headers, environment) {
   appendSetCookie(
-    res,
+    headers,
     expiredCookie(oauthCookieName(environment), isSecureEnvironment(environment)),
   )
 }
 
-export function clearAllOAuthTransactionCookies(res) {
-  appendSetCookie(res, expiredCookie(SECURE_OAUTH_COOKIE_NAME, true))
-  appendSetCookie(res, expiredCookie(LOCAL_OAUTH_COOKIE_NAME, false))
+export function clearAllOAuthTransactionCookies(headers) {
+  appendSetCookie(headers, expiredCookie(SECURE_OAUTH_COOKIE_NAME, true))
+  appendSetCookie(headers, expiredCookie(LOCAL_OAUTH_COOKIE_NAME, false))
 }
 
-export function setSessionCookie(res, session, environment = processEnvironment()) {
+export function setSessionCookie(headers, session, environment) {
   const body = base64Url(JSON.stringify(session))
   const value = `${body}.${sign(body, environment)}`
   appendSetCookie(
-    res,
+    headers,
     `${sessionCookieName(environment)}=${value}; ${cookieAttributes(SESSION_TTL_SECONDS, isSecureEnvironment(environment))}`,
   )
 }
 
-export function readSession(req, environment = requestEnvironment(req)) {
-  const cookies = parseCookies(req)
+export function readSession(request, environment) {
+  const cookies = parseCookies(request)
   const names = [sessionCookieName(environment), LEGACY_SESSION_COOKIE_NAME]
   const value = names.map((name) => cookies[name]).find(Boolean)
   if (!value) {
@@ -254,13 +233,13 @@ export function readSession(req, environment = requestEnvironment(req)) {
   return session
 }
 
-export function clearAllAuthCookies(res) {
+export function clearAllAuthCookies(headers) {
   for (const [name, secure] of [
     [SECURE_SESSION_COOKIE_NAME, true],
     [LEGACY_SESSION_COOKIE_NAME, false],
     [SECURE_OAUTH_COOKIE_NAME, true],
     [LOCAL_OAUTH_COOKIE_NAME, false],
   ]) {
-    appendSetCookie(res, expiredCookie(name, secure))
+    appendSetCookie(headers, expiredCookie(name, secure))
   }
 }

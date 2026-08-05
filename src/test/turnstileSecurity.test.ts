@@ -1,15 +1,17 @@
 // @vitest-environment node
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import * as editRequestModule from '../../api/events/[eventId]/edit-requests.js'
-import * as submissionModule from '../../api/events/submissions/index.js'
-import { setSessionCookie } from '../../api/_session.js'
-import { verifyTurnstileToken } from '../../api/_turnstile.js'
+import * as editRequestModule from '../../functions/api/events/[eventId]/edit-requests.js'
+import * as submissionModule from '../../functions/api/events/submissions.js'
+import { setSessionCookie } from '../../functions/_lib/session.js'
+import { verifyTurnstileToken as verifyTurnstileTokenImpl } from '../../functions/_lib/turnstile.js'
 import {
+  asLegacyHandler,
   createRequest,
   createResponse,
-  getSetCookies,
+  createWebRequest,
   type ApiEnvironment,
+  type TestRequest,
 } from './apiTestHarness'
 
 const TEST_SECRET = '1x0000000000000000000000000000000AA'
@@ -64,6 +66,21 @@ function requestWithEnvironment(
   headers: Record<string, string> = {},
 ) {
   return createRequest({ env, headers })
+}
+
+function verifyTurnstileToken(
+  token: unknown,
+  testRequest: TestRequest,
+  action: 'event_submit' | 'event_edit',
+  options: Parameters<typeof verifyTurnstileTokenImpl>[4] = {},
+) {
+  return verifyTurnstileTokenImpl(
+    token,
+    createWebRequest(testRequest),
+    testRequest.env ?? {},
+    action,
+    options,
+  )
 }
 
 function successfulVerification(action = 'event_submit', hostname = EXPECTED_HOSTNAME) {
@@ -366,9 +383,9 @@ describe('event handlers bind Turnstile actions', () => {
       APP_ENV: 'test',
       SESSION_SECRET,
     }
-    const cookieResponse = createResponse()
-    setSessionCookie(cookieResponse, { login: 'miku-contributor', ts: Date.now() }, env)
-    const cookie = getSetCookies(cookieResponse)[0]?.split(';', 1)[0] ?? ''
+    const headers = new Headers()
+    setSessionCookie(headers, { login: 'miku-contributor', ts: Date.now() }, env)
+    const cookie = headers.get('set-cookie')?.split(';', 1)[0] ?? ''
 
     return createRequest({
       method: 'POST',
@@ -398,12 +415,12 @@ describe('event handlers bind Turnstile actions', () => {
     if (typeof factory !== 'function') return
 
     const verifyToken = vi.fn(async () => false)
-    const handler = factory({ verifyTurnstileToken: verifyToken })
+    const handler = asLegacyHandler(factory({ verifyTurnstileToken: verifyToken }))
     const response = createResponse()
 
     await handler(authenticatedRequest({ turnstileToken: 'valid-token' }, query), response)
 
     expect(verifyToken).toHaveBeenCalledOnce()
-    expect(verifyToken.mock.calls[0]?.[2]).toBe(expectedAction)
+    expect(verifyToken.mock.calls[0]?.[3]).toBe(expectedAction)
   })
 })

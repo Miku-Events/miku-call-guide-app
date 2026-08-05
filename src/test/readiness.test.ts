@@ -40,47 +40,6 @@ async function requestReadiness(environment: Record<string, unknown>) {
   })
 }
 
-async function requestDirectReadiness(environment: Record<string, string>) {
-  for (const [name, value] of Object.entries(environment)) {
-    vi.stubEnv(name, value)
-  }
-
-  const modulePath = '../../api/ready.js'
-  const { default: handler } = await import(/* @vite-ignore */ modulePath)
-  const headers = new Headers()
-  let body: unknown
-  let statusCode = 200
-  const responseAdapter = {
-    end() {
-      return responseAdapter
-    },
-    json(value: unknown) {
-      body = value
-      headers.set('content-type', 'application/json')
-      return responseAdapter
-    },
-    setHeader(name: string, value: string | string[]) {
-      headers.delete(name)
-      for (const item of Array.isArray(value) ? value : [value]) {
-        headers.append(name, item)
-      }
-      return responseAdapter
-    },
-    status(value: number) {
-      statusCode = value
-      return responseAdapter
-    },
-  }
-
-  await handler({
-    headers: {},
-    method: 'GET',
-    url: `${APP_ORIGIN}/api/ready`,
-  }, responseAdapter)
-
-  return new Response(JSON.stringify(body), { headers, status: statusCode })
-}
-
 beforeAll(async () => {
   const keyPair = await webcrypto.subtle.generateKey({
     hash: 'SHA-256',
@@ -177,17 +136,6 @@ describe('production readiness endpoint', () => {
     })
     expect(JSON.stringify(body)).not.toContain(appOrigin)
     consoleError.mockRestore()
-  })
-
-  it('uses process.env in the direct API runtime', async () => {
-    const environment = await productionEnvironment()
-    const response = await requestDirectReadiness(
-      Object.fromEntries(Object.entries(environment).map(([name, value]) => [name, String(value)])),
-    )
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get(READINESS_CONTRACT_HEADER)).toBe(READINESS_CONTRACT_VERSION)
-    expect(await response.json()).toEqual({ ready: true })
   })
 
   it('accepts a case-normalized Turnstile hostname like the verifier does', async () => {

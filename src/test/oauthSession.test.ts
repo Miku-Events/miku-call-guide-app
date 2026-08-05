@@ -2,21 +2,41 @@
 
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import callbackHandler from '../../api/auth/github/callback.js'
-import startHandler, { safeReturnTo } from '../../api/auth/github/start.js'
-import sessionHandler from '../../api/auth/session.js'
+import { onRequest as callbackOnRequest } from '../../functions/api/auth/github/callback.js'
+import { onRequest as startOnRequest, safeReturnTo } from '../../functions/api/auth/github/start.js'
+import { onRequest as sessionOnRequest } from '../../functions/api/auth/session.js'
 import {
-  readSession,
-  setSessionCookie,
+  readSession as readSessionImpl,
+  setSessionCookie as setSessionCookieImpl,
   signState,
   verifyState,
-} from '../../api/_session.js'
+} from '../../functions/_lib/session.js'
 import {
+  asLegacyHandler,
   createRequest,
   createResponse,
+  createWebRequest,
   getSetCookies,
   type ApiEnvironment,
+  type TestRequest,
+  type TestResponse,
 } from './apiTestHarness'
+
+const callbackHandler = asLegacyHandler(callbackOnRequest)
+const startHandler = asLegacyHandler(startOnRequest)
+const sessionHandler = asLegacyHandler(sessionOnRequest)
+
+function setSessionCookie(response: TestResponse, session: object, environment: ApiEnvironment) {
+  const headers = new Headers()
+  setSessionCookieImpl(headers, session, environment)
+  const values = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
+    ?? [headers.get('set-cookie') || '']
+  for (const value of values) response.appendHeader('set-cookie', value)
+}
+
+function readSession(request: TestRequest, environment: ApiEnvironment) {
+  return readSessionImpl(createWebRequest(request), environment)
+}
 
 const NOW = new Date('2026-07-10T00:00:00.000Z')
 const STRONG_SECRET = 'miku-call-guide-test-secret-32-bytes-minimum'
@@ -167,7 +187,7 @@ describe('signed state and sessions', () => {
     ])
   })
 
-  it('expires sessions after seven days and keeps the session endpoint compatible', () => {
+  it('expires sessions after seven days and keeps the session endpoint compatible', async () => {
     const eightDaysAgo = NOW.getTime() - (8 * 24 * 60 * 60 * 1000)
     const expiredValue = signState({
       id: 39,
@@ -182,21 +202,21 @@ describe('signed state and sessions', () => {
     expect(readSession(request, testEnv)).toBeNull()
 
     const response = createResponse()
-    sessionHandler(request, response)
+    await sessionHandler(request, response)
     expect(response.statusCode).toBe(200)
     expect(response.body).toEqual({ authenticated: false, login: undefined })
   })
 })
 
 describe('OAuth start', () => {
-  it('uses explicit request environment and binds a secure transaction cookie', () => {
+  it('uses explicit request environment and binds a secure transaction cookie', async () => {
     const request = createRequest({
       env: productionEnv,
       query: { returnTo: '/events?view=month' },
     })
     const response = createResponse()
 
-    startHandler(request, response)
+    await startHandler(request, response)
 
     expect(response.statusCode).toBe(302)
     const location = new URL(String(response.redirectUrl))
@@ -259,7 +279,7 @@ describe('OAuth callback', () => {
         ].join('; '),
       },
       query: { code: 'oauth-code', state },
-    }), response)).resolves.toBeUndefined()
+    }), response)).resolves.toBe(response)
 
     expect(response.statusCode).toBe(503)
     expect(response.body).toEqual({
@@ -360,17 +380,17 @@ describe('OAuth callback', () => {
 
 describe('logout', () => {
   it('allows only POST and clears new, local, and legacy auth cookies', async () => {
-    const logoutModule = import('../../api/auth/logout.js')
-    await expect(logoutModule).resolves.toHaveProperty('default')
-    const { default: logoutHandler } = await logoutModule
+    const logoutModule = await import('../../functions/api/auth/logout.js')
+    expect(logoutModule).toHaveProperty('onRequest')
+    const logoutHandler = asLegacyHandler(logoutModule.onRequest)
 
     const getResponse = createResponse()
-    logoutHandler(createRequest({ env: productionEnv }), getResponse)
+    await logoutHandler(createRequest({ env: productionEnv }), getResponse)
     expect(getResponse.statusCode).toBe(405)
     expect(getResponse.getHeader('allow')).toBe('POST')
 
     const postResponse = createResponse()
-    logoutHandler(createRequest({
+    await logoutHandler(createRequest({
       env: productionEnv,
       method: 'POST',
     }), postResponse)

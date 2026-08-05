@@ -1,8 +1,8 @@
 import {
   canonicalProductionOrigin,
   canonicalSecureHostname,
-} from './_production-hostname.js'
-import { importGitHubAppPrivateKey } from './_github-private-key.js'
+} from './productionHostname.js'
+import { importGitHubAppPrivateKey } from './github-private-key.js'
 
 const SESSION_SECRET_MINIMUM_BYTES = 32
 const PRODUCTION_APP_ORIGIN = 'https://miku-call-guide-app.pages.dev'
@@ -100,8 +100,13 @@ async function validateGitHub(environment) {
   await validateGitHubPrivateKey(environment)
 }
 
-export async function assertProductionReadiness(environment) {
-  if (!environment || environment.APP_ENV !== 'production') {
+export async function parseRuntimeConfig(environment, mode = 'service') {
+  if (!environment || typeof environment !== 'object') {
+    throw new Error('invalid_runtime_configuration')
+  }
+
+  if (mode !== 'readiness') return environment
+  if (environment.APP_ENV !== 'production') {
     throw new Error('invalid_runtime_configuration')
   }
 
@@ -109,4 +114,9 @@ export async function assertProductionReadiness(environment) {
   validateSessionSecret(environment)
   validateTurnstile(environment, appOrigin)
   await validateGitHub(environment)
+  return environment
+}
+
+export async function assertProductionReadiness(environment) {
+  await parseRuntimeConfig(environment, 'readiness')
 }

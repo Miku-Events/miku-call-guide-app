@@ -73,6 +73,63 @@ export class TestResponse {
   }
 }
 
+function requestUrl(request: TestRequest): string {
+  const url = new URL(request.url)
+  for (const [name, value] of Object.entries(request.query)) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined) url.searchParams.append(name, item)
+    }
+  }
+  return url.toString()
+}
+
+export type PagesHandler = (context: {
+  env: ApiEnvironment
+  params: Record<string, string>
+  request: Request
+}) => Promise<Response> | Response
+
+export function createWebRequest(request: TestRequest): Request {
+  const headers = new Headers(request.headers)
+  let body: BodyInit | undefined
+  if (request.body !== undefined) {
+    body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body)
+    if (!headers.has('content-type')) headers.set('content-type', 'application/json')
+  }
+  return new Request(requestUrl(request), { method: request.method, headers, body })
+}
+
+export function asLegacyHandler(
+  onRequest: PagesHandler,
+  params: Record<string, string> = {},
+) {
+  return async (request: TestRequest, response: TestResponse) => {
+    const webRequest = createWebRequest(request)
+    const queryParams = Object.fromEntries(
+      Object.entries(request.query).flatMap(([name, value]) => (
+        typeof value === 'string' ? [[name, value]] : []
+      )),
+    )
+    const webResponse = await onRequest({
+      env: request.env ?? {},
+      params: { ...queryParams, ...params },
+      request: webRequest,
+    })
+    response.statusCode = webResponse.status
+    for (const [name, value] of webResponse.headers) response.appendHeader(name, value)
+    const getSetCookie = (webResponse.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie
+    if (getSetCookie) {
+      response.setHeader('set-cookie', getSetCookie.call(webResponse.headers))
+    }
+    response.redirectUrl = webResponse.headers.get('location')
+    const text = await webResponse.text()
+    response.body = webResponse.headers.get('content-type')?.startsWith('application/json') && text
+      ? JSON.parse(text)
+      : text || null
+    return response
+  }
+}
+
 export function createRequest(overrides: Partial<TestRequest> = {}): TestRequest {
   return {
     method: 'GET',

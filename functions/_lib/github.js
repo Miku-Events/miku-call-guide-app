@@ -1,5 +1,5 @@
-import { HttpError } from './_http.js'
-import { importGitHubAppPrivateKey } from './_github-private-key.js'
+import { HttpError } from './http.js'
+import { importGitHubAppPrivateKey } from './github-private-key.js'
 
 const apiBase = 'https://api.github.com'
 export const GITHUB_TIMEOUT_MS = 10_000

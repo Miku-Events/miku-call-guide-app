@@ -8,7 +8,7 @@ import {
   fetchGitHubUser,
   installationToken,
   repoConfig,
-} from '../../api/_github.js'
+} from '../../functions/_lib/github.js'
 
 const oauthEnvironment = {
   GITHUB_OAUTH_CLIENT_ID: 'request-client-id',

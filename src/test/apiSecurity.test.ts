@@ -1,74 +1,66 @@
 // @vitest-environment node
 
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { safeReturnTo } from '../../api/auth/github/start.js'
-import { readBody } from '../../api/_http.js'
-import { verifyState } from '../../api/_session.js'
-import { validateBody } from '../../api/events/submissions/index.js'
+import { describe, expect, it } from 'vitest'
+import { safeReturnTo } from '../../functions/api/auth/github/start.js'
+import { readJsonBody } from '../../functions/_lib/http.js'
+import { verifyState } from '../../functions/_lib/session.js'
+import { validateBody } from '../../functions/api/events/submissions.js'
 
 describe('API Security Tests', () => {
   describe('safeReturnTo', () => {
-    const originalEnv = process.env.APP_ORIGIN
-
-    beforeEach(() => {
-      delete process.env.APP_ORIGIN
-    })
-
-    afterEach(() => {
-      process.env.APP_ORIGIN = originalEnv
-    })
+    const localEnv = {}
 
     it('returns fallback when no value is provided', () => {
-      expect(safeReturnTo(null)).toBe('/')
-      expect(safeReturnTo('')).toBe('/')
+      expect(safeReturnTo(null, localEnv)).toBe('/')
+      expect(safeReturnTo('', localEnv)).toBe('/')
     })
 
     it('sanitizes Open Redirect bypass payloads containing backslashes', () => {
-      expect(safeReturnTo('/\\\\evil.com')).toBe('/')
-      expect(safeReturnTo('/\\evil.com')).toBe('/')
-      expect(safeReturnTo('\\\\evil.com')).toBe('/')
+      expect(safeReturnTo('/\\\\evil.com', localEnv)).toBe('/')
+      expect(safeReturnTo('/\\evil.com', localEnv)).toBe('/')
+      expect(safeReturnTo('\\\\evil.com', localEnv)).toBe('/')
     })
 
     it('allows valid relative paths when APP_ORIGIN is not set', () => {
-      expect(safeReturnTo('/events')).toBe('/events')
-      expect(safeReturnTo('/events/submissions?query=1')).toBe('/events/submissions?query=1')
+      expect(safeReturnTo('/events', localEnv)).toBe('/events')
+      expect(safeReturnTo('/events/submissions?query=1', localEnv)).toBe('/events/submissions?query=1')
     })
 
     it('enforces same-origin redirects when APP_ORIGIN is set', () => {
-      process.env.APP_ORIGIN = 'https://miku-app.com'
+      const environment = { APP_ORIGIN: 'https://miku-app.com' }
       
       // Relative paths are allowed (resolved relative to APP_ORIGIN)
-      expect(safeReturnTo('/events')).toBe('/events')
+      expect(safeReturnTo('/events', environment)).toBe('/events')
       
       // Absolute URLs matching APP_ORIGIN are resolved to relative paths
-      expect(safeReturnTo('https://miku-app.com/foo?bar=baz')).toBe('/foo?bar=baz')
+      expect(safeReturnTo('https://miku-app.com/foo?bar=baz', environment)).toBe('/foo?bar=baz')
       
       // Absolute URLs of different origin are rejected
-      expect(safeReturnTo('https://evil.com/foo')).toBe('https://miku-app.com')
+      expect(safeReturnTo('https://evil.com/foo', environment)).toBe('https://miku-app.com')
     })
   })
 
   describe('readBody', () => {
-    it('returns req.body as-is if it is an object', () => {
-      const req = { body: { foo: 'bar' }, headers: { 'content-type': 'application/json' } }
-      expect(readBody(req)).toEqual({ foo: 'bar' })
+    it('parses an object JSON request', async () => {
+      const request = new Request('https://app.test/api', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"foo":"bar"}',
+      })
+      await expect(readJsonBody(request)).resolves.toEqual({ foo: 'bar' })
     })
 
-    it('parses req.body if it is a valid JSON string', () => {
-      const req = { body: '{"foo":"bar"}', headers: { 'content-type': 'application/json' } }
-      expect(readBody(req)).toEqual({ foo: 'bar' })
-    })
-
-    it('rejects malformed JSON strings', () => {
-      const req = { body: '{"foo":', headers: { 'content-type': 'application/json' } }
-      expect(() => readBody(req)).toThrow()
+    it('rejects malformed JSON strings', async () => {
+      const request = new Request('https://app.test/api', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"foo":',
+      })
+      await expect(readJsonBody(request)).rejects.toThrow()
     })
   })
 
   describe('verifyState', () => {
     it('returns null on invalid signatures', () => {
-      expect(verifyState('invalid-state')).toBeNull()
-      expect(verifyState('')).toBeNull()
+      const environment = { SESSION_SECRET: 'test-secret-that-is-more-than-32-bytes' }
+      expect(verifyState('invalid-state', environment)).toBeNull()
+      expect(verifyState('', environment)).toBeNull()
     })
   })
 
