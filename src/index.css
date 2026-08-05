@@ -357,6 +357,36 @@ button {
   }
 }
 
+@media (max-width: 360px) {
+  .app-top-bar {
+    padding-inline: 0.5rem;
+  }
+
+  .app-top-bar > div {
+    gap: 0.35rem;
+  }
+
+  .app-brand {
+    width: var(--app-touch-target);
+    min-width: var(--app-touch-target);
+    min-height: var(--app-touch-target);
+    justify-content: center;
+    gap: 0;
+  }
+
+  .app-brand-label {
+    display: none;
+  }
+
+  .app-top-bar nav a {
+    padding-inline: 0.5rem;
+  }
+
+  .app-top-bar-action {
+    flex: 0 0 auto;
+  }
+}
+
 /* Accessibility: Prefers Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,

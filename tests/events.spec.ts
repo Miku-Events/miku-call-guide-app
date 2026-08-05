@@ -1,5 +1,11 @@
 import { expect, test } from './fixtures/app-test'
-import { expectLocatorMinTouchTarget, expectPageContained } from './fixtures/geometry'
+import { catalogManySongManifest } from './fixtures/data'
+import {
+  expectLocatorContained,
+  expectLocatorMinTouchTarget,
+  expectLocatorNoHorizontalOverflow,
+  expectPageContained,
+} from './fixtures/geometry'
 
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-21T12:00:00+09:00'))
@@ -83,7 +89,25 @@ test('supports the event filter and detail journey with touch', { tag: '@mobile'
 
 test('keeps the 320px event path contained with touch-sized controls', { tag: '@mobile' }, async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 820 })
-  await page.goto('/?mockPlayer=1#/events')
+  await page.unroute('**/call-guide-manifest.json')
+  await page.route('**/call-guide-manifest.json', async (route) => {
+    await route.fulfill({ json: catalogManySongManifest })
+  })
+  await page.goto('/?mockPlayer=1')
+
+  await page.getByRole('button', { name: 'Events' }).tap()
+  const catalogPanel = page.locator('.catalog-content-panel')
+  const eventGrid = catalogPanel.locator('.catalog-event-grid')
+  const eventCards = eventGrid.locator('.catalog-event-folder-card')
+  await expect(eventCards).toHaveCount(1)
+  await expectLocatorNoHorizontalOverflow(catalogPanel)
+  await expectLocatorNoHorizontalOverflow(eventGrid)
+  await expectLocatorContained(eventGrid, eventCards)
+  await expectLocatorMinTouchTarget(eventCards)
+  await expectPageContained(page)
+
+  await page.getByRole('link', { name: 'Events' }).first().tap()
+  await expect(page).toHaveURL(/#\/events$/)
 
   const today = page.locator('.event-day-cell[data-date="2026-05-21"]')
   await expect(today).toBeVisible()

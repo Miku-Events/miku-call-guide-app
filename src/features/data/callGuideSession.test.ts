@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  CALL_GUIDE_LOAD_DEADLINE_MS,
   callGuideSessionSnapshotForTests,
+  DataRequestTimeoutError,
   loadCallGuideManifest,
   loadCallGuideSong,
   prefetchCallGuideManifest,
@@ -83,6 +85,7 @@ function deferred<T>() {
 
 afterEach(() => {
   resetCallGuideSessionForTests()
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   window.localStorage.clear()
@@ -255,6 +258,77 @@ describe('callGuideSession', () => {
     expect(refreshFetch).toHaveBeenCalledTimes(2)
   })
 
+  it('bounds a manifest shared task to 15 seconds and permits a fresh forced retry', async () => {
+    vi.useFakeTimers()
+    const signals: AbortSignal[] = []
+    const hangingFetch = vi.fn((_url: string, options: RequestInit) => {
+      const signal = options.signal as AbortSignal
+      signals.push(signal)
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+    vi.stubGlobal('fetch', hangingFetch)
+
+    const request = loadCallGuideManifest(rootUrl)
+    const rejected = expect(request).rejects.toMatchObject({
+      code: 'DATA_REQUEST_TIMEOUT',
+      kind: 'manifest',
+      message: 'Call-guide manifest request timed out after 15 seconds.',
+      name: 'TimeoutError',
+      timeoutMs: CALL_GUIDE_LOAD_DEADLINE_MS,
+    })
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS - 1)
+    expect(signals).toHaveLength(2)
+    expect(signals.every((signal) => !signal.aborted)).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await rejected
+    expect(signals.every((signal) => signal.reason instanceof DataRequestTimeoutError)).toBe(true)
+    expect(callGuideSessionSnapshotForTests().pendingManifests).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+
+    const retryFetch = vi.fn((url: string) => Promise.resolve(response(
+      url === rootUrl ? root() : manifest(['retried']),
+    )))
+    vi.stubGlobal('fetch', retryFetch)
+    await expect(loadCallGuideManifest(rootUrl, { force: true })).resolves.toMatchObject({
+      data: { songs: [{ id: 'retried' }] },
+      source: 'network',
+    })
+    expect(retryFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses a validated manifest cache when the shared task reaches its deadline', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(response(
+      url === rootUrl ? root() : manifest(['cached']),
+    ))))
+    await loadCallGuideManifest(rootUrl)
+    resetCallGuideSessionForTests()
+    vi.useFakeTimers()
+
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      const signal = options.signal as AbortSignal
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('fetch aborted', 'AbortError')), {
+          once: true,
+        })
+      })
+    }))
+    const request = loadCallGuideManifest(rootUrl)
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS)
+
+    await expect(request).resolves.toMatchObject({
+      data: { songs: [{ id: 'cached' }] },
+      source: 'cache',
+      warning: expect.stringContaining('캐시'),
+    })
+    expect(callGuideSessionSnapshotForTests()).toMatchObject({ manifests: 1, pendingManifests: 0 })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('shares a retained prefetch with a route request and stores five completed songs by LRU', async () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f']
     const fetchMock = vi.fn((url: string) => {
@@ -365,6 +439,80 @@ describe('callGuideSession', () => {
     await expect(normal).resolves.toBe(refreshed)
     await expect(retained).resolves.toBeUndefined()
     expect(refreshFetch).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a retained song prefetch alive after route abort but bounds it by the shared deadline', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(response(
+      url === rootUrl ? root() : manifest(['a']),
+    ))))
+    const loadedManifest = await loadCallGuideManifest(rootUrl)
+    const entry = loadedManifest.data.songs[0]
+    const leafSignals: AbortSignal[] = []
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      const signal = options.signal as AbortSignal
+      leafSignals.push(signal)
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }))
+
+    const prefetch = prefetchCallGuideSong(rootUrl, 'a')
+    const prefetchRejected = expect(prefetch).rejects.toMatchObject({
+      code: 'DATA_REQUEST_TIMEOUT',
+      kind: 'song',
+      name: 'TimeoutError',
+    })
+    const controller = new AbortController()
+    const route = loadCallGuideSong(loadedManifest, entry, { signal: controller.signal })
+    await Promise.resolve()
+    controller.abort(new DOMException('route changed', 'AbortError'))
+
+    await expect(route).rejects.toMatchObject({ name: 'AbortError' })
+    expect(leafSignals).toHaveLength(1)
+    expect(leafSignals[0].aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS)
+    await prefetchRejected
+    expect(leafSignals[0].reason).toBeInstanceOf(DataRequestTimeoutError)
+    expect(callGuideSessionSnapshotForTests().pendingSongs).toBe(0)
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response(song('a')))))
+    await expect(loadCallGuideSong(loadedManifest, entry, { force: true })).resolves.toMatchObject({
+      data: { id: 'a' },
+      source: 'network',
+    })
+  })
+
+  it('uses a validated song cache when a forced refresh reaches its deadline', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url === rootUrl) return Promise.resolve(response(root()))
+      if (url.endsWith('/call-guide-manifest.json')) return Promise.resolve(response(manifest(['a'])))
+      return Promise.resolve(response(song('a')))
+    }))
+    const loadedManifest = await loadCallGuideManifest(rootUrl)
+    const entry = loadedManifest.data.songs[0]
+    await loadCallGuideSong(loadedManifest, entry)
+
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      const signal = options.signal as AbortSignal
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('fetch aborted', 'AbortError')), {
+          once: true,
+        })
+      })
+    }))
+    const refresh = loadCallGuideSong(loadedManifest, entry, { force: true })
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS)
+
+    await expect(refresh).resolves.toMatchObject({
+      data: { id: 'a' },
+      source: 'cache',
+      warning: expect.stringContaining('캐시'),
+    })
+    expect(callGuideSessionSnapshotForTests().pendingSongs).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('skips all manifest and song data prefetch when saveData is enabled', async () => {

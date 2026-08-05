@@ -9,9 +9,9 @@ export function PageShellSkeleton() {
       topNav={
         <header className="app-top-bar sticky top-0 z-10">
           <div className="flex h-full min-w-0 items-center gap-3 sm:gap-6">
-            <a className="app-brand" href="#/">
+            <a aria-label="Miku Call Guide" className="app-brand" href="#/">
               <span className="app-brand-mark" aria-hidden="true" />
-              <span>Miku Call Guide</span>
+              <span className="app-brand-label">Miku Call Guide</span>
             </a>
             <nav aria-label="Main navigation" className="flex items-center gap-4">
               <span className="px-3 py-1 text-sm font-semibold opacity-50">Catalog</span>

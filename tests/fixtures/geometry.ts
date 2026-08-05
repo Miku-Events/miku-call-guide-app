@@ -166,6 +166,29 @@ export async function scrollLocatorBy(locator: Locator, deltaY: number): Promise
   ).not.toBe(previousScrollTop)
 }
 
+export async function scrollLocatorToEndInSteps(locator: Locator): Promise<void> {
+  let previous = -1
+
+  while (true) {
+    const target = await locator.evaluate((element) => {
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight)
+      const next = Math.min(maximum, element.scrollTop + Math.max(1, element.clientHeight * 0.75))
+      element.scrollTo({ behavior: 'instant', top: next })
+      return { maximum, next }
+    })
+
+    await expect.poll(
+      () => locator.evaluate((element) => element.scrollTop),
+      { message: 'expected the scroll container to reach the next image-loading step' },
+    ).toBeGreaterThanOrEqual(target.next - 1)
+
+    if (target.next >= target.maximum - 1 || target.next <= previous) {
+      return
+    }
+    previous = target.next
+  }
+}
+
 export async function wheelLocatorBy(locator: Locator, deltaY: number): Promise<void> {
   const page = locator.page()
   const previousScrollTop = await locator.evaluate((element) => element.scrollTop)

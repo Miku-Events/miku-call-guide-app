@@ -93,10 +93,14 @@ describe('complete manifest family snapshots', () => {
 
   it('updates the family pointer only after root and child cache writes both succeed', async () => {
     const setItem = Storage.prototype.setItem
-    vi.spyOn(Storage.prototype, 'setItem')
-      .mockImplementationOnce(function (key, value) { return setItem.call(this, key, value) })
-      .mockImplementationOnce(() => { throw new Error('child write failed') })
-      .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
+    let failed = false
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (!failed && decodeURIComponent(String(key)).includes('/child/')) {
+        failed = true
+        throw new Error('child write failed')
+      }
+      return setItem.call(this, key, value)
+    })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1')))
       .mockResolvedValueOnce(response(child('v1'))))
@@ -116,10 +120,14 @@ describe('complete manifest family snapshots', () => {
     const pointerKey = cacheStorageKey(familyPointerCacheKey(rootUrl, 'call-guide'))
     const pointerBefore = window.localStorage.getItem(pointerKey)
     const setItem = Storage.prototype.setItem
-    vi.spyOn(Storage.prototype, 'setItem')
-      .mockImplementationOnce(function (key, value) { return setItem.call(this, key, value) })
-      .mockImplementationOnce(() => { throw new Error('child stage failed') })
-      .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
+    let failed = false
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (!failed && decodeURIComponent(String(key)).includes('/child/')) {
+        failed = true
+        throw new Error('child stage failed')
+      }
+      return setItem.call(this, key, value)
+    })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
       .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
@@ -148,16 +156,24 @@ describe('complete manifest family snapshots', () => {
     const pointerKey = cacheStorageKey(familyPointerCacheKey(rootUrl, 'call-guide'))
     const pointerBefore = window.localStorage.getItem(pointerKey)
     const setItem = Storage.prototype.setItem
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
-      .mockImplementationOnce(() => { throw new Error('root stage failed') })
-      .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
+    const writtenKeys: string[] = []
+    let failed = false
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      writtenKeys.push(decodeURIComponent(String(key)))
+      if (!failed && decodeURIComponent(String(key)).endsWith('/root')) {
+        failed = true
+        throw new Error('root stage failed')
+      }
+      return setItem.call(this, key, value)
+    })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
       .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
       .mockResolvedValueOnce(response(child('v1', 'replacement'))))
 
     await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({ source: 'network' })
-    expect(setItemSpy).toHaveBeenCalledTimes(1)
+    expect(setItemSpy).toHaveBeenCalledTimes(2)
+    expect(writtenKeys.some((key) => key.includes('/child/'))).toBe(false)
     expect(window.localStorage.getItem(pointerKey)).toBe(pointerBefore)
     expect(window.localStorage.length).toBe(3)
 
@@ -198,11 +214,12 @@ describe('complete manifest family snapshots', () => {
     const pointerKey = cacheStorageKey(familyPointerCacheKey(rootUrl, 'call-guide'))
     const pointerBefore = window.localStorage.getItem(pointerKey)
     const setItem = Storage.prototype.setItem
-    vi.spyOn(Storage.prototype, 'setItem')
-      .mockImplementationOnce(function (key, value) { return setItem.call(this, key, value) })
-      .mockImplementationOnce(function (key, value) { return setItem.call(this, key, value) })
-      .mockImplementationOnce(() => { throw new Error('pointer switch failed') })
-      .mockImplementation(function (key, value) { return setItem.call(this, key, value) })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key === pointerKey) {
+        throw new Error('pointer switch failed')
+      }
+      return setItem.call(this, key, value)
+    })
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1', 'next-call-guide.json')))
       .mockResolvedValueOnce(response(child('v1', 'discarded-speculation')))
@@ -245,6 +262,47 @@ describe('complete manifest family snapshots', () => {
       source: 'cache',
       data: { songs: [{ id: 'song-original' }] },
     })
+  })
+
+  it('re-reads a changed pointer when the generation read by another tab is swept', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response(root('v1')))
+      .mockResolvedValueOnce(response(child('v1', 'original'))))
+    await fetchCallGuideManifest(rootUrl)
+    const pointerStorageKey = cacheStorageKey(familyPointerCacheKey(rootUrl, 'call-guide'))
+    const firstPointerRaw = window.localStorage.getItem(pointerStorageKey)!
+    const firstPointer = JSON.parse(firstPointerRaw).value
+    const firstRootRaw = window.localStorage.getItem(cacheStorageKey(firstPointer.rootKey))!
+    const firstChildRaw = window.localStorage.getItem(cacheStorageKey(firstPointer.childKey))!
+
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response(root('v2')))
+      .mockResolvedValueOnce(response(child('v2', 'replacement'))))
+    await fetchCallGuideManifest(rootUrl)
+    const secondPointerRaw = window.localStorage.getItem(pointerStorageKey)!
+
+    window.localStorage.setItem(cacheStorageKey(firstPointer.rootKey), firstRootRaw)
+    window.localStorage.setItem(cacheStorageKey(firstPointer.childKey), firstChildRaw)
+    window.localStorage.setItem(pointerStorageKey, firstPointerRaw)
+    const getItem = Storage.prototype.getItem
+    let switched = false
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
+      if (!switched && key === cacheStorageKey(firstPointer.rootKey)) {
+        switched = true
+        this.setItem(pointerStorageKey, secondPointerRaw)
+        this.removeItem(cacheStorageKey(firstPointer.rootKey))
+        this.removeItem(cacheStorageKey(firstPointer.childKey))
+        return null
+      }
+      return getItem.call(this, key)
+    })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline-during-pointer-race')))
+
+    await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({
+      source: 'cache',
+      data: { songs: [{ id: 'song-replacement' }] },
+    })
+    expect(switched).toBe(true)
   })
 
   it('keeps the new pointer loadable when old-generation cleanup throws', async () => {

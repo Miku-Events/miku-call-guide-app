@@ -3,6 +3,7 @@ import { loadCache, removeCache, resourceCacheKey, saveCache } from './cacheStor
 import { assertContract } from './contractValidation'
 import { resolveVersionedLeafUrl, type VersionedLoadOptions } from './manifestShared'
 import type { LoadResult, SongGuide } from './types'
+import { dataRequestTimeoutReason } from './dataRequestTimeout'
 
 const pendingSongs = new Map<string, Promise<LoadResult<SongGuide>>>()
 
@@ -78,7 +79,8 @@ export function fetchSong(
       saveCache(cacheKey, data, { currentDataVersion: options.expectedDataVersion })
       return { data, source: 'network' }
     } catch (error) {
-      if (isAbortError(error) || options.signal?.aborted) {
+      const timeoutError = dataRequestTimeoutReason(options.signal)
+      if (!timeoutError && (isAbortError(error) || options.signal?.aborted)) {
         throw error
       }
       const cached = loadCache<unknown>(cacheKey)
@@ -90,7 +92,7 @@ export function fetchSong(
         )
         if (!cachedSong) {
           removeCache(cacheKey)
-          throw error
+          throw timeoutError ?? error
         }
 
         return {
@@ -102,7 +104,7 @@ export function fetchSong(
         }
       }
 
-      throw error
+      throw timeoutError ?? error
     }
   }
 

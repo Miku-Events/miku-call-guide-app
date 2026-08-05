@@ -4,7 +4,14 @@ import {
   type ResolvedLoadResult,
 } from './fetchCallGuideManifest'
 import { fetchSong } from './fetchSong'
+import {
+  CALL_GUIDE_LOAD_DEADLINE_MS,
+  DataRequestTimeoutError,
+  type DataRequestKind,
+} from './dataRequestTimeout'
 import type { CallGuideManifest, LoadResult, ManifestSong, SongGuide } from './types'
+
+export { CALL_GUIDE_LOAD_DEADLINE_MS, DataRequestTimeoutError } from './dataRequestTimeout'
 
 export interface SessionLoadOptions {
   force?: boolean
@@ -41,10 +48,16 @@ function rejectedAbort<T>(signal: AbortSignal): Promise<T> {
 function createSharedLoad<T>(
   loads: Map<string, SharedLoad<T>>,
   key: string,
+  kind: DataRequestKind,
   operation: (signal: AbortSignal) => Promise<T>,
   completed: (result: T) => void,
 ): SharedLoad<T> {
   const controller = new AbortController()
+  const deadlineTimer = globalThis.setTimeout(() => {
+    if (!controller.signal.aborted) {
+      controller.abort(new DataRequestTimeoutError(kind))
+    }
+  }, CALL_GUIDE_LOAD_DEADLINE_MS)
   const task: SharedLoad<T> = {
     consumers: 0,
     controller,
@@ -59,6 +72,7 @@ function createSharedLoad<T>(
       return result
     })
     .finally(() => {
+      globalThis.clearTimeout(deadlineTimer)
       task.settled = true
       if (loads.get(key) === task) {
         loads.delete(key)
@@ -183,6 +197,7 @@ function loadManifestInternal(
   const task = createSharedLoad(
     manifestLoads,
     key,
+    'manifest',
     (signal) => fetchCallGuideManifest(rootManifestUrl, { signal }),
     (result) => {
       manifestResults.set(key, result)
@@ -220,6 +235,7 @@ function loadSongInternal(
   const task = createSharedLoad(
     songLoads,
     key,
+    'song',
     (signal) => fetchSong(manifestResult.url, song.path, song.id, {
       expectedDataVersion: manifestResult.data.dataVersion,
       signal,

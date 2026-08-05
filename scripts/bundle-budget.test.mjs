@@ -7,6 +7,7 @@ import {
   DEFAULT_BUNDLE_BUDGET,
   checkBundleBudget,
   collectCallRouteManifestClosure,
+  collectManifestClosure,
   formatBundleBudgetReport,
 } from './bundle-budget.mjs'
 
@@ -41,6 +42,7 @@ describe('bundle budget', () => {
     const mainJavaScript = 'console.log("main entry")\n'.repeat(80)
     const sharedJavaScript = 'export const shared = true\n'.repeat(60)
     const callJavaScript = 'console.log("call route")\n'.repeat(50)
+    const catalogJavaScript = 'console.log("catalog route")\n'.repeat(45)
     const firstCss = '.first { color: #39c5bb; }\n'.repeat(40)
     const secondCss = '.second { display: grid; }\n'.repeat(30)
     await writeAsset(dist, 'index.html', [
@@ -51,6 +53,7 @@ describe('bundle budget', () => {
     await writeAsset(dist, 'assets/main.js', mainJavaScript)
     await writeAsset(dist, 'assets/shared.js', sharedJavaScript)
     await writeAsset(dist, 'assets/call.js', callJavaScript)
+    await writeAsset(dist, 'assets/catalog.js', catalogJavaScript)
     await writeAsset(dist, 'assets/first.css', firstCss)
     await writeAsset(dist, 'assets/nested/second.css', secondCss)
     await writeAsset(dist, 'assets/lazy.js', 'console.log("not the entry")\n'.repeat(200))
@@ -60,6 +63,10 @@ describe('bundle budget', () => {
         isEntry: true,
         src: 'index.html',
         imports: ['_shared.js'],
+        dynamicImports: [
+          'src/features/catalog/CatalogPage.tsx',
+          'src/features/callGuide/CallGuidePage.tsx',
+        ],
         css: ['assets/first.css'],
       },
       '_shared.js': {
@@ -72,6 +79,13 @@ describe('bundle budget', () => {
         src: 'src/features/callGuide/CallGuidePage.tsx',
         imports: ['_shared.js'],
         css: ['assets/first.css', 'assets/nested/second.css'],
+      },
+      'src/features/catalog/CatalogPage.tsx': {
+        file: 'assets/catalog.js',
+        isDynamicEntry: true,
+        src: 'src/features/catalog/CatalogPage.tsx',
+        imports: ['_shared.js'],
+        css: ['assets/first.css'],
       },
     })
 
@@ -97,6 +111,20 @@ describe('bundle budget', () => {
       'assets/main.js',
       'assets/shared.js',
     ])
+    expect(result.mainClosure.js.assets.map(({ path }) => path)).toEqual([
+      'assets/main.js',
+      'assets/shared.js',
+    ])
+    expect(result.catalogRoute.js.assets.map(({ path }) => path)).toEqual([
+      'assets/catalog.js',
+      'assets/main.js',
+      'assets/shared.js',
+    ])
+    expect(result.catalogRoute.js.gzipBytes).toBe(
+      gzipSync(catalogJavaScript).byteLength
+      + gzipSync(mainJavaScript).byteLength
+      + gzipSync(sharedJavaScript).byteLength,
+    )
     expect(result.callRoute.js.gzipBytes).toBe(
       gzipSync(callJavaScript).byteLength
       + gzipSync(mainJavaScript).byteLength
@@ -113,6 +141,7 @@ describe('bundle budget', () => {
     await writeAsset(dist, 'index.html', '<script type="module" src="/assets/main.js"></script>')
     await writeAsset(dist, 'assets/main.js', 'const payload = "abcdefghijklmnopqrstuvwxyz";\n'.repeat(40))
     await writeAsset(dist, 'assets/call.js', 'export const call = true\n')
+    await writeAsset(dist, 'assets/catalog.js', 'export const catalog = true\n')
     await writeAsset(dist, 'assets/main.css', '.item { padding: 123456789px; }\n'.repeat(40))
     await writeViteManifest(dist, {
       'index.html': { file: 'assets/main.js', isEntry: true, src: 'index.html' },
@@ -120,6 +149,11 @@ describe('bundle budget', () => {
         file: 'assets/call.js',
         isDynamicEntry: true,
         src: 'src/features/callGuide/CallGuidePage.tsx',
+      },
+      'src/features/catalog/CatalogPage.tsx': {
+        file: 'assets/catalog.js',
+        isDynamicEntry: true,
+        src: 'src/features/catalog/CatalogPage.tsx',
       },
     })
 
@@ -155,6 +189,10 @@ describe('bundle budget', () => {
       mainJsGzipBytes: Math.floor(Math.round(101.66 * 1024) * 1.1),
       totalCssBaselineBytes: Math.round(39.09 * 1024),
       totalCssGzipBytes: Math.floor(Math.round(39.09 * 1024) * 1.1),
+      mainClosureJsGzipBytes: 118_640,
+      mainClosureCssGzipBytes: 33_924,
+      catalogRouteJsGzipBytes: 184_092,
+      catalogRouteCssGzipBytes: 36_023,
       callRouteJsGzipBytes: 161_383,
       callRouteCssGzipBytes: 39_312,
     })
@@ -162,6 +200,14 @@ describe('bundle budget', () => {
     expect(formatBundleBudgetReport({
       main: { path: 'assets/index.js', gzipBytes: 1024 },
       css: { paths: ['assets/index.css'], gzipBytes: 2048 },
+      mainClosure: {
+        js: { assets: [{ path: 'assets/index.js', gzipBytes: 1024 }], gzipBytes: 1024 },
+        css: { assets: [{ path: 'assets/index.css', gzipBytes: 2048 }], gzipBytes: 2048 },
+      },
+      catalogRoute: {
+        js: { assets: [{ path: 'assets/catalog.js', gzipBytes: 1024 }], gzipBytes: 1024 },
+        css: { assets: [{ path: 'assets/catalog.css', gzipBytes: 2048 }], gzipBytes: 2048 },
+      },
       callRoute: {
         js: { assets: [{ path: 'assets/index.js', gzipBytes: 1024 }], gzipBytes: 1024 },
         css: { assets: [{ path: 'assets/index.css', gzipBytes: 2048 }], gzipBytes: 2048 },
@@ -169,6 +215,10 @@ describe('bundle budget', () => {
       budget: {
         mainJsGzipBytes: 4096,
         totalCssGzipBytes: 4096,
+        mainClosureJsGzipBytes: 4096,
+        mainClosureCssGzipBytes: 4096,
+        catalogRouteJsGzipBytes: 4096,
+        catalogRouteCssGzipBytes: 4096,
         callRouteJsGzipBytes: 4096,
         callRouteCssGzipBytes: 4096,
       },
@@ -188,5 +238,29 @@ describe('bundle budget', () => {
         src: 'src/features/callGuide/CallGuidePage.tsx',
       },
     })).toThrow(/missing import/i)
+  })
+
+  it('excludes dynamic imports from a catalog static closure', () => {
+    const closure = collectManifestClosure({
+      'index.html': {
+        file: 'assets/main.js',
+        isEntry: true,
+        src: 'index.html',
+        dynamicImports: ['src/features/callGuide/CallGuidePage.tsx'],
+      },
+      'src/features/catalog/CatalogPage.tsx': {
+        file: 'assets/catalog.js',
+        src: 'src/features/catalog/CatalogPage.tsx',
+      },
+      'src/features/callGuide/CallGuidePage.tsx': {
+        file: 'assets/call.js',
+        src: 'src/features/callGuide/CallGuidePage.tsx',
+      },
+    }, 'src/features/catalog/CatalogPage.tsx')
+
+    expect(closure.entryKeys).toEqual([
+      'index.html',
+      'src/features/catalog/CatalogPage.tsx',
+    ])
   })
 })

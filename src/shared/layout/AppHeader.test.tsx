@@ -14,6 +14,10 @@ describe('AppHeader', () => {
   it('renders the GitHub action as one accessible link control', () => {
     render(<AppHeader activeNav="catalog" />)
 
+    const brand = screen.getByRole('link', { name: 'Miku Call Guide' })
+    expect(brand).toHaveAttribute('href', '#/')
+    expect(brand.querySelector('.app-brand-label')).toHaveTextContent('Miku Call Guide')
+
     const link = screen.getByRole('link', { name: 'GitHub Repository' })
     expect(link.tagName).toBe('A')
     expect(link).toHaveAttribute('href', 'https://github.com/Miku-Events/miku-call-guide-app')

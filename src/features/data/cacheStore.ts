@@ -1,6 +1,7 @@
 export const CACHE_FRESH_MS = 24 * 60 * 60 * 1000
 export const CACHE_MAX_STALE_MS = 30 * 24 * 60 * 60 * 1000
 export const CACHE_NAMESPACE_MAX_BYTES = 4 * 1024 * 1024
+export const CACHE_STAGING_MAX_MS = 60 * 1000
 
 const CACHE_NAMESPACE = 'miku-call-guide:'
 const snapshotGenerationPattern = /^[a-f0-9]{32}$/
@@ -16,7 +17,7 @@ export interface CacheEntry<T> extends CacheEnvelope<T> {
   freshness: CacheFreshness
 }
 
-type CacheFamily = 'call-guide' | 'event-calendar'
+export type CacheFamily = 'call-guide' | 'event-calendar'
 
 export function cacheStorageKey(key: string): string {
   return `${CACHE_NAMESPACE}${key}`
@@ -61,6 +62,19 @@ export function familyPointerCacheKey(rootManifestUrl: string, family: CacheFami
   return `data-family:${encodeURIComponent(normalizeManifestIdentity(rootManifestUrl))}:${family}`
 }
 
+function familyStagingCacheKey(
+  rootManifestUrl: string,
+  family: CacheFamily,
+  generation: string,
+): string {
+  return [
+    'data-staging',
+    encodeURIComponent(normalizeManifestIdentity(rootManifestUrl)),
+    family,
+    generation,
+  ].join(':')
+}
+
 function localStorageOrNull(): Storage | null {
   if (typeof window === 'undefined') {
     return null
@@ -83,6 +97,22 @@ interface SaveCacheOptions extends CacheSweepOptions {
   retryQuota?: boolean
 }
 
+export interface CacheBatchWrite {
+  key: string
+  value: unknown
+}
+
+export interface CommitCacheBatchOptions {
+  currentDataVersion: string
+  pointer: CacheBatchWrite
+  retryQuota?: boolean
+  staging: {
+    family: CacheFamily
+    generation: string
+    rootManifestUrl: string
+  }
+}
+
 interface StoredEntry {
   innerKey: string
   raw: string
@@ -93,11 +123,22 @@ interface StoredEntry {
 interface ParsedResourceKey {
   dataVersion: string
   resource: string
+  rootIdentity: string
 }
 
 interface ParsedFamilyPointerKey {
   family: CacheFamily
   rootIdentity: string
+}
+
+interface ParsedStagingKey extends ParsedFamilyPointerKey {
+  generation: string
+}
+
+interface StagingMarker {
+  dataVersion: string
+  pointerKey: string
+  resourceKeys: string[]
 }
 
 function parseStoredEntry(storageKey: string, raw: string): StoredEntry | null {
@@ -138,6 +179,28 @@ function parseResourceKey(innerKey: string): ParsedResourceKey | null {
     return {
       dataVersion: decodeURIComponent(segments[2]),
       resource: decodeURIComponent(segments[3]),
+      rootIdentity: decodeURIComponent(segments[1]),
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseStagingKey(innerKey: string): ParsedStagingKey | null {
+  const segments = innerKey.split(':')
+  if (
+    segments.length !== 4
+    || segments[0] !== 'data-staging'
+    || !['call-guide', 'event-calendar'].includes(segments[2])
+    || !snapshotGenerationPattern.test(segments[3])
+  ) {
+    return null
+  }
+  try {
+    return {
+      family: segments[2] as CacheFamily,
+      generation: segments[3],
+      rootIdentity: decodeURIComponent(segments[1]),
     }
   } catch {
     return null
@@ -170,6 +233,7 @@ function namespaceEntries(storage: Storage): Array<{ key: string; raw: string }>
     if (
       !key?.startsWith(`${CACHE_NAMESPACE}data-resource:`)
       && !key?.startsWith(`${CACHE_NAMESPACE}data-family:`)
+      && !key?.startsWith(`${CACHE_NAMESPACE}data-staging:`)
     ) {
       continue
     }
@@ -315,14 +379,65 @@ function validPointerBackingKeys(
   return { invalidPointerKeys, protectedKeys }
 }
 
-function removeStorageKeys(storage: Storage, keys: Iterable<string>): void {
-  for (const key of keys) {
+function validStagingBackingKeys(
+  entries: Array<{ key: string; raw: string }>,
+  now: number,
+): { invalidMarkerKeys: Set<string>; protectedKeys: Set<string> } {
+  const invalidMarkerKeys = new Set<string>()
+  const protectedKeys = new Set<string>()
+  for (const entry of entries) {
+    if (!entry.key.startsWith(`${CACHE_NAMESPACE}data-staging:`)) {
+      continue
+    }
     try {
-      storage.removeItem(key)
+      const markerKey = parseStagingKey(entry.key.slice(CACHE_NAMESPACE.length))
+      const parsed = parseStoredEntry(entry.key, entry.raw)
+      const marker = envelopeValue(entry.raw)
+      if (
+        !markerKey
+        || !parsed
+        || now - parsed.savedAtMs < 0
+        || now - parsed.savedAtMs > CACHE_STAGING_MAX_MS
+        || !marker
+        || typeof marker !== 'object'
+        || typeof (marker as { dataVersion?: unknown }).dataVersion !== 'string'
+        || (marker as { dataVersion: string }).dataVersion === ''
+        || typeof (marker as { pointerKey?: unknown }).pointerKey !== 'string'
+        || !Array.isArray((marker as { resourceKeys?: unknown }).resourceKeys)
+      ) {
+        throw new Error('Invalid cache staging marker.')
+      }
+      const typedMarker = marker as StagingMarker
+      if (
+        normalizeManifestIdentity(markerKey.rootIdentity) !== markerKey.rootIdentity
+        || typedMarker.pointerKey !== familyPointerCacheKey(markerKey.rootIdentity, markerKey.family)
+        || typedMarker.resourceKeys.length === 0
+        || new Set(typedMarker.resourceKeys).size !== typedMarker.resourceKeys.length
+      ) {
+        throw new Error('Cache staging marker namespace mismatch.')
+      }
+      const resourcePrefix = `@family-snapshot/${markerKey.family}/${markerKey.generation}/`
+      for (const resourceKey of typedMarker.resourceKeys) {
+        if (typeof resourceKey !== 'string') {
+          throw new Error('Invalid staged resource key.')
+        }
+        const parsedResource = parseResourceKey(resourceKey)
+        if (
+          !parsedResource
+          || parsedResource.rootIdentity !== markerKey.rootIdentity
+          || parsedResource.dataVersion !== typedMarker.dataVersion
+          || !parsedResource.resource.startsWith(resourcePrefix)
+        ) {
+          throw new Error('Staged resource key escaped its generation namespace.')
+        }
+        protectedKeys.add(cacheStorageKey(resourceKey))
+      }
+      protectedKeys.add(entry.key)
     } catch {
-      // Cleanup is best effort. A blocked store behaves like a miss.
+      invalidMarkerKeys.add(entry.key)
     }
   }
+  return { invalidMarkerKeys, protectedKeys }
 }
 
 /**
@@ -339,9 +454,13 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
 
   try {
     const now = Date.now()
-    let entries = namespaceEntries(storage)
+    const entries = namespaceEntries(storage)
     const pointerProtection = validPointerBackingKeys(entries, now)
-    const protectedKeys = pointerProtection.protectedKeys
+    const stagingProtection = validStagingBackingKeys(entries, now)
+    const protectedKeys = new Set([
+      ...pointerProtection.protectedKeys,
+      ...stagingProtection.protectedKeys,
+    ])
     for (const key of options.protectKeys ?? []) {
       protectedKeys.add(cacheStorageKey(key))
     }
@@ -350,7 +469,10 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
       cleanupProtectedKeys.add(cacheStorageKey(key))
     }
 
-    const expiredOrInvalid = new Set(pointerProtection.invalidPointerKeys)
+    const removeKeys = new Set([
+      ...pointerProtection.invalidPointerKeys,
+      ...stagingProtection.invalidMarkerKeys,
+    ])
     for (const entry of entries) {
       const parsed = parseStoredEntry(entry.key, entry.raw)
       if (
@@ -359,16 +481,13 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
         || now - parsed.savedAtMs > CACHE_MAX_STALE_MS
       ) {
         if (!cleanupProtectedKeys.has(entry.key)) {
-          expiredOrInvalid.add(entry.key)
+          removeKeys.add(entry.key)
         }
       }
     }
-    removeStorageKeys(storage, expiredOrInvalid)
 
-    entries = namespaceEntries(storage)
-    const obsoleteOrOrphan = new Set<string>()
     for (const entry of entries) {
-      if (cleanupProtectedKeys.has(entry.key)) {
+      if (removeKeys.has(entry.key) || cleanupProtectedKeys.has(entry.key)) {
         continue
       }
       const resource = parseResourceKey(entry.key.slice(CACHE_NAMESPACE.length))
@@ -381,16 +500,30 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
         && resource.dataVersion !== options.currentDataVersion,
       )
       if (orphanSnapshot || previousVersion) {
-        obsoleteOrOrphan.add(entry.key)
+        removeKeys.add(entry.key)
       }
     }
-    removeStorageKeys(storage, obsoleteOrOrphan)
 
-    entries = namespaceEntries(storage)
     let totalBytes = entries.reduce(
       (total, entry) => total + storedBytes(entry.key, entry.raw),
       0,
     )
+    const removedKeys = new Set<string>()
+    const entriesByKey = new Map(entries.map((entry) => [entry.key, entry]))
+    for (const key of removeKeys) {
+      const entry = entriesByKey.get(key)
+      if (!entry) {
+        continue
+      }
+      try {
+        storage.removeItem(key)
+        removedKeys.add(key)
+        totalBytes -= storedBytes(entry.key, entry.raw)
+      } catch {
+        // Cleanup is best effort. Failed removals still count toward the cap.
+      }
+    }
+
     const reserveBytes = Number.isSafeInteger(options.reserveBytes) && (options.reserveBytes ?? 0) > 0
       ? options.reserveBytes as number
       : 0
@@ -401,7 +534,8 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
 
     const evictableLeaves = entries
       .filter((entry) => (
-        !protectedKeys.has(entry.key)
+        !removedKeys.has(entry.key)
+        && !protectedKeys.has(entry.key)
         && parseResourceKey(entry.key.slice(CACHE_NAMESPACE.length)) !== null
       ))
       .map((entry) => ({ ...entry, parsed: parseStoredEntry(entry.key, entry.raw) }))
@@ -433,34 +567,43 @@ function isQuotaError(error: unknown): boolean {
   return error instanceof Error && /quota/i.test(error.message)
 }
 
+function serializeEnvelope(value: unknown, savedAt = new Date().toISOString()): string | null {
+  try {
+    return JSON.stringify({ savedAt, value } satisfies CacheEnvelope<unknown>)
+  } catch {
+    return null
+  }
+}
+
+function replacedStorageBytes(storage: Storage, storageKey: string): { previous: string | null; replacedBytes: number } {
+  try {
+    const previous = storage.getItem(storageKey)
+    return {
+      previous,
+      replacedBytes: previous === null ? 0 : storedBytes(storageKey, previous),
+    }
+  } catch {
+    return { previous: null, replacedBytes: 0 }
+  }
+}
+
 export function saveCache<T>(key: string, value: T, options: SaveCacheOptions = {}): boolean {
   const storage = localStorageOrNull()
   if (!storage) {
     return false
   }
 
-  let serialized: string
-  try {
-    const envelope: CacheEnvelope<T> = {
-      savedAt: new Date().toISOString(),
-      value,
-    }
-    serialized = JSON.stringify(envelope)
-  } catch {
+  const serialized = serializeEnvelope(value)
+  if (serialized === null) {
     return false
   }
 
   const storageKey = cacheStorageKey(key)
-  const protectedKeys = [...options.protectKeys ?? []]
-  let replacedBytes = 0
-  try {
-    const previous = storage.getItem(storageKey)
-    if (previous !== null) {
-      replacedBytes = storedBytes(storageKey, previous)
-    }
-  } catch {
-    // Conservatively reserve the full payload when the old entry cannot be read.
+  if (storedBytes(storageKey, serialized) > CACHE_NAMESPACE_MAX_BYTES) {
+    return false
   }
+  const protectedKeys = [...options.protectKeys ?? []]
+  const { replacedBytes } = replacedStorageBytes(storage, storageKey)
   const pendingBytes = Math.max(0, storedBytes(storageKey, serialized) - replacedBytes)
   sweepCache({
     currentDataVersion: options.currentDataVersion,
@@ -470,11 +613,6 @@ export function saveCache<T>(key: string, value: T, options: SaveCacheOptions = 
 
   try {
     storage.setItem(storageKey, serialized)
-    sweepCache({
-      currentDataVersion: options.currentDataVersion,
-      protectKeys: protectedKeys,
-      transientProtectKeys: [key],
-    })
     return true
   } catch (error) {
     if (options.retryQuota === false || !isQuotaError(error)) {
@@ -487,16 +625,194 @@ export function saveCache<T>(key: string, value: T, options: SaveCacheOptions = 
     })
     try {
       storage.setItem(storageKey, serialized)
-      sweepCache({
-        currentDataVersion: options.currentDataVersion,
-        protectKeys: protectedKeys,
-        transientProtectKeys: [key],
-      })
       return true
     } catch {
       return false
     }
   }
+}
+
+interface PreparedBatchWrite {
+  key: string
+  previous: string | null
+  raw: string
+  storageKey: string
+}
+
+function restoreBatchWrites(storage: Storage, writes: readonly PreparedBatchWrite[]): void {
+  for (const write of [...writes].reverse()) {
+    try {
+      if (write.previous === null) {
+        storage.removeItem(write.storageKey)
+      } else {
+        storage.setItem(write.storageKey, write.previous)
+      }
+    } catch {
+      // Web Storage writes are atomic. Restoration is a final best-effort guard
+      // for mocked or non-conforming implementations that mutate before throw.
+    }
+  }
+}
+
+function validFamilyBatch(
+  writes: readonly CacheBatchWrite[],
+  options: CommitCacheBatchOptions,
+): boolean {
+  const { family, generation, rootManifestUrl } = options.staging
+  if (!snapshotGenerationPattern.test(generation) || writes.length !== 2) {
+    return false
+  }
+  const expectedPointerKey = familyPointerCacheKey(rootManifestUrl, family)
+  if (options.pointer.key !== expectedPointerKey) {
+    return false
+  }
+  const pointer = options.pointer.value
+  if (
+    !pointer
+    || typeof pointer !== 'object'
+    || (pointer as { dataVersion?: unknown }).dataVersion !== options.currentDataVersion
+    || (pointer as { generation?: unknown }).generation !== generation
+    || typeof (pointer as { rootKey?: unknown }).rootKey !== 'string'
+    || typeof (pointer as { childKey?: unknown }).childKey !== 'string'
+    || typeof (pointer as { rootUrl?: unknown }).rootUrl !== 'string'
+    || typeof (pointer as { childUrl?: unknown }).childUrl !== 'string'
+    || normalizeManifestIdentity((pointer as { rootUrl: string }).rootUrl)
+      !== normalizeManifestIdentity(rootManifestUrl)
+  ) {
+    return false
+  }
+  const pointerKeys = new Set([
+    (pointer as { rootKey: string }).rootKey,
+    (pointer as { childKey: string }).childKey,
+  ])
+  if (pointerKeys.size !== 2 || writes.some((write) => !pointerKeys.has(write.key))) {
+    return false
+  }
+  const rootIdentity = normalizeManifestIdentity(rootManifestUrl)
+  const resourcePrefix = `@family-snapshot/${family}/${generation}/`
+  return writes.every((write) => {
+    const parsed = parseResourceKey(write.key)
+    return Boolean(
+      parsed
+      && parsed.rootIdentity === rootIdentity
+      && parsed.dataVersion === options.currentDataVersion
+      && parsed.resource.startsWith(resourcePrefix),
+    )
+  })
+}
+
+/**
+ * Commits a complete family snapshot. The short-lived marker lets a sweep in
+ * another tab distinguish in-progress backing entries from abandoned orphans.
+ * The pointer is always the final write, so readers see either complete
+ * generation even when staging or quota recovery fails.
+ */
+export function commitCacheBatch(
+  writes: readonly CacheBatchWrite[],
+  options: CommitCacheBatchOptions,
+): boolean {
+  const storage = localStorageOrNull()
+  if (!storage) {
+    return false
+  }
+  try {
+    if (!validFamilyBatch(writes, options)) {
+      return false
+    }
+  } catch {
+    return false
+  }
+
+  const markerKey = familyStagingCacheKey(
+    options.staging.rootManifestUrl,
+    options.staging.family,
+    options.staging.generation,
+  )
+  const savedAt = new Date().toISOString()
+  const marker: StagingMarker = {
+    dataVersion: options.currentDataVersion,
+    pointerKey: options.pointer.key,
+    resourceKeys: writes.map((write) => write.key),
+  }
+  const orderedWrites: CacheBatchWrite[] = [
+    { key: markerKey, value: marker },
+    ...writes,
+    options.pointer,
+  ]
+  const prepared: PreparedBatchWrite[] = []
+  try {
+    for (const write of orderedWrites) {
+      const raw = serializeEnvelope(write.value, savedAt)
+      if (raw === null) {
+        return false
+      }
+      const storageKey = cacheStorageKey(write.key)
+      prepared.push({
+        key: write.key,
+        previous: storage.getItem(storageKey),
+        raw,
+        storageKey,
+      })
+    }
+  } catch {
+    return false
+  }
+
+  const committedBytes = prepared.slice(1).reduce(
+    (total, write) => total + storedBytes(write.storageKey, write.raw),
+    0,
+  )
+  if (committedBytes > CACHE_NAMESPACE_MAX_BYTES) {
+    return false
+  }
+
+  const reserveBytes = prepared.reduce((total, write) => (
+    total + Math.max(
+      0,
+      storedBytes(write.storageKey, write.raw)
+        - (write.previous === null ? 0 : storedBytes(write.storageKey, write.previous)),
+    )
+  ), 0)
+  const protectKeys = prepared.map((write) => write.key)
+  const sweepForAttempt = () => sweepCache({
+    currentDataVersion: options.currentDataVersion,
+    protectKeys,
+    reserveBytes,
+  })
+  const attempt = (): unknown | null => {
+    const changed: PreparedBatchWrite[] = []
+    try {
+      for (const write of prepared) {
+        changed.push(write)
+        storage.setItem(write.storageKey, write.raw)
+      }
+    } catch (error) {
+      restoreBatchWrites(storage, changed)
+      return error
+    }
+    try {
+      storage.removeItem(cacheStorageKey(markerKey))
+    } catch {
+      // A live marker is harmless and expires after CACHE_STAGING_MAX_MS.
+    }
+    return null
+  }
+
+  sweepForAttempt()
+  let failure = attempt()
+  if (failure !== null) {
+    if (options.retryQuota === false || !isQuotaError(failure)) {
+      return false
+    }
+    sweepForAttempt()
+    failure = attempt()
+    if (failure !== null) {
+      return false
+    }
+  }
+
+  sweepCache({ currentDataVersion: options.currentDataVersion })
+  return true
 }
 
 export function cacheNamespaceBytes(): number {

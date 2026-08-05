@@ -5,9 +5,10 @@ import { NotFoundPage } from './shared/errors/NotFoundPage'
 import { PageShellSkeleton } from './shared/layout/PageShellSkeleton'
 import { SpoilerDisclaimerGate } from './features/spoilerDisclaimer/SpoilerDisclaimerGate'
 import { loadCallGuideRoute } from './features/callGuide/loadCallGuideRoute'
+import { loadCatalogRoute } from './features/catalog/loadCatalogRoute'
 
 const CatalogPage = lazy(() =>
-  import('./features/catalog/CatalogPage').then((m) => ({ default: m.CatalogPage }))
+  loadCatalogRoute().then((m) => ({ default: m.CatalogPage }))
 )
 const CallGuidePage = lazy(() =>
   loadCallGuideRoute().then((m) => ({ default: m.CallGuidePage }))
