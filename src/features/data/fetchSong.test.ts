@@ -84,6 +84,17 @@ describe('fetchSong', () => {
     )
   })
 
+  it('preserves the song-specific HTTP failure message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+
+    await expect(fetchSong(
+      'https://example.test/manifest.json',
+      'songs/sample-song.json',
+      'sample-song',
+      { expectedDataVersion: 'v1' },
+    )).rejects.toThrow('Song request failed with 503.')
+  })
+
   it.each([
     ['a different', { ...song, dataVersion: 'v2' }],
     ['a missing', withoutDataVersion(song)],
