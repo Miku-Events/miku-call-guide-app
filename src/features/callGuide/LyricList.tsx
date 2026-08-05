@@ -13,7 +13,7 @@ import {
 import { localizedText } from '../../shared/i18n/localizedText'
 import type { LyricLine as LyricLineType, SongGuide } from '../data/types'
 import type { PlaybackTimeStore } from '../player/playbackTimeStore'
-import { callsForLine, type RenderableCall } from './callPositioning'
+import { groupCallsByLineId } from './callPositioning'
 import { CountdownOverlay } from './CountdownOverlay'
 import type { CountdownCue } from './countdownSchedule'
 import { LyricLine } from './LyricLine'
@@ -39,6 +39,7 @@ const programmaticScrollTimeoutMs = 450
 const minimumDetailOverscanPx = 480
 const listWidthEpsilonPx = 1
 const geometryEpsilonPx = 0.25
+const noCalls = [] as const
 
 function closestLineId(target: EventTarget | null): string | null {
   return target instanceof Element
@@ -67,6 +68,7 @@ export function LyricList({
   const programmaticReleaseFrameRef = useRef<number | null>(null)
   const pendingDetailScrollFrameRef = useRef<number | null>(null)
   const scrollRequestTokenRef = useRef(0)
+  const lastFollowedLineIdRef = useRef<string | null>(null)
   const geometryFrameRef = useRef<number | null>(null)
   const intersectionFrameRef = useRef<number | null>(null)
   const geometryRunnerRef = useRef<() => void>(() => undefined)
@@ -105,13 +107,7 @@ export function LyricList({
     },
   ])), [song.lyrics])
 
-  const callsByLineId = useMemo(() => {
-    const map = new Map<string, RenderableCall[]>()
-    song.lyrics.forEach((line) => {
-      map.set(line.id, callsForLine(song.callEvents, line.id))
-    })
-    return map
-  }, [song.lyrics, song.callEvents])
+  const callsByLineId = useMemo(() => groupCallsByLineId(song.callEvents), [song.callEvents])
 
   const detailedLineIds = useMemo(() => {
     if (typeof IntersectionObserver === 'undefined') {
@@ -351,8 +347,7 @@ export function LyricList({
     return () => fonts.removeEventListener('loadingdone', scheduleGeometry)
   }, [scheduleGeometry])
 
-  useEffect(() => () => {
-    scrollRequestTokenRef.current += 1
+  const clearScheduledScroll = useCallback(() => {
     if (programmaticScrollTimerRef.current !== null) {
       window.clearTimeout(programmaticScrollTimerRef.current)
       programmaticScrollTimerRef.current = null
@@ -365,6 +360,11 @@ export function LyricList({
       window.cancelAnimationFrame(pendingDetailScrollFrameRef.current)
       pendingDetailScrollFrameRef.current = null
     }
+  }, [])
+
+  useEffect(() => () => {
+    scrollRequestTokenRef.current += 1
+    clearScheduledScroll()
     if (geometryFrameRef.current !== null) {
       window.cancelAnimationFrame(geometryFrameRef.current)
       geometryFrameRef.current = null
@@ -373,7 +373,7 @@ export function LyricList({
       window.cancelAnimationFrame(intersectionFrameRef.current)
       intersectionFrameRef.current = null
     }
-  }, [])
+  }, [clearScheduledScroll])
 
   const centerLineInList = useCallback((lineId: string, behavior: ScrollBehavior): boolean => {
     const listElement = listRef.current
@@ -418,30 +418,13 @@ export function LyricList({
 
   const cancelProgrammaticScroll = useCallback(() => {
     scrollRequestTokenRef.current += 1
-    if (programmaticScrollTimerRef.current !== null) {
-      window.clearTimeout(programmaticScrollTimerRef.current)
-      programmaticScrollTimerRef.current = null
-    }
-    if (programmaticReleaseFrameRef.current !== null) {
-      window.cancelAnimationFrame(programmaticReleaseFrameRef.current)
-      programmaticReleaseFrameRef.current = null
-    }
-    if (pendingDetailScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(pendingDetailScrollFrameRef.current)
-      pendingDetailScrollFrameRef.current = null
-    }
+    clearScheduledScroll()
     programmaticScrollRef.current = false
     setProgrammaticLineId(null)
-  }, [setProgrammaticLineId])
+  }, [clearScheduledScroll])
 
   const clearProgrammaticScrollAfterAnimation = useCallback((lineId: string) => {
-    if (programmaticScrollTimerRef.current !== null) {
-      window.clearTimeout(programmaticScrollTimerRef.current)
-    }
-    if (programmaticReleaseFrameRef.current !== null) {
-      window.cancelAnimationFrame(programmaticReleaseFrameRef.current)
-      programmaticReleaseFrameRef.current = null
-    }
+    clearScheduledScroll()
     programmaticScrollTimerRef.current = window.setTimeout(() => {
       programmaticScrollTimerRef.current = null
       if (programmaticScrollRef.current) {
@@ -449,23 +432,12 @@ export function LyricList({
       }
       releaseProgrammaticScroll()
     }, programmaticScrollTimeoutMs)
-  }, [centerLineInList, releaseProgrammaticScroll])
+  }, [centerLineInList, clearScheduledScroll, releaseProgrammaticScroll])
 
   const scrollLineIntoListCenter = useCallback((lineId: string, behavior: ScrollBehavior = 'smooth') => {
     scrollRequestTokenRef.current += 1
     const requestToken = scrollRequestTokenRef.current
-    if (pendingDetailScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(pendingDetailScrollFrameRef.current)
-      pendingDetailScrollFrameRef.current = null
-    }
-    if (programmaticScrollTimerRef.current !== null) {
-      window.clearTimeout(programmaticScrollTimerRef.current)
-      programmaticScrollTimerRef.current = null
-    }
-    if (programmaticReleaseFrameRef.current !== null) {
-      window.cancelAnimationFrame(programmaticReleaseFrameRef.current)
-      programmaticReleaseFrameRef.current = null
-    }
+    clearScheduledScroll()
 
     const performScroll = () => {
       if (scrollRequestTokenRef.current !== requestToken || !programmaticScrollRef.current) {
@@ -497,36 +469,36 @@ export function LyricList({
     } else {
       waitForDetail(3)
     }
-  }, [centerLineInList, clearProgrammaticScrollAfterAnimation, setProgrammaticLineId])
+  }, [centerLineInList, clearProgrammaticScrollAfterAnimation, clearScheduledScroll])
 
   useLayoutEffect(() => {
-    if (!autoFollow || !activeLineIdRef.current) {
+    if (!autoFollow || !activeLineId) {
+      lastFollowedLineIdRef.current = null
       return
     }
-    const lineId = activeLineIdRef.current
+    const lineId = activeLineId
+    const lineChanged = lastFollowedLineIdRef.current !== lineId
+    lastFollowedLineIdRef.current = lineId
     const frameId = window.requestAnimationFrame(() => {
-      if (!centerLineInList(lineId, 'auto')) {
+      if (lineChanged) {
+        scrollLineIntoListCenter(lineId, 'smooth')
         return
       }
-      clearProgrammaticScrollAfterAnimation(lineId)
+      if (centerLineInList(lineId, 'auto')) {
+        clearProgrammaticScrollAfterAnimation(lineId)
+      }
     })
     return () => window.cancelAnimationFrame(frameId)
   }, [
+    activeLineId,
     autoFollow,
     cachedHeights,
     centerLineInList,
     clearProgrammaticScrollAfterAnimation,
     detailedLineIds,
     lineLayouts,
+    scrollLineIntoListCenter,
   ])
-
-  useEffect(() => {
-    if (!autoFollow || !activeLine) {
-      return
-    }
-    const frameId = window.requestAnimationFrame(() => scrollLineIntoListCenter(activeLine.id))
-    return () => window.cancelAnimationFrame(frameId)
-  }, [activeLine, autoFollow, scrollLineIntoListCenter])
 
   const seekToLine = useCallback((line: LyricLineType) => {
     if (suppressClickRef.current) {
@@ -629,7 +601,7 @@ export function LyricList({
     : ''
 
   return (
-    <div className="lyric-list-shell" onWheel={setManualExploreFromWheel}>
+    <div className="lyric-list-shell">
       {!autoFollow ? (
         <Button
           label="현재 가사"
@@ -663,14 +635,13 @@ export function LyricList({
               key={line.id}
               line={line}
               active={activeLineId === line.id}
-              calls={callsByLineId.get(line.id) ?? []}
+              calls={callsByLineId.get(line.id) ?? noCalls}
               detailed={detailed}
               layout={lineLayouts.get(line.id)}
               minBlockSize={detailed ? undefined : cachedHeights.get(line.id)}
               lyricsLanguage={song.display.defaultLyricsLanguage}
               pronunciationLanguage={song.display.defaultPronunciationLanguage}
               callLanguage={song.display.defaultCallLanguage}
-              position={activeLineId === line.id ? 'current' : 'inactive'}
               lineRef={lineRefCallbacks.get(line.id)}
               onSeek={seekToLine}
             />

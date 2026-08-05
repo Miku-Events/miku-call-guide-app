@@ -2,25 +2,7 @@ import type { CSSProperties } from 'react'
 import { localizedText } from '../../shared/i18n/localizedText'
 import { arrowForCall, fallbackAnchorPercent, normalizedCallKind } from './callPositioning'
 import type { RenderableCall } from './callPositioning'
-
-export interface CallMarkerLayout {
-  pointLeft: number
-  pointTop: number
-  labelOffset: number
-  pointArrow?: {
-    left: number
-    top: number
-  }
-  rangeSegments?: Array<{
-    left: number
-    top: number
-    width: number
-  }>
-  endPoint?: {
-    left: number
-    top: number
-  }
-}
+import type { CallMarkerLayout } from './lyricGeometry'
 
 interface CallMarkerProps {
   call: RenderableCall
@@ -29,8 +11,6 @@ interface CallMarkerProps {
   layout?: CallMarkerLayout
   variant?: 'active' | 'preview'
 }
-
-export const callMarkerStackStepPx = 24
 
 /**
  * A marker is deliberately render-only. The lyric-list geometry coordinator

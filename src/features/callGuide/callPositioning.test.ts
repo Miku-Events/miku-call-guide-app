@@ -1,28 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { CallEvent, LyricLine } from '../data/types'
+import type { CallEvent } from '../data/types'
 import {
   callKindsInSong,
-  callsForLine,
+  groupCallsByLineId,
   fallbackAnchorPercent,
-  findActiveLyric,
   normalizedCallKind,
   splitGraphemes,
   splitGraphemeTokens,
-  streamingLyricWindow,
 } from './callPositioning'
 
 describe('callPositioning', () => {
-  it('finds the active lyric by startMs and endMs', () => {
-    const lyrics: LyricLine[] = [
-      { id: 'line-001', startMs: 0, endMs: 1000, text: { ja: 'one' } },
-      { id: 'line-002', startMs: 1000, endMs: 2000, text: { ja: 'two' } },
-    ]
-
-    expect(findActiveLyric(lyrics, 999)?.id).toBe('line-001')
-    expect(findActiveLyric(lyrics, 1000)?.id).toBe('line-002')
-    expect(findActiveLyric(lyrics, 2500)).toBeNull()
-  })
-
   it('splits visible graphemes instead of UTF-16 code units', () => {
     expect(splitGraphemes('ミク🎵')).toEqual(['ミ', 'ク', '🎵'])
   })
@@ -55,20 +42,6 @@ describe('callPositioning', () => {
     ] as unknown as CallEvent[]
 
     expect(callKindsInSong(calls)).toEqual(['chant', 'penlight', 'custom'])
-  })
-
-  it('builds a previous/current/next streaming lyric window around the active line', () => {
-    const lyrics: LyricLine[] = [
-      { id: 'line-001', startMs: 0, endMs: 1000, text: { ja: 'one' } },
-      { id: 'line-002', startMs: 1000, endMs: 2000, text: { ja: 'two' } },
-      { id: 'line-003', startMs: 2000, endMs: 3000, text: { ja: 'three' } },
-    ]
-
-    expect(streamingLyricWindow(lyrics, lyrics[1]).map((item) => `${item.position}:${item.line.id}`)).toEqual([
-      'previous:line-001',
-      'current:line-002',
-      'next:line-003',
-    ])
   })
 
   it('normalizes legacy and segmented lyricTrack calls for each lyric line', () => {
@@ -115,11 +88,12 @@ describe('callPositioning', () => {
       },
     ]
 
-    expect(callsForLine(calls, 'line-001').map((call) => [call.id, call.sourceCallId, call.segmentPart])).toEqual([
+    const groupedCalls = groupCallsByLineId(calls)
+    expect(groupedCalls.get('line-001')?.map((call) => [call.id, call.sourceCallId, call.segmentPart])).toEqual([
       ['call-legacy', 'call-legacy', undefined],
       ['call-segment::segment-0', 'call-segment', 'start'],
     ])
-    expect(callsForLine(calls, 'line-002').map((call) => [call.sourceCallId, call.anchor.pointChar, call.markers.point.enabled])).toEqual([
+    expect(groupedCalls.get('line-002')?.map((call) => [call.sourceCallId, call.anchor.pointChar, call.markers.point.enabled])).toEqual([
       ['call-segment', 1, false],
     ])
   })

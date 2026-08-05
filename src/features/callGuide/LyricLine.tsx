@@ -15,11 +15,9 @@ import {
   type LineLayout,
 } from './lyricGeometry'
 
-export type LyricLinePosition = 'current' | 'inactive'
-
 interface LyricLineProps {
   line: LyricLineType
-  calls: RenderableCall[]
+  calls: readonly RenderableCall[]
   active: boolean
   detailed?: boolean
   layout?: LineLayout
@@ -27,7 +25,6 @@ interface LyricLineProps {
   lyricsLanguage: string
   pronunciationLanguage: string
   callLanguage: string
-  position: LyricLinePosition
   onSeek?: (line: LyricLineType) => void
   lineRef?: (element: HTMLElement | null) => void
 }
@@ -143,7 +140,6 @@ function LyricLineComponent({
   lyricsLanguage,
   pronunciationLanguage,
   callLanguage,
-  position,
   onSeek,
   lineRef,
 }: LyricLineProps) {
@@ -222,7 +218,7 @@ function LyricLineComponent({
       data-grapheme-count={graphemeCount}
       data-has-below-calls={belowCalls.length > 0 ? 'true' : undefined}
       data-line-id={line.id}
-      data-position={position}
+      data-position={active ? 'current' : 'inactive'}
       onClick={() => onSeek?.(line)}
       onKeyDown={handleKeyDown}
       ref={lineRef}
@@ -268,17 +264,4 @@ function LyricLineComponent({
   )
 }
 
-export const LyricLine = memo(LyricLineComponent, (previous, next) => (
-  previous.active === next.active &&
-  previous.position === next.position &&
-  previous.detailed === next.detailed &&
-  previous.layout === next.layout &&
-  previous.minBlockSize === next.minBlockSize &&
-  previous.lyricsLanguage === next.lyricsLanguage &&
-  previous.pronunciationLanguage === next.pronunciationLanguage &&
-  previous.callLanguage === next.callLanguage &&
-  previous.calls === next.calls &&
-  previous.line === next.line &&
-  previous.onSeek === next.onSeek &&
-  previous.lineRef === next.lineRef
-))
+export const LyricLine = memo(LyricLineComponent)

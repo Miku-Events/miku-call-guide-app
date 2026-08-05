@@ -7,28 +7,9 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import './events.css'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getRootManifestUrl, getSubmissionApiBaseUrl } from '../../app/config'
 import { AppPageShell, StatusBanner } from '../../shared/layout/AppPageShell'
-import {
-  fetchEventCalendarIndex,
-} from '../data/fetchEventManifest'
-import type {
-  CalendarEventSummary,
-  EventCalendarIndex,
-  EventOccurrence,
-  EventType,
-  LoadResult,
-} from '../data/types'
-import {
-  fetchSubmissionSession,
-  type SubmissionSession,
-} from './submissionClient'
 import {
   buildCalendarBarSegments,
   buildEventsByDate,
@@ -37,103 +18,31 @@ import {
 } from './calendarLayout'
 import { eventPageWarning } from './eventWarnings'
 import { useOverflowDragScroll } from './hooks/useOverflowDragScroll'
-import { useSheetDismissHandle } from './hooks/useSheetDismissHandle'
 import { useEventCalendarController } from './hooks/useEventCalendarController'
+import { useEventCalendarIndex } from './hooks/useEventCalendarIndex'
 import { useEventDetails } from './hooks/useEventDetails'
 import { useEventMonth } from './hooks/useEventMonth'
 import { CalendarGrid } from './components/CalendarGrid'
 import { EventDetailSheet } from './components/EventDetailSheet'
 import { EventSubmitDialog } from './components/EventSubmitDialog'
 import { Button } from '@astryxdesign/core/Button'
-
-const eventTypeLabels: Record<string, string> = {
-  concert: 'Concert',
-  dj: 'DJ',
-  popup: 'Popup',
-  ticketApplication: 'Ticket',
-  ticketGeneralSale: 'General sale',
-  livestream: 'Livestream',
-  exhibition: 'Exhibition',
-  collaboration: 'Collab',
-  announcement: 'Notice',
-  other: 'Other',
-}
-
-const defaultEventTypePriority: EventType[] = [
-  'concert',
-  'ticketApplication',
-  'ticketGeneralSale',
-  'livestream',
-  'dj',
-  'popup',
-  'exhibition',
-  'collaboration',
-  'announcement',
-  'other',
-]
-
-type DialogState =
-  | { kind: 'add' }
-  | { kind: 'edit'; event: CalendarEventSummary; occurrence?: EventOccurrence }
-  | null
-
-function dateKeyFromDate(date: Date): string {
-  const month = (date.getMonth() + 1).toString().padStart(2, '0')
-  const day = date.getDate().toString().padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
-
-function parseMonthKey(month: string): Date {
-  const [year, monthIndex] = month.split('-').map(Number)
-  return new Date(year, monthIndex - 1, 1)
-}
-
-function normalizeEventTypePriority(typePriority?: EventType[]): EventType[] {
-  const supportedTypes = new Set(Object.keys(eventTypeLabels) as EventType[])
-  const configured = (typePriority ?? []).filter(
-    (type, index, values): type is EventType => supportedTypes.has(type) && values.indexOf(type) === index,
-  )
-
-  return [...configured, ...defaultEventTypePriority.filter((type) => !configured.includes(type))]
-}
-
-function formatMonthLabel(month: string): string {
-  return new Intl.DateTimeFormat('ko-KR', { month: 'long', year: 'numeric' }).format(parseMonthKey(month))
-}
-
-function buildCalendarDays(month: string): string[] {
-  const firstDay = parseMonthKey(month)
-  const start = new Date(firstDay)
-  start.setDate(1 - firstDay.getDay())
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start)
-    date.setDate(start.getDate() + index)
-    return dateKeyFromDate(date)
-  })
-}
-
-function calendarWeeks(calendarDays: string[]): string[][] {
-  const weeks: string[][] = []
-
-  for (let index = 0; index < calendarDays.length; index += 7) {
-    weeks.push(calendarDays.slice(index, index + 7))
-  }
-
-  return weeks
-}
+import { buildCalendarDays, calendarWeeks, formatMonthLabel } from './eventDate'
+import type { EventDialogState } from './eventDialog'
+import { eventTypePresentation, normalizeEventTypePriority } from './eventTypes'
 
 export function EventCalendarPage() {
   const rootManifestUrl = getRootManifestUrl()
   const submissionApiBaseUrl = getSubmissionApiBaseUrl()
   
   // State
-  const [calendarIndex, setCalendarIndex] = useState<(LoadResult<EventCalendarIndex> & { url: string }) | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [dialog, setDialog] = useState<DialogState>(null)
-  const [session, setSession] = useState<SubmissionSession>({ authenticated: false })
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<EventDialogState>(null)
   const [submissionSuccess, setSubmissionSuccess] = useState<string | null>(null)
+  const {
+    data: calendarIndex,
+    error,
+    isLoading: calendarIndexIsLoading,
+    retry: retryCalendarIndex,
+  } = useEventCalendarIndex(rootManifestUrl)
   const {
     closeEventDetail,
     detailExpanded,
@@ -163,19 +72,6 @@ export function EventCalendarPage() {
     ref: calendarRef,
   } = useOverflowDragScroll<HTMLElement>()
 
-  const {
-    canDrag: detailCanDrag,
-    dragScrollProps: detailDragScrollProps,
-    isDragging: detailIsDragging,
-    ref: detailRef,
-  } = useOverflowDragScroll<HTMLElement>()
-
-  const {
-    dragY: detailDismissDragY,
-    handleProps: detailDismissHandleProps,
-    isDragging: detailDismissDragging,
-  } = useSheetDismissHandle(Boolean(selectedDate), closeEventDetail)
-
   // Calendar reset scroll
   useEffect(() => {
     const panel = calendarRef.current
@@ -183,58 +79,6 @@ export function EventCalendarPage() {
     panel.scrollLeft = 0
     panel.scrollTop = 0
   }, [calendarRef, visibleMonth])
-
-  // Load calendar index
-  const loadIndex = useCallback(async () => {
-    try {
-      const result = await fetchEventCalendarIndex(rootManifestUrl)
-      setCalendarIndex(result)
-      setError(null)
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Event calendar index load failed.')
-    }
-  }, [rootManifestUrl])
-
-  useEffect(() => {
-    let cancelled = false
-    async function loadInitialIndex() {
-      try {
-        const result = await fetchEventCalendarIndex(rootManifestUrl)
-        if (!cancelled) {
-          setCalendarIndex(result)
-          setError(null)
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Event calendar index load failed.')
-        }
-      }
-    }
-    void loadInitialIndex()
-    return () => {
-      cancelled = true
-    }
-  }, [rootManifestUrl])
-
-
-  // Load authentication session
-  useEffect(() => {
-    let cancelled = false
-    async function loadSession() {
-      const result = await fetchSubmissionSession(submissionApiBaseUrl)
-      if (!cancelled) {
-        setSession(result)
-      }
-    }
-    void loadSession().catch(() => {
-      if (!cancelled) {
-        setSession({ authenticated: false })
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [submissionApiBaseUrl])
 
   useEffect(() => {
     document.title = '이벤트 캘린더 - 하츠네 미쿠 콜 가이드'
@@ -267,9 +111,8 @@ export function EventCalendarPage() {
   const activeError = error || monthError || detailError
   const isDetailLoading = Boolean(selectedDate && detailIsLoading && !activeError)
   const isCalendarLoading = Boolean(
-    !activeError && (!calendarIndex || monthIsLoading || !monthResult),
+    !activeError && (calendarIndexIsLoading || !calendarIndex || monthIsLoading || !monthResult),
   )
-  const isDetailExpanded = Boolean(selectedDate) && detailExpanded
   const warning = eventPageWarning(
     calendarIndex?.warning,
     monthResult?.warning,
@@ -338,7 +181,7 @@ export function EventCalendarPage() {
                       : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
                   }`}
                 >
-                  <span>{eventTypeLabels[type]}</span>
+                  <span>{eventTypePresentation[type].shortLabel}</span>
                 </button>
               ))}
             </div>
@@ -374,7 +217,7 @@ export function EventCalendarPage() {
           action={(
             <Button
               label="다시 시도"
-              onClick={loadIndex}
+              onClick={retryCalendarIndex}
               icon={<RefreshCw size={15} aria-hidden="true" />}
               variant="secondary"
             />
@@ -387,7 +230,7 @@ export function EventCalendarPage() {
         </StatusBanner>
       ) : null}
 
-      <div className="event-calendar-layout" data-detail-expanded={isDetailExpanded}>
+      <div className="event-calendar-layout" data-detail-expanded={Boolean(selectedDate) && detailExpanded}>
         <section
           aria-busy={isCalendarLoading}
           className="event-calendar-panel"
@@ -404,7 +247,6 @@ export function EventCalendarPage() {
           ) : null}
           <CalendarGrid
             barsByWeek={barsByWeek}
-            calendarIsDragging={calendarIsDragging}
             openDateDetail={openDateDetail}
             selectedDate={selectedDate}
             todayKey={todayKey}
@@ -414,19 +256,12 @@ export function EventCalendarPage() {
         </section>
 
         <EventDetailSheet
-          detailCanDrag={detailCanDrag}
-          detailDismissDragging={detailDismissDragging}
-          detailDismissDragY={detailDismissDragY}
-          detailDismissHandleProps={detailDismissHandleProps}
-          detailDragScrollProps={detailDragScrollProps}
           detailExpanded={detailExpanded}
-          detailIsDragging={detailIsDragging}
-          detailRef={detailRef}
           eventDetails={selectedEventDetails}
           isLoading={isDetailLoading}
-          isDetailExpanded={isDetailExpanded}
           selectedDate={selectedDate}
           selectedEvents={selectedEvents}
+          onDismiss={closeEventDetail}
           setDetailExpanded={setDetailExpanded}
           setDialog={setDialog}
         />
@@ -434,12 +269,9 @@ export function EventCalendarPage() {
 
       <EventSubmitDialog
         dialog={dialog}
-        session={session}
         setDialog={setDialog}
         setSubmissionSuccess={setSubmissionSuccess}
-        setTurnstileToken={setTurnstileToken}
         submissionApiBaseUrl={submissionApiBaseUrl}
-        turnstileToken={turnstileToken}
       />
     </AppPageShell>
   )

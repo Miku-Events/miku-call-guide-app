@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
   latestResetNonce: 0,
+  fetchSubmissionSession: vi.fn(),
   submitEventSubmission: vi.fn(),
   submitEditRequest: vi.fn(),
 }))
@@ -26,6 +27,7 @@ vi.mock('../../../components/TurnstileWidget', () => ({
 }))
 
 vi.mock('../submissionClient', () => ({
+  fetchSubmissionSession: harness.fetchSubmissionSession,
   githubLoginUrl: () => 'https://example.test/login',
   submitEventSubmission: harness.submitEventSubmission,
   submitEditRequest: harness.submitEditRequest,
@@ -84,18 +86,17 @@ vi.mock('@astryxdesign/core/EmptyState', () => ({
 
 import { EventSubmitDialog } from './EventSubmitDialog'
 
-function renderDialog(overrides: Partial<React.ComponentProps<typeof EventSubmitDialog>> = {}) {
+async function renderDialog(overrides: Partial<React.ComponentProps<typeof EventSubmitDialog>> = {}) {
   const props: React.ComponentProps<typeof EventSubmitDialog> = {
     dialog: { kind: 'add' },
-    session: { authenticated: true, login: 'miku-user' },
     setDialog: vi.fn(),
     setSubmissionSuccess: vi.fn(),
-    setTurnstileToken: vi.fn(),
     submissionApiBaseUrl: 'https://example.test',
-    turnstileToken: 'verified-token',
     ...overrides,
   }
   const view = render(<EventSubmitDialog {...props} />)
+  await screen.findByRole('form', { name: '일정 추가 요청' })
+  fireEvent.click(screen.getByRole('button', { name: '보안 검증 완료' }))
   return { ...view, props }
 }
 
@@ -103,6 +104,8 @@ beforeEach(() => {
   harness.latestResetNonce = 0
   harness.submitEventSubmission.mockReset()
   harness.submitEditRequest.mockReset()
+  harness.fetchSubmissionSession.mockReset()
+  harness.fetchSubmissionSession.mockResolvedValue({ authenticated: true, login: 'miku-user' })
 })
 
 afterEach(cleanup)
@@ -110,7 +113,7 @@ afterEach(cleanup)
 describe('EventSubmitDialog recovery', () => {
   it('keeps submission failures in the open dialog and requires Turnstile re-verification', async () => {
     harness.submitEventSubmission.mockRejectedValue(new Error('요청이 거부되었습니다.'))
-    const { props } = renderDialog()
+    const { props } = await renderDialog()
 
     fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
 
@@ -119,13 +122,13 @@ describe('EventSubmitDialog recovery', () => {
     expect(alert).toHaveTextContent('보안 검증을 다시 완료한 뒤 재시도해 주세요')
     expect(screen.getByRole('dialog')).toContainElement(alert)
     expect(props.setSubmissionSuccess).not.toHaveBeenCalled()
-    expect(props.setTurnstileToken).toHaveBeenCalledWith(null)
+    expect(screen.getByRole('button', { name: 'PR 요청' })).toBeDisabled()
     expect(harness.latestResetNonce).toBe(1)
   })
 
   it('clears a prior failure when the dialog is closed and reopened', async () => {
     harness.submitEventSubmission.mockRejectedValue(new Error('일시적인 실패'))
-    const { props, rerender } = renderDialog()
+    const { props, rerender } = await renderDialog()
 
     fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('일시적인 실패')
@@ -138,7 +141,7 @@ describe('EventSubmitDialog recovery', () => {
 
   it('publishes only successful submissions to the page status region', async () => {
     harness.submitEventSubmission.mockResolvedValue({ url: 'https://github.test/pull/42' })
-    const { props } = renderDialog()
+    const { props } = await renderDialog()
 
     fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
 
@@ -156,7 +159,7 @@ describe('EventSubmitDialog recovery', () => {
     harness.submitEventSubmission.mockImplementation(() => new Promise((_resolve, reject) => {
       rejectSubmission = reject
     }))
-    const { props, rerender } = renderDialog()
+    const { props, rerender } = await renderDialog()
 
     fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
     await waitFor(() => expect(harness.submitEventSubmission).toHaveBeenCalledOnce())

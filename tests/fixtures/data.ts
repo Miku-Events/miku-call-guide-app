@@ -339,42 +339,6 @@ const longIntroCountdownSong = {
   ],
 }
 
-const shortIntro60MsSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      time: '00:00:00,060 --> 00:00:06,060',
-      startMs: 60,
-      endMs: 6060,
-    },
-    {
-      ...song.lyrics[1],
-      time: '00:00:06,060 --> 00:00:12,060',
-      startMs: 6060,
-      endMs: 12060,
-    },
-  ],
-}
-
-const shortIntro180MsSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      time: '00:00:00,180 --> 00:00:06,180',
-      startMs: 180,
-      endMs: 6180,
-    },
-    {
-      ...song.lyrics[1],
-      time: '00:00:06,180 --> 00:00:12,180',
-      startMs: 6180,
-      endMs: 12180,
-    },
-  ],
-}
-
 const explicitCountdownSong = {
   ...song,
   lyrics: [
@@ -411,20 +375,6 @@ const longLyricSong = {
   ],
 }
 
-const wordWrapSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      text: {
-        ja: 'METEOR Future Light',
-        koPronunciation: '메테오 퓨처 라이트',
-      },
-    },
-    song.lyrics[1],
-  ],
-}
-
 const wrappedRangeSong = {
   ...song,
   lyrics: [
@@ -447,79 +397,6 @@ const wrappedRangeSong = {
   ],
 }
 
-const endAnchorText = 'ABCDEFGHIJ KLMNOPQRST UVWXYZ ABCDEFGHIJ KLMNOPQRST UVWXYZ'
-
-const endAnchorSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      text: {
-        ja: endAnchorText,
-        koPronunciation: '엔드 앵커 테스트',
-      },
-    },
-    song.lyrics[1],
-  ],
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: endAnchorText.length + 1 },
-      text: { ko: '끝점 콜!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
-    song.callEvents[1],
-  ],
-}
-
-const attakaitoWrappedEndAnchorSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      id: 'line-020',
-      text: {
-        ja: 'どんな時もかけがえのないパートナー',
-        koPronunciation: '돈나 토키모 카케가에노 나이 파-토나-',
-      },
-    },
-    song.lyrics[1],
-  ],
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      id: 'call-hey-020',
-      lyricLineId: 'line-020',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 18 },
-      text: { ko: 'Hey!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
-    song.callEvents[1],
-  ],
-}
-
-const leftAnchorSong = {
-  ...song,
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 1 },
-      text: { ko: '왼쪽에서도 잘리지 않는 긴 콜 태그!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
-    song.callEvents[1],
-  ],
-}
-
 const ppphLeftAnchorSong = {
   ...song,
   callEvents: [
@@ -533,62 +410,6 @@ const ppphLeftAnchorSong = {
       },
     },
     song.callEvents[1],
-  ],
-}
-
-const overlappingKindSong = {
-  ...song,
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      id: 'call-overlap-penlight',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 3 },
-      text: { ko: '펜라이트!' },
-      cue: { kind: 'penlight', intensity: 'normal', repeat: 1 },
-    },
-    {
-      ...song.callEvents[0],
-      id: 'call-overlap-chant',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 3 },
-      text: { ko: '하이!' },
-      cue: { kind: 'chant', intensity: 'normal', repeat: 1 },
-    },
-  ],
-}
-
-const closeNonOverlappingAnchorSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      text: {
-        ja: '心ゆくまで……お召し上がれ！',
-        koPronunciation: '코코로유쿠마데 오메시아가레',
-      },
-    },
-    song.lyrics[1],
-  ],
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      id: 'call-yuku',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 3 },
-      text: { ko: '유쿠!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
-    {
-      ...song.callEvents[0],
-      id: 'call-made',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 5 },
-      text: { ko: '마데!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
   ],
 }
 
@@ -619,60 +440,6 @@ const crossLaneAnchorRailSong = {
       anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 1, rangeStartChar: 1, rangeEndChar: 10 },
       text: { ko: '오른손->왼손->O->흔들기' },
       cue: { kind: 'penlight', intensity: 'normal', repeat: 1 },
-    },
-  ],
-}
-
-const spaceAnchorSong = {
-  ...song,
-  lyrics: [
-    {
-      ...song.lyrics[0],
-      text: {
-        ja: '嗚呼 日本の魂が',
-        koPronunciation: '아아 닛폰 노 타마시이가',
-      },
-    },
-    song.lyrics[1],
-  ],
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 3 },
-      text: { ko: '하이!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
-    song.callEvents[1],
-  ],
-}
-
-const separatedInactivePreviewSong = {
-  ...song,
-  callEvents: [
-    {
-      ...song.callEvents[0],
-      id: 'call-inactive-left',
-      lyricLineId: 'line-002',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 1 },
-      text: { ko: '하이!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
-    },
-    {
-      ...song.callEvents[0],
-      id: 'call-inactive-right',
-      lyricLineId: 'line-002',
-      anchor: { targetText: 'ja', unit: 'grapheme', pointChar: 6 },
-      text: { ko: '하이!' },
-      markers: {
-        point: { enabled: true, style: 'pointArrow', direction: 'auto' },
-        range: { enabled: false, style: 'none' },
-      },
     },
   ],
 }
@@ -811,34 +578,23 @@ const segmentedSong = {
 
 
 export {
-  attakaitoWrappedEndAnchorSong,
   autoFollowSong,
   callGuideManifest,
   catalogManySongManifest,
-  closeNonOverlappingAnchorSong,
   crossLaneAnchorRailSong,
   dateOnlyEventDetail,
-  dateOnlyEventSummary,
-  endAnchorSong,
   explicitCountdownSong,
   eventCalendarIndex,
   eventCalendarMayMonth,
   eventCalendarMonth,
   eventDetail,
-  leftAnchorSong,
   longIntroCountdownSong,
   longLyricSong,
   multiDayEventDetail,
-  overlappingKindSong,
   ppphLeftAnchorSong,
   progressiveDetailSong,
   rootManifest,
   segmentedSong,
-  separatedInactivePreviewSong,
-  shortIntro180MsSong,
-  shortIntro60MsSong,
   song,
-  spaceAnchorSong,
-  wordWrapSong,
   wrappedRangeSong,
 }

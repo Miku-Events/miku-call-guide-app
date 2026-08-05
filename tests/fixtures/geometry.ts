@@ -155,17 +155,6 @@ export async function expectLocatorCentered(
   ).toBeLessThanOrEqual(tolerance)
 }
 
-export async function scrollLocatorBy(locator: Locator, deltaY: number): Promise<void> {
-  const previousScrollTop = await locator.evaluate((element) => element.scrollTop)
-  await locator.evaluate((element, delta) => {
-    element.scrollBy({ behavior: 'instant', top: delta })
-  }, deltaY)
-  await expect.poll(
-    () => locator.evaluate((element) => element.scrollTop),
-    { message: 'expected the scroll container to move' },
-  ).not.toBe(previousScrollTop)
-}
-
 export async function scrollLocatorToEndInSteps(locator: Locator): Promise<void> {
   let previous = -1
 
@@ -246,27 +235,4 @@ export async function swipeLocatorUp(locator: Locator): Promise<void> {
     () => locator.evaluate((element) => element.scrollTop),
     { message: 'expected the touch swipe to scroll the target' },
   ).toBeGreaterThan(previousScrollTop)
-}
-
-export async function expectEventually<T>(
-  read: () => Promise<T | null>,
-  predicate: (value: T) => boolean,
-  message: string,
-): Promise<T> {
-  let latest: T | null = null
-
-  try {
-    await expect.poll(async () => {
-      latest = await read()
-      return latest !== null && predicate(latest)
-    }, { message }).toBe(true)
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error)
-    throw new Error(`${message}\nLast observed value: ${JSON.stringify(latest)}\n${cause}`, { cause: error })
-  }
-
-  if (latest === null) {
-    throw new Error(message)
-  }
-  return latest
 }

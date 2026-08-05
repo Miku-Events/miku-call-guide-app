@@ -8,34 +8,11 @@ import { XPostEmbed } from '../XPostEmbed'
 import { Token } from '@astryxdesign/core/Token'
 import { Button } from '@astryxdesign/core/Button'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
-import type { SheetDismissHandleResult } from '../hooks/useSheetDismissHandle'
-import type { OverflowDragScrollResult } from '../hooks/useOverflowDragScroll'
-
-const eventTypeLabels: Record<string, string> = {
-  concert: 'Concert',
-  dj: 'DJ',
-  popup: 'Popup',
-  ticketApplication: 'Ticket apply',
-  ticketGeneralSale: 'General sale',
-  livestream: 'Livestream',
-  exhibition: 'Exhibition',
-  collaboration: 'Collab',
-  announcement: 'Notice',
-  other: 'Other',
-}
-
-const eventColorMap: Record<string, 'default' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'cyan' | 'blue' | 'purple' | 'pink' | 'gray'> = {
-  concert: 'pink',
-  dj: 'purple',
-  popup: 'orange',
-  ticketApplication: 'blue',
-  ticketGeneralSale: 'blue',
-  livestream: 'cyan',
-  exhibition: 'yellow',
-  collaboration: 'teal',
-  announcement: 'red',
-  other: 'gray',
-}
+import { useOverflowDragScroll } from '../hooks/useOverflowDragScroll'
+import { useSheetDismissHandle } from '../hooks/useSheetDismissHandle'
+import { formatDateLabel } from '../eventDate'
+import type { EventDialogState } from '../eventDialog'
+import { eventTypePresentation } from '../eventTypes'
 
 const eventPlatformLabels: Record<EventLink['platform'], string> = {
   x: 'X',
@@ -46,16 +23,6 @@ const eventPlatformLabels: Record<EventLink['platform'], string> = {
   facebook: 'Facebook',
   website: 'Website',
   other: 'Other',
-}
-
-type DialogState =
-  | { kind: 'add' }
-  | { kind: 'edit'; event: CalendarEventSummary; occurrence?: EventOccurrence }
-  | null
-
-function formatDateLabel(dateKey: string): string {
-  const [year, month, date] = dateKey.split('-').map(Number)
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date(year, month - 1, date))
 }
 
 function formatOccurrenceTime(occurrence: EventOccurrence): string | null {
@@ -78,17 +45,10 @@ interface EventDetailSheetProps {
   selectedEvents: CalendarEventSummary[]
   eventDetails: Record<string, LoadResult<EventGuide>>
   isLoading: boolean
-  isDetailExpanded: boolean
   detailExpanded: boolean
   setDetailExpanded: React.Dispatch<React.SetStateAction<boolean>>
-  detailDismissDragY: number
-  detailDismissHandleProps: SheetDismissHandleResult['handleProps']
-  detailDismissDragging: boolean
-  detailCanDrag: boolean
-  detailIsDragging: boolean
-  detailDragScrollProps: OverflowDragScrollResult<HTMLElement>['dragScrollProps']
-  detailRef: React.RefObject<HTMLElement | null>
-  setDialog: React.Dispatch<React.SetStateAction<DialogState>>
+  onDismiss: () => void
+  setDialog: React.Dispatch<React.SetStateAction<EventDialogState>>
 }
 
 export function EventDetailSheet({
@@ -96,18 +56,23 @@ export function EventDetailSheet({
   selectedEvents,
   eventDetails,
   isLoading,
-  isDetailExpanded,
   detailExpanded,
   setDetailExpanded,
-  detailDismissDragY,
-  detailDismissHandleProps,
-  detailDismissDragging,
-  detailCanDrag,
-  detailIsDragging,
-  detailDragScrollProps,
-  detailRef,
+  onDismiss,
   setDialog,
 }: EventDetailSheetProps) {
+  const {
+    canDrag: detailCanDrag,
+    dragScrollProps: detailDragScrollProps,
+    isDragging: detailIsDragging,
+    ref: detailRef,
+  } = useOverflowDragScroll<HTMLElement>()
+  const {
+    dragY: detailDismissDragY,
+    handleProps: detailDismissHandleProps,
+    isDragging: detailDismissDragging,
+  } = useSheetDismissHandle(Boolean(selectedDate), onDismiss)
+  const isDetailExpanded = Boolean(selectedDate) && detailExpanded
   const handleDetailPanelClick = (event: ReactMouseEvent<HTMLElement>) => {
     if (!selectedDate || detailExpanded || window.matchMedia('(max-width: 980px)').matches) {
       return
@@ -207,8 +172,8 @@ export function EventDetailSheet({
                     <span className="event-detail-title">{title}</span>
                   )}
                   <Token
-                    color={eventColorMap[event.type] ?? 'default'}
-                    label={eventTypeLabels[event.type]}
+                    color={eventTypePresentation[event.type].color}
+                    label={eventTypePresentation[event.type].label}
                     size="sm"
                   />
                 </div>

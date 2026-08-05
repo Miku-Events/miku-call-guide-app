@@ -1,25 +1,7 @@
 import { type CSSProperties, useEffect, useState } from 'react'
 import { localizedText } from '../../../shared/i18n/localizedText'
-import type { CalendarEventSummary, EventOccurrence } from '../../data/types'
-
-type DayKind = 'weekday' | 'saturday' | 'sunday'
-
-function dayKindFromDateKey(dateKey: string): DayKind {
-  const [year, month, date] = dateKey.split('-').map(Number)
-  const day = new Date(year, month - 1, date).getDay()
-  if (day === 0) {
-    return 'sunday'
-  }
-  if (day === 6) {
-    return 'saturday'
-  }
-  return 'weekday'
-}
-
-function formatDateLabel(dateKey: string): string {
-  const [year, month, date] = dateKey.split('-').map(Number)
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date(year, month - 1, date))
-}
+import { dayKindFromDateKey, formatDateLabel } from '../eventDate'
+import type { CalendarBarSegment } from '../calendarLayout'
 
 function useCompactCalendar(): boolean {
   const [isCompact, setIsCompact] = useState(
@@ -43,20 +25,7 @@ interface CalendarGridProps {
   selectedDate: string | null
   todayKey: string
   openDateDetail: (dateKey: string) => void
-  barsByWeek: Map<number, Array<{
-    event: CalendarEventSummary
-    occurrence: EventOccurrence
-    rowIndex: number
-    lane: number
-    columnStart: number
-    columnEnd: number
-    continuesBefore: boolean
-    continuesAfter: boolean
-    dateKeys: string[]
-    dateKeyStart: string
-    dateKeyEnd: string
-  }>>
-  calendarIsDragging: boolean
+  barsByWeek: Map<number, CalendarBarSegment[]>
 }
 
 export function CalendarGrid({
@@ -66,7 +35,6 @@ export function CalendarGrid({
   todayKey,
   openDateDetail,
   barsByWeek,
-  calendarIsDragging,
 }: CalendarGridProps) {
   const isCompact = useCompactCalendar()
 
@@ -161,16 +129,6 @@ export function CalendarGrid({
                         onClick={(clickEvent) => {
                           clickEvent.stopPropagation()
                           openDateDetail(segment.dateKeyStart)
-                        }}
-                        onMouseUp={() => {
-                          if (!calendarIsDragging) {
-                            openDateDetail(segment.dateKeyStart)
-                          }
-                        }}
-                        onPointerUp={(pointerEvent) => {
-                          if (!calendarIsDragging && pointerEvent.pointerType !== 'mouse') {
-                            openDateDetail(segment.dateKeyStart)
-                          }
                         }}
                         type="button"
                       >
