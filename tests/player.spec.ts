@@ -32,7 +32,7 @@ async function setMockPlaybackTime(page: Page, timeMs: number): Promise<void> {
   await expect(slider).toHaveValue(String(timeMs))
 }
 
-test('runs the automatic countdown into the first lyric', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-01] runs the automatic countdown into the first lyric', { tag: '@desktop' }, async ({ page }) => {
   setMockedSong(page, longIntroCountdownSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -50,7 +50,7 @@ test('runs the automatic countdown into the first lyric', { tag: '@desktop' }, a
   await expect(page.locator('.lyric-line[data-position="current"]')).toContainText('光るステージへ')
 })
 
-test('honors reduced motion while preserving countdown semantics', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-02] honors reduced motion while preserving countdown semantics', { tag: '@desktop' }, async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   setMockedSong(page, longIntroCountdownSong)
 
@@ -65,7 +65,7 @@ test('honors reduced motion while preserving countdown semantics', { tag: '@desk
   ).toBe(true)
 })
 
-test('seeks through the countdown cue when a lyric is activated', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-03] seeks through the countdown cue when a lyric is activated', { tag: '@desktop' }, async ({ page }) => {
   setMockedSong(page, explicitCountdownSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -77,7 +77,7 @@ test('seeks through the countdown cue when a lyric is activated', { tag: '@deskt
   await expect(page.locator('.lyric-line[data-position="current"]')).toContainText('声を重ねよう')
 })
 
-test('moves the active lyric and call semantics as playback advances', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-04] moves the active lyric and call semantics as playback advances', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   const firstLine = page.locator('.lyric-line[data-position="current"]')
@@ -92,7 +92,7 @@ test('moves the active lyric and call semantics as playback advances', { tag: '@
   )
 })
 
-test('restores lyric following with both the follow control and lyric activation', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-05] restores lyric following with both the follow control and lyric activation', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   const list = page.locator('.lyric-list')
@@ -110,7 +110,7 @@ test('restores lyric following with both the follow control and lyric activation
   await expect(followButton).toHaveCount(0)
 })
 
-test('renders a wrapped call range with accessible active marker semantics', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-06] renders a wrapped call range with accessible active marker semantics', { tag: '@desktop' }, async ({ page }) => {
   setMockedSong(page, wrappedRangeSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -121,7 +121,7 @@ test('renders a wrapped call range with accessible active marker semantics', { t
   await expect(activeLine.locator('.call-range-end-arrow')).toBeVisible()
 })
 
-test('keeps the measured PPPH call readable inside the player panel', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-07] keeps the measured PPPH call readable inside the player panel', { tag: '@desktop' }, async ({ page }) => {
   setMockedSong(page, ppphLeftAnchorSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -131,7 +131,7 @@ test('keeps the measured PPPH call readable inside the player panel', { tag: '@d
   await expectLocatorNoHorizontalOverflow(marker.locator('.call-marker-text'))
 })
 
-test('keeps 100 lyric shells keyboard-seekable while detail follows the viewport', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-08] keeps 100 lyric shells keyboard-seekable while detail follows the viewport', { tag: '@desktop' }, async ({ page }) => {
   setMockedSong(page, progressiveDetailSong)
   await page.setViewportSize({ width: 1280, height: 800 })
 
@@ -160,7 +160,7 @@ test('keeps 100 lyric shells keyboard-seekable while detail follows the viewport
   expect(await detailedLines.count()).toBeLessThan(50)
 })
 
-test('switches segmented lyricTrack calls from preview to active semantics', { tag: '@desktop' }, async ({ page }) => {
+test('[PLY-D-09] switches segmented lyricTrack calls from preview to active semantics', { tag: '@desktop' }, async ({ page }) => {
   setMockedSong(page, segmentedSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -177,7 +177,7 @@ test('switches segmented lyricTrack calls from preview to active semantics', { t
   await expect(activeLine.locator('.call-arrow')).toHaveCount(0)
 })
 
-test('contains the mobile player, video, lyrics, and touch controls', { tag: '@mobile' }, async ({ page }) => {
+test('[PLY-M-01] contains the mobile player, video, lyrics, and touch controls', { tag: '@mobile' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
@@ -190,7 +190,7 @@ test('contains the mobile player, video, lyrics, and touch controls', { tag: '@m
   await expectLocatorMinTouchTarget(page.getByRole('button', { name: /声を重ねよう/ }))
 })
 
-test('keeps cross-lane markers clear of mobile lyrics and pronunciation', { tag: '@mobile' }, async ({ page }) => {
+test('[PLY-M-02] keeps cross-lane markers clear of mobile lyrics and pronunciation', { tag: '@mobile' }, async ({ page }) => {
   setMockedSong(page, crossLaneAnchorRailSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -208,7 +208,7 @@ test('keeps cross-lane markers clear of mobile lyrics and pronunciation', { tag:
   await expectPageContained(page)
 })
 
-test('keeps long active lyrics readable inside the mobile lyric panel', { tag: '@mobile' }, async ({ page }) => {
+test('[PLY-M-03] keeps long active lyrics readable inside the mobile lyric panel', { tag: '@mobile' }, async ({ page }) => {
   setMockedSong(page, longLyricSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -223,7 +223,7 @@ test('keeps long active lyrics readable inside the mobile lyric panel', { tag: '
   await expectPageContained(page)
 })
 
-test('restores touch auto-follow without scrolling or clipping the mobile page', { tag: '@mobile' }, async ({ page }) => {
+test('[PLY-M-04] restores touch auto-follow without scrolling or clipping the mobile page', { tag: '@mobile' }, async ({ page }) => {
   setMockedSong(page, autoFollowSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
@@ -247,7 +247,7 @@ test('restores touch auto-follow without scrolling or clipping the mobile page',
   await expectLocatorsNotToOverlap(page.locator('.player-top-bar'), video)
 })
 
-test('keeps progressive detail bounded through rapid touch scroll and distant activation', { tag: '@mobile' }, async ({ page }) => {
+test('[PLY-M-05] keeps progressive detail bounded through rapid touch scroll and distant activation', { tag: '@mobile' }, async ({ page }) => {
   setMockedSong(page, progressiveDetailSong)
 
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')

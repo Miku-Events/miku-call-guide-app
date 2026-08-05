@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-21T12:00:00+09:00'))
 })
 
-test('navigates dates, filters, months, and safe event details', { tag: '@desktop' }, async ({ page }) => {
+test('[EVT-D-01] navigates dates, filters, months, and safe event details', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
 
   await expect(page).toHaveURL(/#\/events$/)
@@ -65,7 +65,7 @@ test('navigates dates, filters, months, and safe event details', { tag: '@deskto
   )
 })
 
-test('supports the event filter and detail journey with touch', { tag: '@mobile' }, async ({ page }) => {
+test('[EVT-M-01] supports the event filter and detail journey with touch', { tag: '@mobile' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
   await page.getByRole('link', { name: 'Events' }).first().tap()
 
@@ -87,7 +87,7 @@ test('supports the event filter and detail journey with touch', { tag: '@mobile'
   await expect(detailCard).not.toBeVisible()
 })
 
-test('keeps the 320px event path contained with touch-sized controls', { tag: '@mobile' }, async ({ page }) => {
+test('[EVT-M-02] keeps the 320px event path contained with touch-sized controls', { tag: '@mobile' }, async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 820 })
   await page.unroute('**/call-guide-manifest.json')
   await page.route('**/call-guide-manifest.json', async (route) => {

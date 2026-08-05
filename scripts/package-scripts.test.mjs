@@ -32,6 +32,8 @@ describe('local and release scripts', () => {
 
     expect(manifest.scripts['dev:local']).toBe('vite --host 127.0.0.1 --port 4173')
     expect(manifest.scripts['smoke:preview']).toBe('node scripts/preview-browser-smoke.mjs')
+    expect(manifest.scripts.build).toBe('tsc -b && vite build')
+    expect(manifest.scripts.check).not.toContain('npm run typecheck')
   })
 
   it('keeps the lockfile root metadata aligned with package.json', async () => {

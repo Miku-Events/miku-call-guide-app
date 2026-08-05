@@ -7,6 +7,7 @@ import localConfig, {
   MOBILE_E2E_GREP,
 } from '../playwright.config'
 import ciConfig from '../playwright.ci.config'
+import { E2E_SCENARIOS } from '../tests/e2eInventory'
 
 const execFileAsync = promisify(execFile)
 const playwrightCli = path.join(process.cwd(), 'node_modules/@playwright/test/cli.js')
@@ -43,6 +44,17 @@ describe('risk-based E2E configuration', () => {
     const listed = await listedTests('playwright.ci.config.ts')
     expect(listed.projects).toEqual({ desktop: 26, mobile: 13 })
     expect(listed.stdout).toContain('Total: 39 tests')
+
+    const listedCoverage = new Map()
+    for (const match of listed.stdout.matchAll(/^\s*\[(desktop|mobile)\].*\[([A-Z0-9-]+)\]/gm)) {
+      const [, project, id] = match
+      listedCoverage.set(id, [...(listedCoverage.get(id) ?? []), project])
+    }
+    const expectedCoverage = new Map(E2E_SCENARIOS.map(({ audience, id }) => [
+      id,
+      audience === 'both' ? ['desktop', 'mobile'] : [audience],
+    ]))
+    expect([...listedCoverage].sort()).toEqual([...expectedCoverage].sort())
   }, 20_000)
 
 })

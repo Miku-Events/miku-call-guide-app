@@ -40,7 +40,7 @@ function watchCatalogRequests(page: import('@playwright/test').Page): CatalogReq
   return requests
 }
 
-test('renders the catalog navigation, filters, and practice cards', { tag: '@desktop' }, async ({ page }) => {
+test('[CAT-D-01] renders the catalog navigation, filters, and practice cards', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
 
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
@@ -84,7 +84,7 @@ test('renders the catalog navigation, filters, and practice cards', { tag: '@des
   await expect.poll(() => requestedThumbnails.size).toBe(14)
 })
 
-test('keeps the catalog usable and contained on a touch viewport', { tag: '@mobile' }, async ({ page }) => {
+test('[CAT-M-01] keeps the catalog usable and contained on a touch viewport', { tag: '@mobile' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
 
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
@@ -98,7 +98,7 @@ test('keeps the catalog usable and contained on a touch viewport', { tag: '@mobi
   await expectPageContained(page)
 })
 
-test('shows catalog retry only when the initial manifest request fails', { tag: '@desktop' }, async ({ page }) => {
+test('[CAT-D-02] shows catalog retry only when the initial manifest request fails', { tag: '@desktop' }, async ({ page }) => {
   await page.unroute('**/manifest.json')
   let shouldFail = true
   await page.route('**/manifest.json', async (route) => {
@@ -124,7 +124,7 @@ test('shows catalog retry only when the initial manifest request fails', { tag: 
   await expect(page.locator('.catalog-song-card', { hasText: '퓨처 라이트 샘플' })).toBeVisible()
 })
 
-test('shows catalog retry when cached manifest data is being used', { tag: '@desktop' }, async ({ page }) => {
+test('[CAT-D-03] shows catalog retry when cached manifest data is being used', { tag: '@desktop' }, async ({ page }) => {
   await page.unroute('**/manifest.json')
   let shouldFail = false
   await page.route('**/manifest.json', async (route) => {
@@ -153,7 +153,7 @@ test('shows catalog retry when cached manifest data is being used', { tag: '@des
   await expect(page.getByRole('button', { name: '다시 시도' })).toHaveCount(0)
 })
 
-test('shares hover-prefetched data with desktop practice navigation', { tag: '@desktop' }, async ({ page }) => {
+test('[CAT-D-04] shares hover-prefetched data with desktop practice navigation', { tag: '@desktop' }, async ({ page }) => {
   const requests = watchCatalogRequests(page)
 
   await page.goto('/?mockPlayer=1')
@@ -172,7 +172,7 @@ test('shares hover-prefetched data with desktop practice navigation', { tag: '@d
   expect(requests.song).toBe(1)
 })
 
-test('shares pointer-down-prefetched data with touch practice navigation', { tag: '@mobile' }, async ({ page }) => {
+test('[CAT-M-02] shares pointer-down-prefetched data with touch practice navigation', { tag: '@mobile' }, async ({ page }) => {
   const requests = watchCatalogRequests(page)
 
   await page.goto('/?mockPlayer=1')

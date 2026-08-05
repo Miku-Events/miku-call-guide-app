@@ -39,7 +39,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-21T12:00:00+09:00'))
 })
 
-test('has no serious automated accessibility violations on catalog and event dialog', { tag: '@both' }, async ({ page }, testInfo) => {
+test('[A11-B-01] has no serious automated accessibility violations on catalog and event dialog', { tag: '@both' }, async ({ page }, testInfo) => {
   await page.goto('/?mockPlayer=1')
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 
@@ -71,7 +71,7 @@ test('has no serious automated accessibility violations on catalog and event dia
   ).toEqual([])
 })
 
-test('has no serious automated accessibility violations on the progressive practice list', { tag: '@mobile' }, async ({ page }) => {
+test('[A11-M-01] has no serious automated accessibility violations on the progressive practice list', { tag: '@mobile' }, async ({ page }) => {
   setMockedSong(page, progressiveDetailSong)
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
@@ -87,7 +87,7 @@ test('has no serious automated accessibility violations on the progressive pract
   ).toEqual([])
 })
 
-test('traverses the dialog with Tab and Shift+Tab, closes on Escape, and returns focus', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-01] traverses the dialog with Tab and Shift+Tab, closes on Escape, and returns focus', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
   const addButton = page.getByRole('button', { name: '일정 추가' })
   await expect(addButton).toBeVisible()
@@ -115,7 +115,7 @@ test('traverses the dialog with Tab and Shift+Tab, closes on Escape, and returns
   await expect(addButton).toBeFocused()
 })
 
-test('keeps submission errors inside the dialog and announces only success on the page', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-02] keeps submission errors inside the dialog and announces only success on the page', { tag: '@desktop' }, async ({ page }) => {
   setMockedSession(page, { authenticated: true, login: 'miku-e2e' })
   await installTurnstileHarness(page)
 
@@ -164,7 +164,7 @@ test('keeps submission errors inside the dialog and announces only success on th
   expect(submissionAttempts).toBe(2)
 })
 
-test('announces delayed month and detail loading with aria-busy', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-03] announces delayed month and detail loading with aria-busy', { tag: '@desktop' }, async ({ page }) => {
   await page.unroute('**/event-calendar/months/2026-05.json')
   let monthRoute: Route | null = null
   let signalMonthRequest: (() => void) | null = null
@@ -209,7 +209,7 @@ test('announces delayed month and detail loading with aria-busy', { tag: '@deskt
   await expect(detailList).toHaveAttribute('aria-busy', 'false')
 })
 
-test('uses the skip link without replacing the HashRouter route', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-04] uses the skip link without replacing the HashRouter route', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
   await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
 
@@ -224,14 +224,14 @@ test('uses the skip link without replacing the HashRouter route', { tag: '@deskt
   await expect.poll(() => page.getByRole('main').evaluate((main) => main === document.activeElement)).toBe(true)
 })
 
-test('recovers from wildcard routes and returns to the catalog', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-05] recovers from wildcard routes and returns to the catalog', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/does-not-exist')
   await expect(page.getByRole('heading', { name: '페이지를 찾을 수 없습니다.' })).toBeVisible()
   await page.getByRole('link', { name: '카탈로그로 돌아가기' }).click()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 })
 
-test('retries a failed song request and offers a working catalog recovery path', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-06] retries a failed song request and offers a working catalog recovery path', { tag: '@desktop' }, async ({ page }) => {
   await page.unroute(VERSIONED_LEAF_ROUTES.song)
   let attempts = 0
   await page.route(VERSIONED_LEAF_ROUTES.song, async (route) => {
@@ -256,7 +256,7 @@ test('retries a failed song request and offers a working catalog recovery path',
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 })
 
-test('recovers from a YouTube script error and keeps the external fallback available', { tag: '@desktop' }, async ({ page }) => {
+test('[A11-D-07] recovers from a YouTube script error and keeps the external fallback available', { tag: '@desktop' }, async ({ page }) => {
   let scriptAttempts = 0
   let releaseFirstScript = () => {}
   const firstScriptGate = new Promise<void>((resolve) => {
@@ -317,7 +317,7 @@ test('recovers from a YouTube script error and keeps the external fallback avail
   expect(scriptAttempts).toBe(2)
 })
 
-test('reflows event controls at a 200 percent zoom-equivalent width and text size', { tag: '@mobile' }, async ({ page }) => {
+test('[A11-M-02] reflows event controls at a 200 percent zoom-equivalent width and text size', { tag: '@mobile' }, async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 820 })
   await page.goto('/?mockPlayer=1#/events')
   await expect(page.locator('.event-day-cell[data-date="2026-05-21"]')).toBeVisible()
