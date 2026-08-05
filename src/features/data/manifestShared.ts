@@ -1,6 +1,9 @@
 import { loadCache, removeCache, resourceCacheKey, saveCache } from './cacheStore'
 import type { CacheEntry } from './cacheStore'
 import type { LoadResult } from './types'
+import { dataRequestTimeoutReason } from './dataRequestTimeout'
+import { abortReason, isAbortError } from './requestAbort'
+import { createSharedResourceStore } from './sharedResourceStore'
 
 export interface ResolvedLoadResult<T> extends LoadResult<T> {
   url: string
@@ -13,7 +16,7 @@ export interface VersionedLoadOptions {
 
 export type AssertFn<T> = (value: unknown) => asserts value is T
 
-const pendingLoads = new Map<string, Promise<unknown>>()
+const versionedResourceStore = createSharedResourceStore<ResolvedLoadResult<unknown>>()
 
 export function resolveDataUrl(baseUrl: string, relativePath: string): string {
   return new URL(relativePath, baseUrl).toString()
@@ -35,18 +38,7 @@ export function assertVersion(actual: string, expected: string, label: string): 
   }
 }
 
-export function isAbortError(error: unknown): boolean {
-  return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
-}
-
-export function abortReason(signal: AbortSignal): unknown {
-  if (signal.reason !== undefined) {
-    return signal.reason
-  }
-  const error = new Error('The operation was aborted.')
-  error.name = 'AbortError'
-  return error
-}
+export { abortReason, isAbortError } from './requestAbort'
 
 export async function fetchJson<T>(
   url: string,
@@ -68,25 +60,6 @@ export async function fetchJson<T>(
   return value
 }
 
-export function withDedupe<T>(
-  key: string,
-  signal: AbortSignal | undefined,
-  operation: () => Promise<T>,
-): Promise<T> {
-  if (signal) {
-    return operation()
-  }
-  const existing = pendingLoads.get(key) as Promise<T> | undefined
-  if (existing) {
-    return existing
-  }
-  const pending = operation().finally(() => {
-    pendingLoads.delete(key)
-  })
-  pendingLoads.set(key, pending)
-  return pending
-}
-
 export function fallbackWarning(
   label: string,
   entry: Pick<CacheEntry<unknown>, 'freshness' | 'savedAt'>,
@@ -104,10 +77,11 @@ interface VersionedResourceConfig<T> {
   manifestUrl: string
   options: VersionedLoadOptions
   resourcePath: string
+  requestCache?: RequestCache
   versionedLeaf?: boolean
 }
 
-export async function fetchVersionedResource<T>(
+export async function loadVersionedResource<T>(
   config: VersionedResourceConfig<T>,
 ): Promise<ResolvedLoadResult<T>> {
   const { expectedDataVersion, signal } = config.options
@@ -118,37 +92,50 @@ export async function fetchVersionedResource<T>(
     ? resolveVersionedLeafUrl(config.manifestUrl, config.resourcePath, expectedDataVersion)
     : resolveDataUrl(config.manifestUrl, config.resourcePath)
   const cacheKey = resourceCacheKey(config.manifestUrl, expectedDataVersion, config.resourcePath)
-  const operation = async (): Promise<ResolvedLoadResult<T>> => {
+  try {
+    const data = await fetchJson(url, config.assertValue, {
+      cache: config.requestCache ?? 'no-cache',
+      ...(signal ? { signal } : {}),
+    })
+    config.checkValue?.(data)
+    saveCache(cacheKey, data, { currentDataVersion: expectedDataVersion })
+    return { data, source: 'network', url }
+  } catch (error) {
+    const timeoutError = dataRequestTimeoutReason(signal)
+    if (!timeoutError && (isAbortError(error) || signal?.aborted)) {
+      throw error
+    }
+    const cached = loadCache<unknown>(cacheKey)
+    if (!cached) {
+      throw timeoutError ?? error
+    }
     try {
-      const data = await fetchJson(url, config.assertValue, {
-        cache: 'no-cache',
-        ...(signal ? { signal } : {}),
-      })
-      config.checkValue?.(data)
-      saveCache(cacheKey, data, { currentDataVersion: expectedDataVersion })
-      return { data, source: 'network', url }
-    } catch (error) {
-      if (isAbortError(error) || signal?.aborted) {
-        throw error
-      }
-      const cached = loadCache<unknown>(cacheKey)
-      if (!cached) {
-        throw error
-      }
-      try {
-        config.assertValue(cached.value)
-        config.checkValue?.(cached.value)
-      } catch {
-        removeCache(cacheKey)
-        throw error
-      }
-      return {
-        data: cached.value,
-        source: 'cache',
-        url,
-        warning: fallbackWarning(config.label, cached),
-      }
+      config.assertValue(cached.value)
+      config.checkValue?.(cached.value)
+    } catch {
+      removeCache(cacheKey)
+      throw timeoutError ?? error
+    }
+    return {
+      data: cached.value,
+      source: 'cache',
+      url,
+      warning: fallbackWarning(config.label, cached),
     }
   }
-  return withDedupe(`resource:${cacheKey}:${config.dedupeKeySuffix ?? ''}`, signal, operation)
+}
+
+export function fetchVersionedResource<T>(config: VersionedResourceConfig<T>): Promise<ResolvedLoadResult<T>> {
+  const key = `resource:${resourceCacheKey(
+    config.manifestUrl,
+    config.options.expectedDataVersion,
+    config.resourcePath,
+  )}:${config.dedupeKeySuffix ?? ''}`
+  return versionedResourceStore.acquire(key, {
+    signal: config.options.signal,
+    load: (signal) => loadVersionedResource({
+      ...config,
+      options: { ...config.options, signal },
+    }),
+  }) as Promise<ResolvedLoadResult<T>>
 }

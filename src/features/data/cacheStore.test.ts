@@ -6,7 +6,7 @@ import {
   CACHE_STAGING_MAX_MS,
   cacheNamespaceBytes,
   cacheStorageKey,
-  commitCacheBatch,
+  commitFamilySnapshot,
   familyPointerCacheKey,
   loadCache,
   normalizeManifestIdentity,
@@ -254,7 +254,7 @@ describe('cacheStore', () => {
     window.localStorage.setItem('unrelated-state', '1')
     const first = familyBatch()
     const keySpy = vi.spyOn(Storage.prototype, 'key')
-    expect(commitCacheBatch(first.writes, first.options)).toBe(true)
+    expect(commitFamilySnapshot({ ...first.options, root: first.writes[0], child: first.writes[1] })).toBe(true)
     expect(scanStarts(keySpy)).toBe(2)
     expect(loadCache(first.pointerKey)?.value).toMatchObject({
       childKey: first.childKey,
@@ -280,7 +280,7 @@ describe('cacheStore', () => {
       return setItem.call(this, key, value)
     })
 
-    expect(commitCacheBatch(second.writes, second.options)).toBe(true)
+    expect(commitFamilySnapshot({ ...second.options, root: second.writes[0], child: second.writes[1] })).toBe(true)
     expect(writesInOrder.filter((key) => key === cacheStorageKey(second.pointerKey))).toHaveLength(1)
     expect(writesInOrder.at(-1)).toBe(cacheStorageKey(second.pointerKey))
     expect(loadCache(second.pointerKey)?.value).toMatchObject({

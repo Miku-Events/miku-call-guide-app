@@ -6,6 +6,7 @@ import {
   saveCache,
 } from './cacheStore'
 import { fetchCallGuideManifest, fetchEventCalendarIndex } from './fetchManifest'
+import { resetManifestSessionForTests } from './manifestFamily'
 import type { CallGuideManifest, EventCalendarIndex, RootManifest } from './types'
 
 const rootUrl = 'https://data.example.test/releases/manifest.json?channel=stable'
@@ -52,6 +53,7 @@ function response(value: unknown) {
 }
 
 afterEach(() => {
+  resetManifestSessionForTests()
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
