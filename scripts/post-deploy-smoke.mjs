@@ -2,8 +2,6 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 
-const DEFAULT_ATTEMPTS = 3
-const DEFAULT_RETRY_DELAY_MS = 500
 const DEFAULT_SMOKE_ATTEMPTS = 8
 const DEFAULT_SMOKE_RETRY_DELAY_MS = 5_000
 const DEFAULT_TIMEOUT_MS = 8_000
@@ -106,60 +104,35 @@ function requiredDeploymentOrigin(value, appOrigin) {
   return origin
 }
 
-function retryableStatus(status) {
-  return status === 429 || status >= 500
-}
-
-export async function fetchWithRetry(url, {
-  attempts = DEFAULT_ATTEMPTS,
+export async function fetchWithTimeout(url, {
   fetchImpl = globalThis.fetch,
   headers,
   redirect = 'follow',
-  retryDelayMs = DEFAULT_RETRY_DELAY_MS,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required')
-  if (!Number.isSafeInteger(attempts) || attempts < 1) throw new Error('attempts must be at least 1')
-
-  let lastError
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const controller = new AbortController()
-    const requestHeaders = new Headers(headers)
-    requestHeaders.set('accept', '*/*')
-    requestHeaders.set('cache-control', 'no-cache')
-    const timeout = setTimeout(() => {
-      controller.abort(new Error(`Request timed out after ${timeoutMs}ms`))
-    }, timeoutMs)
-    try {
-      const response = await fetchImpl(url, {
-        headers: requestHeaders,
-        redirect,
-        signal: controller.signal,
-      })
-      if (!retryableStatus(response.status) || attempt === attempts) {
-        return response
-      }
-      try {
-        await response.body?.cancel()
-      } catch {
-        // Draining a failed response is best-effort before retrying.
-      }
-      lastError = new Error(`HTTP ${response.status}`)
-    } catch (error) {
-      lastError = error
-      if (attempt === attempts) break
-    } finally {
-      clearTimeout(timeout)
-    }
-
-    if (retryDelayMs > 0) await wait(retryDelayMs)
+  const controller = new AbortController()
+  const requestHeaders = new Headers(headers)
+  requestHeaders.set('accept', '*/*')
+  requestHeaders.set('cache-control', 'no-cache')
+  const timeout = setTimeout(() => {
+    controller.abort(new Error(`Request timed out after ${timeoutMs}ms`))
+  }, timeoutMs)
+  try {
+    return await fetchImpl(url, {
+      headers: requestHeaders,
+      redirect,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`Request to ${url} failed: ${detail}`)
+  } finally {
+    clearTimeout(timeout)
   }
-
-  const detail = lastError instanceof Error ? lastError.message : String(lastError)
-  throw new Error(`Request to ${url} failed after ${attempts} attempts: ${detail}`)
 }
 
-async function retryCheck(check, { attempts, retryDelayMs }) {
+async function withPropagationRetry(check, { attempts, retryDelayMs }) {
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
     throw new Error('attempts must be at least 1')
   }
@@ -372,27 +345,13 @@ function validateManifest(value) {
 
 async function checkReleaseMarker(origin, label, expectedReleaseId, requestOptions) {
   const url = `${origin}/release.json?release=${encodeURIComponent(expectedReleaseId)}`
-  let lastError
-  for (let attempt = 1; attempt <= requestOptions.attempts; attempt += 1) {
-    try {
-      const response = await fetchWithRetry(url, { ...requestOptions, attempts: 1 })
-      assertStatus(response, [200], `${label} release marker`)
-      const marker = await readJsonObject(response, `${label} release marker`)
-      if (
-        Object.keys(marker).length !== 1
-        || marker.releaseId !== expectedReleaseId
-      ) {
-        throw new Error(`${label} release mismatch; expected ${expectedReleaseId}`)
-      }
-      return marker.releaseId
-    } catch (error) {
-      lastError = error
-    }
-    if (attempt < requestOptions.attempts && requestOptions.retryDelayMs > 0) {
-      await wait(requestOptions.retryDelayMs)
-    }
+  const response = await fetchWithTimeout(url, requestOptions)
+  assertStatus(response, [200], `${label} release marker`)
+  const marker = await readJsonObject(response, `${label} release marker`)
+  if (Object.keys(marker).length !== 1 || marker.releaseId !== expectedReleaseId) {
+    throw new Error(`${label} release mismatch; expected ${expectedReleaseId}`)
   }
-  throw lastError
+  return marker.releaseId
 }
 
 async function assertReadyResponse(response, label) {
@@ -408,7 +367,7 @@ async function assertReadyResponse(response, label) {
 }
 
 async function checkReadiness(origin, label, requestOptions) {
-  const response = await fetchWithRetry(`${origin}/api/ready`, requestOptions)
+  const response = await fetchWithTimeout(`${origin}/api/ready`, requestOptions)
   await assertReadyResponse(response, label)
   return response.status
 }
@@ -421,7 +380,7 @@ async function checkAppSurface(
   cspContext,
   requestOptions,
 ) {
-  const rootResponse = await fetchWithRetry(`${origin}/`, requestOptions)
+  const rootResponse = await fetchWithTimeout(`${origin}/`, requestOptions)
   assertStatus(rootResponse, [200], `${label} root`)
   assertSecurityHeaders(rootResponse.headers, `${label} root`, 'static', cspContext)
   const canonical = extractCanonical(await rootResponse.text())
@@ -467,7 +426,7 @@ export async function runPostDeploySmoke({
     : ''
   const normalizedReleaseId = requiredReleaseId(expectedReleaseId)
   const canonicalUrl = `${normalizedOrigin}/`
-  const requestOptions = { attempts: 1, fetchImpl, retryDelayMs: 0, timeoutMs }
+  const requestOptions = { fetchImpl, timeoutMs }
   const retryOptions = { attempts, retryDelayMs }
   const cspContext = {
     appOrigin: normalizedOrigin,
@@ -475,7 +434,7 @@ export async function runPostDeploySmoke({
     submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
   }
 
-  const deployment = await retryCheck(() => checkAppSurface(
+  const deployment = await withPropagationRetry(() => checkAppSurface(
     normalizedDeploymentOrigin,
     'Deployment',
     canonicalUrl,
@@ -483,7 +442,7 @@ export async function runPostDeploySmoke({
     cspContext,
     requestOptions,
   ), retryOptions)
-  const app = await retryCheck(() => checkAppSurface(
+  const app = await withPropagationRetry(() => checkAppSurface(
     normalizedOrigin,
     'Canonical app',
     canonicalUrl,
@@ -492,8 +451,8 @@ export async function runPostDeploySmoke({
     requestOptions,
   ), retryOptions)
 
-  const ogImage = await retryCheck(async () => {
-    const response = await fetchWithRetry(`${normalizedOrigin}/og-image.png`, requestOptions)
+  const ogImage = await withPropagationRetry(async () => {
+    const response = await fetchWithTimeout(`${normalizedOrigin}/og-image.png`, requestOptions)
     assertStatus(response, [200], 'OG image')
     const imageType = (response.headers.get('content-type') || '').toLowerCase()
     if (!imageType.startsWith('image/')) throw new Error('OG image must return an image content-type')
@@ -504,8 +463,8 @@ export async function runPostDeploySmoke({
     return { bytes, status: response.status }
   }, retryOptions)
 
-  const data = await retryCheck(async () => {
-    const response = await fetchWithRetry(normalizedManifestUrl, requestOptions)
+  const data = await withPropagationRetry(async () => {
+    const response = await fetchWithTimeout(normalizedManifestUrl, requestOptions)
     assertStatus(response, [200], 'Data manifest')
     const manifest = validateManifest(await readJsonObject(response, 'Data manifest'))
     return { manifest, status: response.status }

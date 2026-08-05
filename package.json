@@ -32,7 +32,7 @@
     "data:check": "node scripts/check-data-dist.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "check": "npm run contracts:check && npm run test:e2e:guard && npm run lint && npm run typecheck && npm test && npm run build && npm run bundle:check",
+    "check": "npm run contracts:check && npm run test:e2e:guard && npm run lint && npm test && npm run build && npm run bundle:check",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",

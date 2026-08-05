@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   assertFunctionSecurityHeaders,
   assertStaticSecurityHeaders,
-  fetchWithRetry,
+  fetchWithTimeout,
   runPostDeploySmoke,
 } from './post-deploy-smoke.mjs'
 
@@ -356,18 +356,16 @@ describe('post-deploy smoke', () => {
     expect(readinessAttempts).toBe(2)
   })
 
-  it('aborts timed-out attempts and reports the exhausted request', async () => {
+  it('aborts a timed-out request at the single fetch boundary', async () => {
     const fetchMock = vi.fn((_url, init) => new Promise((_resolve, reject) => {
       init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
     }))
 
-    await expect(fetchWithRetry('https://app.miku-events.dev/slow', {
-      attempts: 2,
+    await expect(fetchWithTimeout('https://app.miku-events.dev/slow', {
       fetchImpl: fetchMock,
-      retryDelayMs: 0,
       timeoutMs: 5,
-    })).rejects.toThrow(/failed after 2 attempts/i)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    })).rejects.toThrow(/Request to .* failed/i)
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
   it('requires both origins and the expected release before making requests', async () => {

@@ -5,6 +5,7 @@ import {
   formatPreviewSmokeReport,
   mainLandmarkLocator,
   PREVIEW_ROUTES,
+  waitForRouteReady,
 } from './preview-browser-smoke.mjs'
 
 describe('preview browser smoke diagnostics', () => {
@@ -27,16 +28,25 @@ describe('preview browser smoke diagnostics', () => {
     const dialogGetByRole = vi.fn(() => button)
     const dialog = { getByRole: dialogGetByRole, waitFor }
     const getByRole = vi.fn(() => dialog)
-    const waitForLoadState = vi.fn()
 
-    await acknowledgeInitialSpoilerDisclaimer({ getByRole, waitForLoadState })
+    await acknowledgeInitialSpoilerDisclaimer({ getByRole })
 
     expect(getByRole).toHaveBeenCalledWith('alertdialog', { name: '스포일러 안내' })
     expect(waitFor).toHaveBeenNthCalledWith(1, { state: 'visible' })
     expect(dialogGetByRole).toHaveBeenCalledWith('button', { name: '확인하고 계속하기' })
     expect(click).toHaveBeenCalledOnce()
     expect(waitFor).toHaveBeenNthCalledWith(2, { state: 'detached' })
-    expect(waitForLoadState).toHaveBeenCalledWith('networkidle')
+  })
+
+  it('polls semantic route readiness without fixed animation frames', async () => {
+    const waitFor = vi.fn()
+    const waitForFunction = vi.fn()
+    const page = { getByRole: vi.fn(() => ({ waitFor })), waitForFunction }
+
+    await waitForRouteReady(page)
+
+    expect(waitFor).toHaveBeenCalledWith({ state: 'visible' })
+    expect(waitForFunction).toHaveBeenCalledOnce()
   })
 
   it('records console diagnostics without treating them as promotion failures', () => {

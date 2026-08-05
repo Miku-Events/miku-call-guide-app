@@ -28,6 +28,11 @@ async function wranglerConfig() {
   return readFile(path.join(process.cwd(), 'wrangler.toml'), 'utf8')
 }
 
+function workflowActions(workflow) {
+  return [...workflow.matchAll(/^\s*-?\s*uses:\s+([^\s#]+)(?:\s+#\s*(\S+))?$/gm)]
+    .map(([, reference, version]) => ({ reference, version }))
+}
+
 describe('production deployment workflow', () => {
   it('deploys validated main pushes and supports an inputless manual rerun', async () => {
     const workflow = await deploymentWorkflow()
@@ -88,24 +93,29 @@ describe('production deployment workflow', () => {
     expect(workflow).not.toContain('environment: production')
   })
 
-  it('pins Node 24 actions, stable runners, and strict artifact digest verification', async () => {
+  it('structurally pins every action, stable runner, and artifact transfer', async () => {
     const workflow = await deploymentWorkflow()
-    const checkout =
-      'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'
-    const setupNode =
-      'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0'
-    const uploadArtifact =
-      'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1'
-    const downloadArtifact =
-      'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1'
+    const actions = workflowActions(workflow)
 
     expect(workflow.match(/runs-on: ubuntu-24\.04/g)).toHaveLength(5)
     expect(workflow).not.toContain('ubuntu-latest')
-    expect(workflow.split(checkout)).toHaveLength(6)
-    expect(workflow.split(setupNode)).toHaveLength(6)
-    expect(workflow.split(uploadArtifact)).toHaveLength(3)
-    expect(workflow.split(downloadArtifact)).toHaveLength(4)
-    expect(workflow.match(/digest-mismatch: error/g)).toHaveLength(3)
+    expect(actions.length).toBeGreaterThan(0)
+    expect(actions.every(({ reference }) => /@[0-9a-f]{40}$/.test(reference))).toBe(true)
+    expect(actions.every(({ version }) => /^v\d+(?:\.\d+){0,2}$/.test(version))).toBe(true)
+    expect(actions.filter(({ reference }) => reference.startsWith('actions/checkout@'))).toHaveLength(5)
+    const checkoutSteps = workflow.match(
+      /\n\s{6}- name: Checkout repository[\s\S]*?(?=\n\s{6}- name:|\n\s{2}\w+:|$)/g,
+    ) ?? []
+    expect(checkoutSteps).toHaveLength(5)
+    for (const checkout of checkoutSteps) expect(checkout).toContain('persist-credentials: false')
+    const downloads = workflow.match(
+      /\n\s{6}- name: Download (?:built|tested) app[\s\S]*?(?=\n\s{6}- name:|\n\s{2}\w+:|$)/g,
+    ) ?? []
+    expect(downloads).toHaveLength(3)
+    for (const download of downloads) {
+      expect(download).toContain('digest-mismatch: error')
+      expect(download).toContain('name: web-dist-${{ github.sha }}')
+    }
     expect(workflow).not.toContain('continue-on-error: true')
   })
 

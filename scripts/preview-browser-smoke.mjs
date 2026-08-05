@@ -17,7 +17,16 @@ export async function acknowledgeInitialSpoilerDisclaimer(page) {
   await dialog.waitFor({ state: 'visible' })
   await dialog.getByRole('button', { name: '확인하고 계속하기' }).click()
   await dialog.waitFor({ state: 'detached' })
-  await page.waitForLoadState('networkidle')
+}
+
+export async function waitForRouteReady(page) {
+  await mainLandmarkLocator(page).waitFor({ state: 'visible' })
+  await page.waitForFunction(() => {
+    const main = document.querySelector('[role="main"], main')
+    return Boolean(main)
+      && !main.querySelector('[aria-busy="true"]')
+      && !main.querySelector('.app-loading')
+  })
 }
 
 function requiredOrigin(value, name, { canonical = false } = {}) {
@@ -172,7 +181,7 @@ export async function runPreviewBrowserSmoke({
       const separator = route.includes('?') ? '&' : '?'
       const response = await page.goto(
         `${normalizedPreviewOrigin}${route}${separator}preview-smoke=${encodeURIComponent(normalizedReleaseId)}`,
-        { waitUntil: 'networkidle' },
+        { waitUntil: 'domcontentloaded' },
       )
       if (index === 0) {
         if (!response) throw new Error('Preview root did not return a navigation response')
@@ -184,10 +193,7 @@ export async function runPreviewBrowserSmoke({
         }, 'Preview root')
         await acknowledgeInitialSpoilerDisclaimer(page)
       }
-      await mainLandmarkLocator(page).waitFor({ state: 'visible' })
-      await page.evaluate(() => new Promise((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(resolve))
-      }))
+      await waitForRouteReady(page)
       const routeViolations = await page.evaluate(() => {
         const violations = globalThis.__mikuPreviewCspViolations || []
         globalThis.__mikuPreviewCspViolations = []

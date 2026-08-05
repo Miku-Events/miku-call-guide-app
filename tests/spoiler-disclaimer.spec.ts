@@ -4,7 +4,7 @@ import { expectLocatorMinTouchTarget, expectPageContained } from './fixtures/geo
 
 test.use({ spoilerDisclaimerAcknowledged: false })
 
-test('gates fresh touch visits accessibly and starts loading only after confirmation', { tag: '@mobile' }, async ({ page }) => {
+test('[SPO-M-01] gates fresh touch visits accessibly and starts loading only after confirmation', { tag: '@mobile' }, async ({ page }) => {
   const requests = {
     childManifest: 0,
     rootManifest: 0,
@@ -60,7 +60,7 @@ test('gates fresh touch visits accessibly and starts loading only after confirma
   expect(requests.song).toBe(0)
 })
 
-test('cannot be dismissed with Escape or a backdrop click', { tag: '@desktop' }, async ({ page }) => {
+test('[SPO-D-01] cannot be dismissed with Escape or a backdrop click', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
 
   const dialog = page.getByRole('alertdialog')
@@ -80,7 +80,7 @@ test('cannot be dismissed with Escape or a backdrop click', { tag: '@desktop' },
   await expect(dialog).toBeVisible()
 })
 
-test('persists confirmation and does not show the disclaimer after reload', { tag: '@desktop' }, async ({ page }) => {
+test('[SPO-D-02] persists confirmation and does not show the disclaimer after reload', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
 
   const dialog = page.getByRole('alertdialog')
@@ -97,7 +97,7 @@ test('persists confirmation and does not show the disclaimer after reload', { ta
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
 })
 
-test('gates a direct song deep link and resumes the original route after confirmation', { tag: '@desktop' }, async ({ page }) => {
+test('[SPO-D-03] gates a direct song deep link and resumes the original route after confirmation', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/songs/future-light-sample')
 
   await expect(page).toHaveURL(/#\/songs\/future-light-sample$/)
@@ -110,7 +110,7 @@ test('gates a direct song deep link and resumes the original route after confirm
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
 })
 
-test('continues for the current visit but asks again after a storage write failure', { tag: '@desktop' }, async ({ page }) => {
+test('[SPO-D-04] continues for the current visit but asks again after a storage write failure', { tag: '@desktop' }, async ({ page }) => {
   await page.addInitScript((storageKey) => {
     const nativeSetItem = Storage.prototype.setItem
     Storage.prototype.setItem = function setItem(key: string, value: string) {
