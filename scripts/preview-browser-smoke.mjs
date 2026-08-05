@@ -120,14 +120,23 @@ function assertStatus(response, expected, label) {
   }
 }
 
-export function assertSurfaceNavigation(response, pageUrl, surfaceOrigin, label) {
-  if (!response) throw new Error(`${label} did not return a navigation response`)
-  assertStatus(response, 200, label)
+export function assertSurfaceNavigation(
+  response,
+  pageUrl,
+  surfaceOrigin,
+  label,
+  { requireResponse = true } = {},
+) {
+  if (!response && requireResponse) {
+    throw new Error(`${label} did not return a navigation response`)
+  }
+  if (response) assertStatus(response, 200, label)
 
-  for (const [source, value] of [
-    ['response', response.url()],
+  const locations = [
+    ...(response ? [['response', response.url()]] : []),
     ['page', pageUrl],
-  ]) {
+  ]
+  for (const [source, value] of locations) {
     let actual
     try {
       actual = new URL(value)
@@ -213,7 +222,14 @@ export async function runBrowserSmoke({
         { waitUntil: 'domcontentloaded' },
       )
       const routeLabel = `${surfaceLabel} route ${route}`
-      assertSurfaceNavigation(response, page.url(), normalizedSurfaceOrigin, routeLabel)
+      const navigationOptions = { requireResponse: index === 0 }
+      assertSurfaceNavigation(
+        response,
+        page.url(),
+        normalizedSurfaceOrigin,
+        routeLabel,
+        navigationOptions,
+      )
       if (index === 0) {
         assertStaticSecurityHeaders(await responseHeaders(response), {
           appOrigin: normalizedAppOrigin,
@@ -223,7 +239,13 @@ export async function runBrowserSmoke({
         await acknowledgeInitialSpoilerDisclaimer(page)
       }
       await waitForRouteReady(page)
-      assertSurfaceNavigation(response, page.url(), normalizedSurfaceOrigin, routeLabel)
+      assertSurfaceNavigation(
+        response,
+        page.url(),
+        normalizedSurfaceOrigin,
+        routeLabel,
+        navigationOptions,
+      )
       const routeViolations = await page.evaluate(() => {
         const violations = globalThis.__mikuPreviewCspViolations || []
         globalThis.__mikuPreviewCspViolations = []

@@ -89,6 +89,25 @@ describe('preview browser smoke diagnostics', () => {
     )).not.toThrow()
   })
 
+  it('accepts a same-document hash navigation without an HTTP response', () => {
+    expect(() => assertSurfaceNavigation(
+      null,
+      'https://miku.sekai.today/#/songs/39-music',
+      'https://miku.sekai.today',
+      'Production route /#/songs/39-music',
+      { requireResponse: false },
+    )).not.toThrow()
+  })
+
+  it('still requires an HTTP response for the initial document navigation', () => {
+    expect(() => assertSurfaceNavigation(
+      null,
+      'https://miku.sekai.today/',
+      'https://miku.sekai.today',
+      'Production root',
+    )).toThrow(/did not return a navigation response/i)
+  })
+
   it.each([
     ['a redirect response', { status: () => 308, url: () => 'https://miku.sekai.today/' }, 'https://miku.sekai.today/', /HTTP 308/i],
     ['a response on another origin', { status: () => 200, url: () => 'https://miku-call-guide-app.pages.dev/' }, 'https://miku-call-guide-app.pages.dev/', /left requested origin/i],
