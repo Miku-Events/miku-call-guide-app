@@ -7,6 +7,7 @@ import {
 } from './post-deploy-smoke.mjs'
 
 const appOrigin = 'https://app.miku-events.dev'
+const legacyOrigin = 'https://miku.sekai.today'
 const deploymentOrigin = 'https://01234567.miku-call-guide-app.pages.dev'
 const manifestUrl = 'https://data.miku-events.dev/manifest.json'
 const releaseId = '0123456789abcdef0123456789abcdef01234567'
@@ -50,6 +51,10 @@ function releaseMarkerUrl(origin) {
   return `${origin}/release.json?release=${encodeURIComponent(releaseId)}`
 }
 
+function legacyRedirectUrl() {
+  return `${legacyOrigin}/?legacy-release=${encodeURIComponent(releaseId)}`
+}
+
 function successfulResponse(url) {
   if (url === `${appOrigin}/` || url === `${deploymentOrigin}/`) {
     return new Response([
@@ -75,6 +80,15 @@ function successfulResponse(url) {
       status: 200,
     })
   }
+  if (url === legacyRedirectUrl()) {
+    return new Response(null, {
+      headers: {
+        'cache-control': 'no-store',
+        location: `${appOrigin}/?legacy-release=${encodeURIComponent(releaseId)}`,
+      },
+      status: 308,
+    })
+  }
   if (url === manifestUrl) {
     return Response.json({
       schemaVersion: 1,
@@ -95,6 +109,7 @@ function smokeOptions(overrides = {}) {
     dataManifestUrl: manifestUrl,
     deploymentOrigin,
     expectedReleaseId: releaseId,
+    legacyAppOrigin: legacyOrigin,
     retryDelayMs: 0,
     ...overrides,
   }
@@ -241,6 +256,7 @@ describe('post-deploy smoke', () => {
       releaseMarkerUrl(appOrigin),
       `${appOrigin}/api/ready`,
       `${appOrigin}/og-image.png`,
+      legacyRedirectUrl(),
       manifestUrl,
     ]))
     expect(report).toMatchObject({
@@ -248,6 +264,7 @@ describe('post-deploy smoke', () => {
       data: { dataVersion: '20260713T0000', schemaVersion: 1 },
       deployment: { origin: deploymentOrigin, releaseId },
       readiness: { canonical: 200, deployment: 200 },
+      legacyRedirect: { origin: legacyOrigin, status: 308 },
       ogImage: { bytes: 12_000 },
     })
     const readinessCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/ready'))
@@ -255,6 +272,19 @@ describe('post-deploy smoke', () => {
     for (const [, init] of readinessCalls) {
       expect(new Headers(init?.headers).has('x-miku-expected-app-origin')).toBe(false)
     }
+    const legacyCall = fetchMock.mock.calls.find(([url]) => String(url) === legacyRedirectUrl())
+    expect(legacyCall?.[1]?.redirect).toBe('manual')
+  })
+
+  it('rejects a legacy origin that still serves HTML instead of redirecting', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === legacyRedirectUrl()
+        ? new Response('<!doctype html>', { status: 200 })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/Legacy application redirect.*200/i)
   })
 
   it('rejects a healthy previous release instead of producing a false positive', async () => {
@@ -377,6 +407,8 @@ describe('post-deploy smoke', () => {
       .rejects.toThrow('DEPLOYMENT_SMOKE_ORIGIN is required')
     await expect(runPostDeploySmoke(smokeOptions({ expectedReleaseId: '', fetchImpl: fetchMock })))
       .rejects.toThrow('EXPECTED_RELEASE_ID is required')
+    await expect(runPostDeploySmoke(smokeOptions({ legacyAppOrigin: '', fetchImpl: fetchMock })))
+      .rejects.toThrow('LEGACY_APP_ORIGIN is required')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

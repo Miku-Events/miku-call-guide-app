@@ -208,6 +208,7 @@ describe('production deployment workflow', () => {
 
     expect(workflow).toContain('VITE_RELEASE_ID=$GITHUB_SHA')
     expect(workflow).toContain('EXPECTED_RELEASE_ID: ${{ github.sha }}')
+    expect(workflow).toContain('LEGACY_APP_ORIGIN: https://miku.sekai.today')
     expect(workflow).not.toContain('inputs.')
   })
 

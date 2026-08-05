@@ -261,5 +261,6 @@ jobs:
           DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
           DEPLOYMENT_SMOKE_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}
           EXPECTED_RELEASE_ID: ${{ github.sha }}
+          LEGACY_APP_ORIGIN: https://miku.sekai.today
           SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
         run: npm run smoke:deploy
