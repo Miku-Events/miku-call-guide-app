@@ -42,10 +42,12 @@ const NOW = new Date('2026-07-10T00:00:00.000Z')
 const STRONG_SECRET = 'miku-call-guide-test-secret-32-bytes-minimum'
 const GLOBAL_SECRET = 'global-test-secret-that-is-also-long-enough'
 const CODE_VERIFIER = 'v'.repeat(43)
+const TEST_ORIGIN = 'https://app.example.test'
+const CUSTOM_ORIGIN = 'https://miku.example.test'
+const CALLBACK_URI = `${TEST_ORIGIN}/api/auth/github/callback`
 
 const testEnv: ApiEnvironment = {
   APP_ENV: 'test',
-  APP_ORIGIN: 'http://localhost:5173',
   GITHUB_OAUTH_CLIENT_ID: 'request-client-id',
   GITHUB_OAUTH_CLIENT_SECRET: 'request-client-secret',
   SESSION_SECRET: STRONG_SECRET,
@@ -54,7 +56,6 @@ const testEnv: ApiEnvironment = {
 const productionEnv: ApiEnvironment = {
   ...testEnv,
   APP_ENV: 'production',
-  APP_ORIGIN: 'https://miku.example.test',
 }
 
 const originalEnvironment = {
@@ -90,10 +91,12 @@ function makeTransactionCookie(
   state: string,
   env: ApiEnvironment = testEnv,
   timestamp = NOW.getTime(),
+  redirectUri = CALLBACK_URI,
 ): string {
   const value = signState({
     state,
     codeVerifier: CODE_VERIFIER,
+    redirectUri,
     ts: timestamp,
   }, env)
   const name = env.APP_ENV === 'production' || env.APP_ENV === 'preview'
@@ -213,6 +216,7 @@ describe('OAuth start', () => {
     const request = createRequest({
       env: productionEnv,
       query: { returnTo: '/events?view=month' },
+      url: `${CUSTOM_ORIGIN}/api/auth/github/start`,
     })
     const response = createResponse()
 
@@ -221,6 +225,9 @@ describe('OAuth start', () => {
     expect(response.statusCode).toBe(302)
     const location = new URL(String(response.redirectUrl))
     expect(location.searchParams.get('client_id')).toBe('request-client-id')
+    expect(location.searchParams.get('redirect_uri')).toBe(
+      `${CUSTOM_ORIGIN}/api/auth/github/callback`,
+    )
     expect(location.searchParams.get('state')).toBeTruthy()
     expect(location.searchParams.has('scope')).toBe(false)
     expect(location.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/)
@@ -234,8 +241,9 @@ describe('OAuth start', () => {
     const signedTransaction = cookies[0].split(';', 1)[0].split('=', 2)[1]
     const transaction = JSON.parse(
       Buffer.from(signedTransaction.split('.', 1)[0], 'base64url').toString('utf8'),
-    ) as { state: string; codeVerifier: string; ts: number }
+    ) as { state: string; codeVerifier: string; redirectUri: string; ts: number }
     expect(transaction).toMatchObject({
+      redirectUri: `${CUSTOM_ORIGIN}/api/auth/github/callback`,
       state: location.searchParams.get('state'),
       ts: NOW.getTime(),
     })
@@ -245,11 +253,9 @@ describe('OAuth start', () => {
     )
   })
 
-  it('uses the explicit environment when sanitizing return destinations', () => {
-    expect(safeReturnTo('https://miku.example.test/events', productionEnv)).toBe('/events')
-    expect(safeReturnTo('https://global.example.test/events', productionEnv)).toBe(
-      'https://miku.example.test',
-    )
+  it('uses the request origin when sanitizing return destinations', () => {
+    expect(safeReturnTo(`${CUSTOM_ORIGIN}/events`, CUSTOM_ORIGIN)).toBe('/events')
+    expect(safeReturnTo('https://global.example.test/events', CUSTOM_ORIGIN)).toBe('/')
   })
 })
 
@@ -343,6 +349,7 @@ describe('OAuth callback', () => {
       client_id: 'request-client-id',
       code: 'oauth-code',
       code_verifier: CODE_VERIFIER,
+      redirect_uri: CALLBACK_URI,
     })
 
     const cookies = getSetCookies(response)
@@ -351,6 +358,44 @@ describe('OAuth callback', () => {
       expect.stringMatching(/^miku_call_guide_oauth=; .*Max-Age=0/),
       expect.stringMatching(/^miku_call_guide_session=.*Max-Age=604800/),
     ]))
+  })
+
+  it.each([
+    'https://changed-domain.example/api/auth/github/callback',
+    'http://app.example.test/api/auth/github/callback',
+  ])('rejects a callback received on an unbound origin %s', async (url) => {
+    const fetchMock = stubSuccessfulGitHub()
+    const state = makeState()
+    const response = createResponse()
+
+    await callbackHandler(createRequest({
+      env: testEnv,
+      headers: { cookie: makeTransactionCookie(state) },
+      query: { code: 'oauth-code', state },
+      url,
+    }), response)
+
+    expect(response.statusCode).toBe(400)
+    expect(response.body).toEqual({
+      error: 'invalid_oauth_callback',
+      requestId: expect.any(String),
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects an insecure production OAuth start request', async () => {
+    const response = createResponse()
+
+    await startHandler(createRequest({
+      env: productionEnv,
+      url: 'http://miku.example.test/api/auth/github/start',
+    }), response)
+
+    expect(response.statusCode).toBe(503)
+    expect(response.body).toEqual({
+      error: 'github_oauth_not_configured',
+      requestId: expect.any(String),
+    })
   })
 
   it('returns a stable error and clears the transaction cookie when GitHub fails', async () => {

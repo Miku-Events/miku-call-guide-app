@@ -25,35 +25,6 @@ const officialTestSecrets = [
   '3x0000000000000000000000000000000AA',
 ]
 
-const invalidSecureHostnames = [
-  'localhost',
-  'api.localhost',
-  '127.0.0.1',
-  '::1',
-  'example.com',
-  'api.example.com',
-  'example.net',
-  'assets.example.org',
-  'miku.example',
-  'miku.invalid',
-  'miku.test',
-  'YOUR_APP.miku-events.dev',
-  'your-host.miku-events.dev',
-  'https://app.miku-events.dev',
-  'app.miku-events.dev/path',
-  'app.miku-events.dev:443',
-  'app..miku-events.dev',
-  '-app.miku-events.dev',
-  'app_.miku-events.dev',
-  'app.miku-events.dev.',
-  ' app.miku-events.dev',
-]
-
-const invalidSecureHostnameCases = (['preview', 'production'] as const)
-  .flatMap((appEnvironment) => (
-    invalidSecureHostnames.map((hostname) => [appEnvironment, hostname] as const)
-  ))
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -64,8 +35,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 function requestWithEnvironment(
   env: ApiEnvironment,
   headers: Record<string, string> = {},
+  origin = `https://${EXPECTED_HOSTNAME}`,
 ) {
-  return createRequest({ env, headers })
+  return createRequest({ env, headers, url: `${origin}/api/events/submissions` })
 }
 
 function verifyTurnstileToken(
@@ -120,10 +92,11 @@ describe('verifyTurnstileToken', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it.each(invalidSecureHostnameCases)(
-    'rejects %s hostname %s before calling Siteverify',
-    async (appEnvironment, hostname) => {
-      const fetchImpl = vi.fn(async () => successfulVerification('event_submit', hostname))
+  it.each(['preview', 'production'] as const)(
+    'derives the expected hostname from the %s request URL',
+    async (appEnvironment) => {
+      const customHostname = `${appEnvironment}.next-miku-domain.dev`
+      const fetchImpl = vi.fn(async () => successfulVerification('event_submit', customHostname))
       vi.stubGlobal('fetch', fetchImpl)
 
       const result = await verifyTurnstileToken(
@@ -131,18 +104,17 @@ describe('verifyTurnstileToken', () => {
         requestWithEnvironment({
           APP_ENV: appEnvironment,
           CLOUDFLARE_TURNSTILE_SECRET_KEY: REAL_SECRET,
-          TURNSTILE_EXPECTED_HOSTNAME: hostname,
-        }),
+          TURNSTILE_EXPECTED_HOSTNAME: 'stale-config.example',
+        }, {}, `https://${customHostname}`),
         'event_submit',
         { fetchImpl },
       )
 
-      expect(result).toBe(false)
-      expect(fetchImpl).not.toHaveBeenCalled()
+      expect(result).toBe(true)
     },
   )
 
-  it('canonicalizes a secure expected hostname to lowercase before exact comparison', async () => {
+  it('rejects an insecure request URL in a secure environment before Siteverify', async () => {
     const fetchImpl = vi.fn(async () => successfulVerification())
     vi.stubGlobal('fetch', fetchImpl)
 
@@ -151,13 +123,13 @@ describe('verifyTurnstileToken', () => {
       requestWithEnvironment({
         APP_ENV: 'production',
         CLOUDFLARE_TURNSTILE_SECRET_KEY: REAL_SECRET,
-        TURNSTILE_EXPECTED_HOSTNAME: EXPECTED_HOSTNAME.toUpperCase(),
-      }),
+      }, {}, `http://${EXPECTED_HOSTNAME}`),
       'event_submit',
       { fetchImpl },
     )
 
-    expect(result).toBe(true)
+    expect(result).toBe(false)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it.each([undefined, 'staging'])('rejects invalid APP_ENV %s without a network call', async (appEnvironment) => {
@@ -175,16 +147,13 @@ describe('verifyTurnstileToken', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['missing secret', { APP_ENV: 'production', TURNSTILE_EXPECTED_HOSTNAME: EXPECTED_HOSTNAME }],
-    ['missing hostname', { APP_ENV: 'preview', CLOUDFLARE_TURNSTILE_SECRET_KEY: REAL_SECRET }],
-  ])('fails closed in secure environments with %s', async (_label, env) => {
+  it('fails closed in secure environments with a missing secret', async () => {
     const fetchImpl = vi.fn(async () => successfulVerification())
     vi.stubGlobal('fetch', fetchImpl)
 
     const result = await verifyTurnstileToken(
       'valid-token',
-      requestWithEnvironment(env),
+      requestWithEnvironment({ APP_ENV: 'production' }),
       'event_submit',
       { fetchImpl },
     )
@@ -202,7 +171,6 @@ describe('verifyTurnstileToken', () => {
       requestWithEnvironment({
         APP_ENV: 'production',
         CLOUDFLARE_TURNSTILE_SECRET_KEY: secret,
-        TURNSTILE_EXPECTED_HOSTNAME: EXPECTED_HOSTNAME,
       }),
       'event_submit',
       { fetchImpl },
@@ -223,7 +191,6 @@ describe('verifyTurnstileToken', () => {
         requestWithEnvironment({
           APP_ENV: 'preview',
           CLOUDFLARE_TURNSTILE_SECRET_KEY: secret,
-          TURNSTILE_EXPECTED_HOSTNAME: EXPECTED_HOSTNAME,
         }),
         'event_submit',
         { fetchImpl },
@@ -262,7 +229,6 @@ describe('verifyTurnstileToken', () => {
       requestWithEnvironment({
         APP_ENV: 'production',
         CLOUDFLARE_TURNSTILE_SECRET_KEY: REAL_SECRET,
-        TURNSTILE_EXPECTED_HOSTNAME: EXPECTED_HOSTNAME,
       }),
       'event_submit',
       { fetchImpl },
@@ -297,7 +263,6 @@ describe('verifyTurnstileToken', () => {
       requestWithEnvironment({
         APP_ENV: 'production',
         CLOUDFLARE_TURNSTILE_SECRET_KEY: REAL_SECRET,
-        TURNSTILE_EXPECTED_HOSTNAME: EXPECTED_HOSTNAME,
       }),
       'event_submit',
       { fetchImpl },

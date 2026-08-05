@@ -3,7 +3,6 @@ import { pathToFileURL } from 'node:url'
 import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 
 const reservedExampleHosts = ['example.com', 'example.net', 'example.org', 'example.test']
-const PRODUCTION_APP_ORIGIN = 'https://miku-call-guide-app.pages.dev'
 const PRODUCTION_DATA_MANIFEST_URL = 'https://miku-call-guide-data.pages.dev/manifest.json'
 const officialTurnstileTestSiteKeys = new Set([
   '1x00000000000000000000AA',
@@ -72,9 +71,6 @@ export function validateProductionBuildEnv(environment) {
     || canonicalProductionOrigin(appOrigin) !== appOrigin
   ) {
     throw new Error('VITE_APP_ORIGIN must be an exact canonical HTTPS origin')
-  }
-  if (appOrigin !== PRODUCTION_APP_ORIGIN) {
-    throw new Error(`VITE_APP_ORIGIN must equal ${PRODUCTION_APP_ORIGIN}`)
   }
   const rawDataManifestUrl = String(environment.dataManifestUrl ?? '')
   const dataManifestUrl = validateUrl(

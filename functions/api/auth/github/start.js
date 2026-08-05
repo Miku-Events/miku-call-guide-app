@@ -1,21 +1,24 @@
-import { createApiHandler, HttpError, redirectResponse } from '../../../_lib/http.js'
+import {
+  createApiHandler,
+  HttpError,
+  redirectResponse,
+  runtimeRequestOrigin,
+} from '../../../_lib/http.js'
 import {
   createOAuthTransaction,
   setOAuthTransactionCookie,
 } from '../../../_lib/session.js'
 
-export function safeReturnTo(value, environment) {
-  const fallback = environment.APP_ORIGIN || '/'
-  if (typeof value !== 'string' || !value) return fallback
+export function safeReturnTo(value, origin) {
+  if (typeof value !== 'string' || !value) return '/'
 
   try {
-    const baseOrigin = new URL(environment.APP_ORIGIN || 'http://localhost').origin
-    const url = new URL(value, baseOrigin)
-    if (url.origin === baseOrigin) return url.pathname + url.search + url.hash
+    const url = new URL(value, origin)
+    if (url.origin === origin) return url.pathname + url.search + url.hash
   } catch {
-    return fallback
+    return '/'
   }
-  return fallback
+  return '/'
 }
 
 export const onRequest = createApiHandler({ method: 'GET' }, ({ request, env, headers }) => {
@@ -23,11 +26,15 @@ export const onRequest = createApiHandler({ method: 'GET' }, ({ request, env, he
   if (!clientId) throw new HttpError(503, 'github_oauth_not_configured')
 
   try {
-    const returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'), env)
-    const transaction = createOAuthTransaction(returnTo, env)
+    const origin = runtimeRequestOrigin(request, env)
+    if (!origin) throw new Error('Invalid request origin')
+    const redirectUri = new URL('/api/auth/github/callback', origin).toString()
+    const returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'), origin)
+    const transaction = createOAuthTransaction(returnTo, redirectUri, env)
     setOAuthTransactionCookie(headers, transaction, env)
     const url = new URL('https://github.com/login/oauth/authorize')
     url.searchParams.set('client_id', clientId)
+    url.searchParams.set('redirect_uri', redirectUri)
     url.searchParams.set('state', transaction.state)
     url.searchParams.set('code_challenge', transaction.codeChallenge)
     url.searchParams.set('code_challenge_method', 'S256')

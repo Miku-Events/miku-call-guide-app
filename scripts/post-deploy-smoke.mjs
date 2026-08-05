@@ -1,9 +1,6 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import {
-  canonicalProductionOrigin,
-  LEGACY_APP_ORIGINS,
-} from '../functions/_lib/productionHostname.js'
+import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 
 const DEFAULT_SMOKE_ATTEMPTS = 8
 const DEFAULT_SMOKE_RETRY_DELAY_MS = 5_000
@@ -103,14 +100,6 @@ function requiredDeploymentOrigin(value, appOrigin) {
     throw new Error(
       'DEPLOYMENT_SMOKE_ORIGIN must be an immutable Cloudflare deployment URL',
     )
-  }
-  return origin
-}
-
-function requiredLegacyOrigin(value, appOrigin) {
-  const origin = requiredUrl(value, 'LEGACY_APP_ORIGIN', { originOnly: true })
-  if (origin === appOrigin || !LEGACY_APP_ORIGINS.includes(origin)) {
-    throw new Error('LEGACY_APP_ORIGIN must be the registered legacy application origin')
   }
   return origin
 }
@@ -317,6 +306,90 @@ function extractCanonical(html) {
   return ''
 }
 
+function extractStaticAssets(html, origin, label) {
+  const references = []
+  for (const [tag] of html.matchAll(/<script\b[^>]*>/gi)) {
+    if (extractAttribute(tag, 'type').toLowerCase() !== 'module') continue
+    const source = extractAttribute(tag, 'src')
+    if (source) references.push({ kind: 'JavaScript', reference: source })
+  }
+  for (const [tag] of html.matchAll(/<link\b[^>]*>/gi)) {
+    const rel = extractAttribute(tag, 'rel').toLowerCase().split(/\s+/)
+    const reference = extractAttribute(tag, 'href')
+    if (rel.includes('stylesheet') && reference) {
+      references.push({ kind: 'CSS', reference })
+    }
+  }
+
+  const assets = []
+  for (const asset of references) {
+    let url
+    try {
+      url = new URL(asset.reference, `${origin}/`)
+    } catch {
+      throw new Error(`${label} ${asset.kind} asset URL is invalid`)
+    }
+    if (url.origin !== origin) {
+      if (asset.kind === 'CSS') continue
+      throw new Error(`${label} module entry asset must stay on ${origin}`)
+    }
+    assets.push({ kind: asset.kind, url: url.href })
+  }
+
+  if (!assets.some(({ kind }) => kind === 'JavaScript')) {
+    throw new Error(`${label} root is missing its module entry asset`)
+  }
+  if (!assets.some(({ kind }) => kind === 'CSS')) {
+    throw new Error(`${label} root is missing its stylesheet asset`)
+  }
+  return assets
+}
+
+function assertAssetMediaType(response, asset, label) {
+  const mediaType = (response.headers.get('content-type') || '').split(';', 1)[0].trim()
+  const valid = asset.kind === 'CSS'
+    ? mediaType.toLowerCase() === 'text/css'
+    : /^(?:application|text)\/(?:java|ecma)script$/i.test(mediaType)
+  if (!valid) {
+    throw new Error(
+      `${label} ${asset.kind} asset ${asset.url} returned ${mediaType || 'no content-type'}`,
+    )
+  }
+}
+
+function assertHtmlCacheControl(headers, label) {
+  const directives = new Set(
+    (headers.get('cache-control') || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  )
+  if (!directives.has('no-cache') || !directives.has('no-transform')) {
+    throw new Error(`${label} must use cache-control: no-cache, no-transform`)
+  }
+}
+
+async function checkStaticAssets(assets, label, requestOptions) {
+  for (const asset of assets) {
+    const response = await fetchWithTimeout(asset.url, requestOptions)
+    assertStatus(response, [200], `${label} ${asset.kind} asset`)
+    assertAssetMediaType(response, asset, label)
+  }
+  return assets.map(({ kind, url }) => ({ kind, url }))
+}
+
+async function checkMissingFingerprintAsset(
+  origin,
+  label,
+  expectedReleaseId,
+  requestOptions,
+) {
+  const url = `${origin}/assets/__missing-${encodeURIComponent(expectedReleaseId)}.js`
+  const response = await fetchWithTimeout(url, requestOptions)
+  assertStatus(response, [404], `${label} missing fingerprint asset`)
+  return { status: response.status, url }
+}
+
 async function readJsonObject(response, label) {
   const mediaType = (response.headers.get('content-type') || '').split(';', 1)[0].trim()
   if (!/^application\/(?:json|[a-z0-9!#$&^_.+-]+\+json)$/i.test(mediaType)) {
@@ -394,7 +467,9 @@ async function checkAppSurface(
   const rootResponse = await fetchWithTimeout(`${origin}/`, requestOptions)
   assertStatus(rootResponse, [200], `${label} root`)
   assertSecurityHeaders(rootResponse.headers, `${label} root`, 'static', cspContext)
-  const canonical = extractCanonical(await rootResponse.text())
+  assertHtmlCacheControl(rootResponse.headers, `${label} root`)
+  const html = await rootResponse.text()
+  const canonical = extractCanonical(html)
   let parsedCanonical
   try {
     parsedCanonical = new URL(canonical)
@@ -404,6 +479,17 @@ async function checkAppSurface(
   if (parsedCanonical.href !== canonicalUrl) {
     throw new Error(`${label} root canonical must equal ${canonicalUrl}; received ${parsedCanonical.href}`)
   }
+  const assets = await checkStaticAssets(
+    extractStaticAssets(html, origin, label),
+    label,
+    requestOptions,
+  )
+  const missingAsset = await checkMissingFingerprintAsset(
+    origin,
+    label,
+    expectedReleaseId,
+    requestOptions,
+  )
 
   const releaseId = await checkReleaseMarker(
     origin,
@@ -412,23 +498,14 @@ async function checkAppSurface(
     requestOptions,
   )
   const readiness = await checkReadiness(origin, label, requestOptions)
-  return { canonical: parsedCanonical.href, readiness, releaseId, status: rootResponse.status }
-}
-
-async function checkLegacyRedirect(legacyOrigin, appOrigin, expectedReleaseId, requestOptions) {
-  const path = `/?legacy-release=${encodeURIComponent(expectedReleaseId)}`
-  const response = await fetchWithTimeout(`${legacyOrigin}${path}`, {
-    ...requestOptions,
-    redirect: 'manual',
-  })
-  assertStatus(response, [308], 'Legacy application redirect')
-  if (response.headers.get('location') !== `${appOrigin}${path}`) {
-    throw new Error('Legacy application redirect did not target the canonical application origin')
+  return {
+    assets,
+    canonical: parsedCanonical.href,
+    missingAsset,
+    readiness,
+    releaseId,
+    status: rootResponse.status,
   }
-  if ((response.headers.get('cache-control') || '').toLowerCase() !== 'no-store') {
-    throw new Error('Legacy application redirect must not be cached')
-  }
-  return { origin: legacyOrigin, status: response.status }
 }
 
 export async function runPostDeploySmoke({
@@ -436,7 +513,6 @@ export async function runPostDeploySmoke({
   dataManifestUrl,
   deploymentOrigin,
   expectedReleaseId,
-  legacyAppOrigin,
   submissionApiUrl,
   fetchImpl = globalThis.fetch,
   attempts = DEFAULT_SMOKE_ATTEMPTS,
@@ -448,7 +524,6 @@ export async function runPostDeploySmoke({
     deploymentOrigin,
     normalizedOrigin,
   )
-  const normalizedLegacyOrigin = requiredLegacyOrigin(legacyAppOrigin, normalizedOrigin)
   const normalizedManifestUrl = requiredUrl(dataManifestUrl, 'DATA_MANIFEST_URL')
   const normalizedSubmissionUrl = submissionApiUrl
     ? requiredUrl(submissionApiUrl, 'SUBMISSION_API_URL')
@@ -456,6 +531,7 @@ export async function runPostDeploySmoke({
   const normalizedReleaseId = requiredReleaseId(expectedReleaseId)
   const canonicalUrl = `${normalizedOrigin}/`
   const requestOptions = { fetchImpl, timeoutMs }
+  const surfaceRequestOptions = { ...requestOptions, redirect: 'manual' }
   const retryOptions = { attempts, retryDelayMs }
   const cspContext = {
     appOrigin: normalizedOrigin,
@@ -469,25 +545,22 @@ export async function runPostDeploySmoke({
     canonicalUrl,
     normalizedReleaseId,
     cspContext,
-    requestOptions,
+    surfaceRequestOptions,
   ), retryOptions)
   const app = await withPropagationRetry(() => checkAppSurface(
     normalizedOrigin,
-    'Canonical app',
+    'Configured app',
     canonicalUrl,
     normalizedReleaseId,
     cspContext,
-    requestOptions,
-  ), retryOptions)
-  const legacyRedirect = await withPropagationRetry(() => checkLegacyRedirect(
-    normalizedLegacyOrigin,
-    normalizedOrigin,
-    normalizedReleaseId,
-    requestOptions,
+    surfaceRequestOptions,
   ), retryOptions)
 
   const ogImage = await withPropagationRetry(async () => {
-    const response = await fetchWithTimeout(`${normalizedOrigin}/og-image.png`, requestOptions)
+    const response = await fetchWithTimeout(
+      `${normalizedOrigin}/og-image.png`,
+      surfaceRequestOptions,
+    )
     assertStatus(response, [200], 'OG image')
     const imageType = (response.headers.get('content-type') || '').toLowerCase()
     if (!imageType.startsWith('image/')) throw new Error('OG image must return an image content-type')
@@ -507,7 +580,9 @@ export async function runPostDeploySmoke({
 
   return {
     app: {
+      assets: app.assets,
       canonical: app.canonical,
+      missingAsset: app.missingAsset,
       releaseId: app.releaseId,
       status: app.status,
     },
@@ -517,15 +592,16 @@ export async function runPostDeploySmoke({
       status: data.status,
     },
     deployment: {
+      assets: deployment.assets,
       origin: normalizedDeploymentOrigin,
+      missingAsset: deployment.missingAsset,
       releaseId: deployment.releaseId,
       status: deployment.status,
     },
     readiness: {
-      canonical: app.readiness,
+      app: app.readiness,
       deployment: deployment.readiness,
     },
-    legacyRedirect,
     ogImage,
   }
 }
@@ -534,9 +610,10 @@ export function formatSmokeReport(report) {
   return [
     'Post-deploy smoke: PASS',
     `- deployment: HTTP ${report.deployment.status}, release ${report.deployment.releaseId}, ${report.deployment.origin}`,
-    `- canonical app: HTTP ${report.app.status}, release ${report.app.releaseId}, ${report.app.canonical}`,
-    `- legacy redirect: HTTP ${report.legacyRedirect.status}, ${report.legacyRedirect.origin}`,
-    `- readiness: deployment HTTP ${report.readiness.deployment}, canonical HTTP ${report.readiness.canonical}`,
+    `- configured app: HTTP ${report.app.status}, release ${report.app.releaseId}, ${report.app.canonical}`,
+    `- static assets: deployment ${report.deployment.assets.length}, configured app ${report.app.assets.length}`,
+    `- missing asset guards: deployment HTTP ${report.deployment.missingAsset.status}, configured app HTTP ${report.app.missingAsset.status}`,
+    `- readiness: deployment HTTP ${report.readiness.deployment}, configured app HTTP ${report.readiness.app}`,
     `- OG image: HTTP ${report.ogImage.status}, ${report.ogImage.bytes} bytes`,
     `- data manifest: HTTP ${report.data.status}, schema ${report.data.schemaVersion}, version ${report.data.dataVersion}`,
   ].join('\n')
@@ -548,7 +625,6 @@ async function runCli() {
     dataManifestUrl: process.env.DATA_MANIFEST_URL,
     deploymentOrigin: process.env.DEPLOYMENT_SMOKE_ORIGIN,
     expectedReleaseId: process.env.EXPECTED_RELEASE_ID,
-    legacyAppOrigin: process.env.LEGACY_APP_ORIGIN,
     submissionApiUrl: process.env.SUBMISSION_API_URL,
   })
   process.stdout.write(`${formatSmokeReport(report)}\n`)

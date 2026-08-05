@@ -94,13 +94,30 @@ describe('validateProductionBuildEnv', () => {
     })).toThrow('VITE_CLOUDFLARE_TURNSTILE_SITE_KEY cannot contain YOUR_')
   })
 
-  it('rejects a valid HTTPS app origin other than the fixed production origin', () => {
+  it.each([
+    'https://alternate-miku-call-guide-app.pages.dev',
+    'https://miku.sekai.today',
+    'https://future.miku-events.dev',
+  ])('accepts the canonical non-reserved HTTPS app origin %s', (appOrigin) => {
+    expect(validateProductionBuildEnv({
+      ...validEnvironment,
+      appOrigin,
+    })).toEqual({
+      ...validEnvironment,
+      appOrigin,
+    })
+  })
+
+  it.each([
+    'https://localhost',
+    'https://127.0.0.1',
+    'https://example.com',
+    'https://app.example.test',
+  ])('rejects the reserved production app origin %s', (appOrigin) => {
     expect(() => validateProductionBuildEnv({
       ...validEnvironment,
-      appOrigin: 'https://alternate-miku-call-guide-app.pages.dev',
-    })).toThrow(
-      'VITE_APP_ORIGIN must equal https://miku-call-guide-app.pages.dev',
-    )
+      appOrigin,
+    })).toThrow()
   })
 
   it.each([
@@ -157,7 +174,7 @@ describe('validateProductionBuildEnv', () => {
     )
   })
 
-  it('accepts the fixed production values and an optional submission origin', () => {
+  it('accepts valid production values and an optional submission origin', () => {
     expect(validateProductionBuildEnv(validEnvironment)).toEqual(validEnvironment)
     expect(validateProductionBuildEnv({
       ...validEnvironment,

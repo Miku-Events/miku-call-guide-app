@@ -2,7 +2,7 @@ import { createPrivateKey, webcrypto } from 'node:crypto'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const SECRET = 'readiness-session-secret-that-is-long-enough'
-const APP_ORIGIN = 'https://miku-call-guide-app.pages.dev'
+const REQUEST_ORIGIN = 'https://miku-call-guide-app.pages.dev'
 const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
 const READINESS_CONTRACT_VERSION = 'runtime-config-v1'
 let pkcs1PrivateKeyPem = ''
@@ -16,7 +16,6 @@ function toPem(buffer: ArrayBuffer) {
 async function productionEnvironment(privateKey = pkcs8PrivateKeyPem) {
   return {
     APP_ENV: 'production',
-    APP_ORIGIN,
     CLOUDFLARE_TURNSTILE_SECRET_KEY: '0x4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     GITHUB_APP_ID: '123456',
     GITHUB_APP_INSTALLATION_ID: '987654',
@@ -26,17 +25,19 @@ async function productionEnvironment(privateKey = pkcs8PrivateKeyPem) {
     GITHUB_OAUTH_CLIENT_ID: 'oauth-client-id',
     GITHUB_OAUTH_CLIENT_SECRET: 'oauth-client-secret',
     SESSION_SECRET: SECRET,
-    TURNSTILE_EXPECTED_HOSTNAME: 'miku-call-guide-app.pages.dev',
   }
 }
 
-async function requestReadiness(environment: Record<string, unknown>) {
+async function requestReadiness(
+  environment: Record<string, unknown>,
+  origin = REQUEST_ORIGIN,
+) {
   const modulePath = '../../functions/api/ready.js'
   const { onRequest } = await import(/* @vite-ignore */ modulePath)
   return onRequest({
     env: environment,
     params: {},
-    request: new Request(`${APP_ORIGIN}/api/ready`),
+    request: new Request(`${origin}/api/ready`),
   })
 }
 
@@ -99,78 +100,18 @@ describe('production readiness endpoint', () => {
     expect(await response.json()).toEqual({ ready: true })
   })
 
-  it('rejects a different canonical APP_ORIGIN even when its Turnstile hostname matches', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const response = await requestReadiness({
-      ...await productionEnvironment(),
-      APP_ORIGIN: 'https://alternate-miku-call-guide-app.pages.dev',
-      TURNSTILE_EXPECTED_HOSTNAME: 'alternate-miku-call-guide-app.pages.dev',
-    })
-
-    expect(response.status).toBe(503)
-    expect(await response.json()).toEqual({
-      error: 'service_not_ready',
-      requestId: expect.any(String),
-    })
-    consoleError.mockRestore()
-  })
-
   it.each([
-    'https://miku-call-guide-app.pages.dev/',
-    'https://MIKU-CALL-GUIDE-APP.PAGES.DEV',
-    'https://miku-call-guide-app.pages.dev:443',
-    ' https://miku-call-guide-app.pages.dev',
-    'https://miku-call-guide-app.pages.dev ',
-  ])('rejects non-canonical production APP_ORIGIN %s without leaking it', async (appOrigin) => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const response = await requestReadiness({
-      ...await productionEnvironment(),
-      APP_ORIGIN: appOrigin,
-    })
-    const body = await response.json()
-
-    expect(response.status).toBe(503)
-    expect(body).toEqual({
-      error: 'service_not_ready',
-      requestId: expect.any(String),
-    })
-    expect(JSON.stringify(body)).not.toContain(appOrigin)
-    consoleError.mockRestore()
-  })
-
-  it('accepts a case-normalized Turnstile hostname like the verifier does', async () => {
-    const response = await requestReadiness({
-      ...await productionEnvironment(),
-      TURNSTILE_EXPECTED_HOSTNAME: 'MIKU-CALL-GUIDE-APP.PAGES.DEV',
-    })
+    'https://miku-call-guide-app.pages.dev',
+    'https://miku.sekai.today',
+    'https://next-custom-domain.example',
+  ])('is independent of the deployment request origin %s', async (origin) => {
+    const response = await requestReadiness(await productionEnvironment(), origin)
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ready: true })
   })
 
   it.each([
-    '192.0.2.1',
-    'example.com',
-    'your-app.invalid',
-    'placeholder.miku-events.dev',
-  ])('cannot report ready for hostname rejected by the Turnstile verifier: %s', async (hostname) => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const appOrigin = `https://${hostname}`
-    const response = await requestReadiness({
-      ...await productionEnvironment(),
-      APP_ORIGIN: appOrigin,
-      TURNSTILE_EXPECTED_HOSTNAME: hostname,
-    })
-
-    expect(response.status).toBe(503)
-    expect(await response.json()).toEqual({
-      error: 'service_not_ready',
-      requestId: expect.any(String),
-    })
-  })
-
-  it.each([
-    'APP_ORIGIN',
     'CLOUDFLARE_TURNSTILE_SECRET_KEY',
     'GITHUB_APP_ID',
     'GITHUB_APP_INSTALLATION_ID',
@@ -180,7 +121,6 @@ describe('production readiness endpoint', () => {
     'GITHUB_OAUTH_CLIENT_ID',
     'GITHUB_OAUTH_CLIENT_SECRET',
     'SESSION_SECRET',
-    'TURNSTILE_EXPECTED_HOSTNAME',
   ])('returns a standard non-leaking 503 when %s is missing', async (name) => {
     const environment = await productionEnvironment()
     delete environment[name as keyof typeof environment]
@@ -201,8 +141,6 @@ describe('production readiness endpoint', () => {
 
   it.each([
     ['a non-production APP_ENV', { APP_ENV: 'preview' }],
-    ['a non-origin APP_ORIGIN', { APP_ORIGIN: 'https://miku-call-guide-app.pages.dev/path' }],
-    ['an origin/Turnstile hostname mismatch', { TURNSTILE_EXPECTED_HOSTNAME: 'other.miku-events.dev' }],
     ['an invalid private key', { GITHUB_APP_PRIVATE_KEY: 'not-a-private-key' }],
   ])('fails closed for %s', async (_label, override) => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})

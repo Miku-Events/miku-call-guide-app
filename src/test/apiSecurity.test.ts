@@ -8,35 +8,28 @@ import { validateBody } from '../../functions/api/events/submissions.js'
 
 describe('API Security Tests', () => {
   describe('safeReturnTo', () => {
-    const localEnv = {}
+    const requestOrigin = 'http://localhost:5173'
 
     it('returns fallback when no value is provided', () => {
-      expect(safeReturnTo(null, localEnv)).toBe('/')
-      expect(safeReturnTo('', localEnv)).toBe('/')
+      expect(safeReturnTo(null, requestOrigin)).toBe('/')
+      expect(safeReturnTo('', requestOrigin)).toBe('/')
     })
 
     it('sanitizes Open Redirect bypass payloads containing backslashes', () => {
-      expect(safeReturnTo('/\\\\evil.com', localEnv)).toBe('/')
-      expect(safeReturnTo('/\\evil.com', localEnv)).toBe('/')
-      expect(safeReturnTo('\\\\evil.com', localEnv)).toBe('/')
+      expect(safeReturnTo('/\\\\evil.com', requestOrigin)).toBe('/')
+      expect(safeReturnTo('/\\evil.com', requestOrigin)).toBe('/')
+      expect(safeReturnTo('\\\\evil.com', requestOrigin)).toBe('/')
     })
 
-    it('allows valid relative paths when APP_ORIGIN is not set', () => {
-      expect(safeReturnTo('/events', localEnv)).toBe('/events')
-      expect(safeReturnTo('/events/submissions?query=1', localEnv)).toBe('/events/submissions?query=1')
+    it('allows valid relative paths on the request origin', () => {
+      expect(safeReturnTo('/events', requestOrigin)).toBe('/events')
+      expect(safeReturnTo('/events/submissions?query=1', requestOrigin)).toBe('/events/submissions?query=1')
     })
 
-    it('enforces same-origin redirects when APP_ORIGIN is set', () => {
-      const environment = { APP_ORIGIN: 'https://miku-app.com' }
-      
-      // Relative paths are allowed (resolved relative to APP_ORIGIN)
-      expect(safeReturnTo('/events', environment)).toBe('/events')
-      
-      // Absolute URLs matching APP_ORIGIN are resolved to relative paths
-      expect(safeReturnTo('https://miku-app.com/foo?bar=baz', environment)).toBe('/foo?bar=baz')
-      
-      // Absolute URLs of different origin are rejected
-      expect(safeReturnTo('https://evil.com/foo', environment)).toBe('https://miku-app.com')
+    it('enforces same-origin redirects for the current request host', () => {
+      expect(safeReturnTo('/events', 'https://miku-app.com')).toBe('/events')
+      expect(safeReturnTo('https://miku-app.com/foo?bar=baz', 'https://miku-app.com')).toBe('/foo?bar=baz')
+      expect(safeReturnTo('https://evil.com/foo', 'https://miku-app.com')).toBe('/')
     })
   })
 

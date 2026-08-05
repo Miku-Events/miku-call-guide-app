@@ -5,7 +5,8 @@ import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.
 import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
-export const PREVIEW_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
+export const BROWSER_SMOKE_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
+export const PREVIEW_ROUTES = BROWSER_SMOKE_ROUTES
 
 export function mainLandmarkLocator(page) {
   return page.getByRole('main')
@@ -29,7 +30,7 @@ export async function waitForRouteReady(page) {
   })
 }
 
-function requiredOrigin(value, name, { canonical = false } = {}) {
+function requiredOrigin(value, name, { requirePagesDev = false } = {}) {
   if (typeof value !== 'string' || value !== value.trim()) {
     throw new Error(`${name} must be an exact HTTPS origin`)
   }
@@ -50,8 +51,11 @@ function requiredOrigin(value, name, { canonical = false } = {}) {
   ) {
     throw new Error(`${name} must be an exact HTTPS origin`)
   }
-  if (canonical && canonicalProductionOrigin(value) !== value) {
-    throw new Error(`${name} must be an exact canonical HTTPS origin`)
+  if (canonicalProductionOrigin(value) !== value) {
+    throw new Error(`${name} must be an exact public HTTPS origin`)
+  }
+  if (requirePagesDev && !parsed.hostname.endsWith('.pages.dev')) {
+    throw new Error(`${name} must use a pages.dev hostname`)
   }
   return value
 }
@@ -98,7 +102,7 @@ export function assertNoBrowserSecurityErrors({
     ...pageErrors.map((value) => `page: ${detail(value)}`),
   ]
   if (failures.length > 0) {
-    throw new Error(`Preview browser smoke blocked promotion:\n${failures.join('\n')}`)
+    throw new Error(`Browser smoke blocked promotion:\n${failures.join('\n')}`)
   }
 }
 
@@ -116,12 +120,34 @@ function assertStatus(response, expected, label) {
   }
 }
 
-async function assertReleaseMarker(request, previewOrigin, expectedReleaseId) {
+export function assertSurfaceNavigation(response, pageUrl, surfaceOrigin, label) {
+  if (!response) throw new Error(`${label} did not return a navigation response`)
+  assertStatus(response, 200, label)
+
+  for (const [source, value] of [
+    ['response', response.url()],
+    ['page', pageUrl],
+  ]) {
+    let actual
+    try {
+      actual = new URL(value)
+    } catch {
+      throw new Error(`${label} ${source} URL must be absolute`)
+    }
+    if (actual.origin !== surfaceOrigin) {
+      throw new Error(
+        `${label} left requested origin ${surfaceOrigin}; ${source} URL was ${actual.href}`,
+      )
+    }
+  }
+}
+
+async function assertReleaseMarker(request, surfaceOrigin, expectedReleaseId, label) {
   const response = await request.get(
-    `${previewOrigin}/release.json?release=${encodeURIComponent(expectedReleaseId)}`,
+    `${surfaceOrigin}/release.json?release=${encodeURIComponent(expectedReleaseId)}`,
     { headers: { 'cache-control': 'no-cache' } },
   )
-  assertStatus(response, 200, 'Preview release marker')
+  assertStatus(response, 200, `${label} release marker`)
   const marker = await response.json()
   if (
     !marker
@@ -130,23 +156,26 @@ async function assertReleaseMarker(request, previewOrigin, expectedReleaseId) {
     || Object.keys(marker).length !== 1
     || marker.releaseId !== expectedReleaseId
   ) {
-    throw new Error('Preview release marker does not match the requested commit SHA')
+    throw new Error(`${label} release marker does not match the requested commit SHA`)
   }
 }
 
-export async function runPreviewBrowserSmoke({
+export async function runBrowserSmoke({
   appOrigin,
   browserType = chromium,
   dataManifestUrl,
   expectedReleaseId,
-  previewOrigin,
+  requirePagesDev = false,
+  surfaceLabel = 'Browser surface',
+  surfaceOrigin,
   submissionApiUrl = '',
 } = {}) {
-  const normalizedAppOrigin = requiredOrigin(appOrigin, 'APP_SMOKE_ORIGIN', { canonical: true })
-  const normalizedPreviewOrigin = requiredOrigin(previewOrigin, 'PREVIEW_SMOKE_ORIGIN')
-  if (!new URL(normalizedPreviewOrigin).hostname.endsWith('.pages.dev')) {
-    throw new Error('PREVIEW_SMOKE_ORIGIN must use a pages.dev hostname')
-  }
+  const normalizedAppOrigin = requiredOrigin(appOrigin, 'APP_SMOKE_ORIGIN')
+  const normalizedSurfaceOrigin = requiredOrigin(
+    surfaceOrigin,
+    'BROWSER_SMOKE_ORIGIN',
+    { requirePagesDev },
+  )
   const normalizedManifestUrl = requiredUrl(dataManifestUrl, 'DATA_MANIFEST_URL')
   const normalizedSubmissionUrl = requiredUrl(
     submissionApiUrl,
@@ -177,23 +206,24 @@ export async function runPreviewBrowserSmoke({
       })
     })
 
-    for (const [index, route] of PREVIEW_ROUTES.entries()) {
+    for (const [index, route] of BROWSER_SMOKE_ROUTES.entries()) {
       const separator = route.includes('?') ? '&' : '?'
       const response = await page.goto(
-        `${normalizedPreviewOrigin}${route}${separator}preview-smoke=${encodeURIComponent(normalizedReleaseId)}`,
+        `${normalizedSurfaceOrigin}${route}${separator}browser-smoke=${encodeURIComponent(normalizedReleaseId)}`,
         { waitUntil: 'domcontentloaded' },
       )
+      const routeLabel = `${surfaceLabel} route ${route}`
+      assertSurfaceNavigation(response, page.url(), normalizedSurfaceOrigin, routeLabel)
       if (index === 0) {
-        if (!response) throw new Error('Preview root did not return a navigation response')
-        assertStatus(response, 200, 'Preview root')
         assertStaticSecurityHeaders(await responseHeaders(response), {
           appOrigin: normalizedAppOrigin,
           dataOrigin: new URL(normalizedManifestUrl).origin,
           submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
-        }, 'Preview root')
+        }, `${surfaceLabel} root`)
         await acknowledgeInitialSpoilerDisclaimer(page)
       }
       await waitForRouteReady(page)
+      assertSurfaceNavigation(response, page.url(), normalizedSurfaceOrigin, routeLabel)
       const routeViolations = await page.evaluate(() => {
         const violations = globalThis.__mikuPreviewCspViolations || []
         globalThis.__mikuPreviewCspViolations = []
@@ -202,18 +232,33 @@ export async function runPreviewBrowserSmoke({
       cspViolations.push(...routeViolations.map((violation) => ({ route, ...violation })))
     }
     assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
-    await assertReleaseMarker(context.request, normalizedPreviewOrigin, normalizedReleaseId)
+    await assertReleaseMarker(
+      context.request,
+      normalizedSurfaceOrigin,
+      normalizedReleaseId,
+      surfaceLabel,
+    )
 
     return {
       callbackUrl: `${normalizedAppOrigin}/api/auth/github/callback`,
       consoleDiagnostics,
-      previewOrigin: normalizedPreviewOrigin,
       releaseId: normalizedReleaseId,
-      routes: [...PREVIEW_ROUTES],
+      routes: [...BROWSER_SMOKE_ROUTES],
+      surfaceLabel,
+      surfaceOrigin: normalizedSurfaceOrigin,
     }
   } finally {
     await browser.close()
   }
+}
+
+export function runPreviewBrowserSmoke({ previewOrigin, ...options } = {}) {
+  return runBrowserSmoke({
+    ...options,
+    requirePagesDev: true,
+    surfaceLabel: 'Preview',
+    surfaceOrigin: previewOrigin,
+  })
 }
 
 function formatConsoleDiagnostic(diagnostic) {
@@ -224,8 +269,8 @@ function formatConsoleDiagnostic(diagnostic) {
 
 export function formatPreviewSmokeReport(report) {
   return [
-    'Preview browser smoke: PASS',
-    `- preview: ${report.previewOrigin}`,
+    'Browser smoke: PASS',
+    `- ${String(report.surfaceLabel || 'surface').toLowerCase()}: ${report.surfaceOrigin}`,
     `- release: ${report.releaseId}`,
     `- routes: ${report.routes.join(', ')}`,
     `- console diagnostics: ${report.consoleDiagnostics.length}`,
@@ -235,11 +280,19 @@ export function formatPreviewSmokeReport(report) {
 }
 
 async function runCli() {
-  const report = await runPreviewBrowserSmoke({
+  const browserOrigin = process.env.BROWSER_SMOKE_ORIGIN
+  const previewOrigin = process.env.PREVIEW_SMOKE_ORIGIN
+  if (browserOrigin && previewOrigin && browserOrigin !== previewOrigin) {
+    throw new Error('BROWSER_SMOKE_ORIGIN and PREVIEW_SMOKE_ORIGIN must not conflict')
+  }
+  const isPreview = !browserOrigin
+  const report = await runBrowserSmoke({
     appOrigin: process.env.APP_SMOKE_ORIGIN,
     dataManifestUrl: process.env.DATA_MANIFEST_URL,
     expectedReleaseId: process.env.EXPECTED_RELEASE_ID,
-    previewOrigin: process.env.PREVIEW_SMOKE_ORIGIN,
+    requirePagesDev: isPreview,
+    surfaceLabel: isPreview ? 'Preview' : 'Production',
+    surfaceOrigin: browserOrigin || previewOrigin,
     submissionApiUrl: process.env.SUBMISSION_API_URL,
   })
   process.stdout.write(`${formatPreviewSmokeReport(report)}\n`)
@@ -249,7 +302,7 @@ const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1]
 if (invokedPath === import.meta.url) {
   runCli().catch((error) => {
     process.stderr.write(
-      `Preview browser smoke: FAIL\n${error instanceof Error ? error.message : String(error)}\n`,
+      `Browser smoke: FAIL\n${error instanceof Error ? error.message : String(error)}\n`,
     )
     process.exitCode = 1
   })

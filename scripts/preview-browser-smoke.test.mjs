@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   acknowledgeInitialSpoilerDisclaimer,
   assertNoBrowserSecurityErrors,
+  assertSurfaceNavigation,
+  BROWSER_SMOKE_ROUTES,
   formatPreviewSmokeReport,
   mainLandmarkLocator,
   PREVIEW_ROUTES,
@@ -11,6 +13,7 @@ import {
 describe('preview browser smoke diagnostics', () => {
   it('visits the catalog, events, and representative song routes', () => {
     expect(PREVIEW_ROUTES).toEqual(['/', '/#/events', '/#/songs/39-music'])
+    expect(BROWSER_SMOKE_ROUTES).toBe(PREVIEW_ROUTES)
   })
 
   it('locates the visible semantic main landmark instead of a main element tag', () => {
@@ -61,13 +64,42 @@ describe('preview browser smoke diagnostics', () => {
     const report = formatPreviewSmokeReport({
       callbackUrl: 'https://app.example/api/auth/github/callback',
       consoleDiagnostics: [{ type: 'warning', text: 'third-party warning' }],
-      previewOrigin: 'https://preview.pages.dev',
       releaseId: 'a'.repeat(40),
       routes: PREVIEW_ROUTES,
+      surfaceLabel: 'Production',
+      surfaceOrigin: 'https://miku.sekai.today',
     })
 
     expect(report).toContain('console diagnostics: 1')
     expect(report).toContain('[warning] third-party warning')
+    expect(report).toContain('production: https://miku.sekai.today')
+  })
+
+  it('accepts a 200 navigation that stays on the requested custom origin', () => {
+    const response = {
+      status: () => 200,
+      url: () => 'https://miku.sekai.today/',
+    }
+
+    expect(() => assertSurfaceNavigation(
+      response,
+      'https://miku.sekai.today/#/events',
+      'https://miku.sekai.today',
+      'Production route /#/events',
+    )).not.toThrow()
+  })
+
+  it.each([
+    ['a redirect response', { status: () => 308, url: () => 'https://miku.sekai.today/' }, 'https://miku.sekai.today/', /HTTP 308/i],
+    ['a response on another origin', { status: () => 200, url: () => 'https://miku-call-guide-app.pages.dev/' }, 'https://miku-call-guide-app.pages.dev/', /left requested origin/i],
+    ['a client-side origin change', { status: () => 200, url: () => 'https://miku.sekai.today/' }, 'https://miku-call-guide-app.pages.dev/', /left requested origin/i],
+  ])('rejects %s', (_label, response, pageUrl, expected) => {
+    expect(() => assertSurfaceNavigation(
+      response,
+      pageUrl,
+      'https://miku.sekai.today',
+      'Production root',
+    )).toThrow(expected)
   })
 
   it.each([
@@ -82,6 +114,6 @@ describe('preview browser smoke diagnostics', () => {
       pageErrors: ['Uncaught Error: render failed'],
     }],
   ])('blocks promotion for %s', (_label, diagnostics) => {
-    expect(() => assertNoBrowserSecurityErrors(diagnostics)).toThrow(/preview browser smoke/i)
+    expect(() => assertNoBrowserSecurityErrors(diagnostics)).toThrow(/browser smoke/i)
   })
 })

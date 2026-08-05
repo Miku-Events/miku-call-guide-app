@@ -1,8 +1,3 @@
-import {
-  canonicalProductionOrigin,
-  canonicalSecureHostname,
-  PRODUCTION_APP_ORIGIN,
-} from './productionHostname.js'
 import { importGitHubAppPrivateKey } from './github-private-key.js'
 
 const SESSION_SECRET_MINIMUM_BYTES = 32
@@ -38,15 +33,6 @@ function requiredValue(environment, name, { secret = false } = {}) {
   return value
 }
 
-function productionOrigin(environment) {
-  const value = requiredValue(environment, 'APP_ORIGIN')
-  const origin = canonicalProductionOrigin(value)
-  if (!origin || origin !== PRODUCTION_APP_ORIGIN) {
-    throw new Error('invalid_runtime_configuration')
-  }
-  return new URL(origin)
-}
-
 function validateSessionSecret(environment) {
   const value = requiredValue(environment, 'SESSION_SECRET', { secret: true })
   if (new TextEncoder().encode(value).byteLength < SESSION_SECRET_MINIMUM_BYTES) {
@@ -54,19 +40,9 @@ function validateSessionSecret(environment) {
   }
 }
 
-function validateTurnstile(environment, appOrigin) {
+function validateTurnstile(environment) {
   const secret = requiredValue(environment, 'CLOUDFLARE_TURNSTILE_SECRET_KEY', { secret: true })
   if (OFFICIAL_TURNSTILE_TEST_SECRETS.has(secret)) {
-    throw new Error('invalid_runtime_configuration')
-  }
-
-  const hostname = canonicalSecureHostname(
-    requiredValue(environment, 'TURNSTILE_EXPECTED_HOSTNAME'),
-  )
-  if (
-    !hostname
-    || hostname !== appOrigin.hostname.toLowerCase()
-  ) {
     throw new Error('invalid_runtime_configuration')
   }
 }
@@ -110,9 +86,8 @@ export async function parseRuntimeConfig(environment, mode = 'service') {
     throw new Error('invalid_runtime_configuration')
   }
 
-  const appOrigin = productionOrigin(environment)
   validateSessionSecret(environment)
-  validateTurnstile(environment, appOrigin)
+  validateTurnstile(environment)
   await validateGitHub(environment)
   return environment
 }

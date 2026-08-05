@@ -156,7 +156,7 @@ export function createState(returnTo, environment) {
   }, environment)
 }
 
-export function createOAuthTransaction(returnTo, environment) {
+export function createOAuthTransaction(returnTo, redirectUri, environment) {
   const ts = Date.now()
   const state = signState({
     nonce: randomBytes(32).toString('base64url'),
@@ -168,13 +168,14 @@ export function createOAuthTransaction(returnTo, environment) {
     .update(codeVerifier)
     .digest('base64url')
 
-  return { codeChallenge, codeVerifier, state, ts }
+  return { codeChallenge, codeVerifier, redirectUri, state, ts }
 }
 
 export function setOAuthTransactionCookie(headers, transaction, environment) {
   const value = signState({
     state: transaction.state,
     codeVerifier: transaction.codeVerifier,
+    redirectUri: transaction.redirectUri,
     ts: transaction.ts,
   }, environment)
   appendSetCookie(
@@ -191,6 +192,7 @@ export function readOAuthTransaction(request, environment) {
     || !hasValidTimestamp(transaction, OAUTH_TTL_MS)
     || typeof transaction.state !== 'string'
     || !/^[A-Za-z0-9._~-]{43,128}$/.test(transaction.codeVerifier || '')
+    || typeof transaction.redirectUri !== 'string'
   ) {
     return null
   }
