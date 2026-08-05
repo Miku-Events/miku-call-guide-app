@@ -1,26 +1,12 @@
-import {
-  LEGACY_APP_ORIGINS,
-  PRODUCTION_APP_ORIGIN,
-} from './_lib/productionHostname.js'
-
-const legacyHostnames = new Set(LEGACY_APP_ORIGINS.map((origin) => new URL(origin).hostname))
-
 export async function onRequest(context) {
-  const requestUrl = new URL(context.request.url)
-  if (!legacyHostnames.has(requestUrl.hostname)) {
-    return context.next()
+  const response = await context.next()
+  const contentType = response.headers.get('content-type') ?? ''
+  const mediaType = contentType.split(';', 1)[0].trim().toLowerCase()
+  if (mediaType !== 'text/html') {
+    return response
   }
 
-  const destination = new URL(requestUrl.pathname + requestUrl.search, PRODUCTION_APP_ORIGIN)
-  return new Response(null, {
-    status: 308,
-    headers: {
-      'cache-control': 'no-store',
-      location: destination.toString(),
-      'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-      'referrer-policy': 'strict-origin-when-cross-origin',
-      'strict-transport-security': 'max-age=31536000',
-      'x-content-type-options': 'nosniff',
-    },
-  })
+  const htmlResponse = new Response(response.body, response)
+  htmlResponse.headers.set('cache-control', 'no-cache, no-transform')
+  return htmlResponse
 }

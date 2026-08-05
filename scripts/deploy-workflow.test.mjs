@@ -208,23 +208,36 @@ describe('production deployment workflow', () => {
 
     expect(workflow).toContain('VITE_RELEASE_ID=$GITHUB_SHA')
     expect(workflow).toContain('EXPECTED_RELEASE_ID: ${{ github.sha }}')
-    expect(workflow).toContain('LEGACY_APP_ORIGIN: https://miku.sekai.today')
+    expect(workflow).not.toContain('LEGACY_APP_ORIGIN')
     expect(workflow).not.toContain('inputs.')
   })
 
-  it('publishes without a current-production readiness preflight or bootstrap bypass', async () => {
+  it('publishes without a hostname reconciliation or bootstrap bypass', async () => {
     const workflow = await deploymentWorkflow()
-    const reconcile = workflow.indexOf('name: Reconcile legacy Pages runtime binding')
     const publish = workflow.indexOf('name: Publish to Cloudflare Pages')
 
-    expect(reconcile).toBeGreaterThan(-1)
     expect(publish).toBeGreaterThan(-1)
-    expect(reconcile).toBeLessThan(publish)
-    expect(workflow).toContain('node scripts/reconcile-pages-config.mjs')
-    expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}')
-    expect(workflow).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}')
+    expect(workflow).not.toContain('Reconcile legacy Pages runtime binding')
+    expect(workflow).not.toContain('reconcile-pages-config.mjs')
     expect(workflow).not.toContain('pre-deploy-readiness.mjs')
     expect(workflow).not.toContain('READINESS_BOOTSTRAP_MODE')
+  })
+
+  it('browser-smokes the configured production origin in place after publishing', async () => {
+    const workflow = await deploymentWorkflow()
+    const deployJob = workflow.slice(workflow.indexOf('\n  deploy:'))
+    const publish = deployJob.indexOf('name: Publish to Cloudflare Pages')
+    const browserSmoke = deployJob.indexOf('name: Browser-smoke custom production origin')
+    const httpSmoke = deployJob.indexOf('name: Smoke deployed app and data')
+
+    expect(publish).toBeGreaterThan(-1)
+    expect(httpSmoke).toBeGreaterThan(publish)
+    expect(browserSmoke).toBeGreaterThan(httpSmoke)
+    expect(deployJob).toContain(
+      'BROWSER_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}',
+    )
+    expect(deployJob).toContain('run: npm run smoke:browser')
+    expect(deployJob).toContain('npx playwright install --with-deps chromium')
   })
 
   it('uses the canonical Pages data manifest in the environment example', async () => {
@@ -237,16 +250,12 @@ describe('production deployment workflow', () => {
     expect(environment).not.toContain('@release/manifest.json')
   })
 
-  it('declares the canonical production origin and Turnstile hostname in Pages runtime config', async () => {
+  it('keeps Pages runtime configuration independent of public hostnames', async () => {
     const wrangler = await wranglerConfig()
 
     expect(wrangler).toContain('APP_ENV = "production"')
-    expect(wrangler).toContain(
-      'APP_ORIGIN = "https://miku-call-guide-app.pages.dev"',
-    )
-    expect(wrangler).toContain(
-      'TURNSTILE_EXPECTED_HOSTNAME = "miku-call-guide-app.pages.dev"',
-    )
+    expect(wrangler).not.toContain('APP_ORIGIN')
+    expect(wrangler).not.toContain('TURNSTILE_EXPECTED_HOSTNAME')
   })
 
   it('documents automatic main releases and manual reruns without stale guards', async () => {

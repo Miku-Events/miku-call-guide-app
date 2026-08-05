@@ -5,8 +5,6 @@ compatibility_flags = [ "nodejs_compat" ]
 
 [vars]
 APP_ENV = "production"
-APP_ORIGIN = "https://miku-call-guide-app.pages.dev"
-TURNSTILE_EXPECTED_HOSTNAME = "miku-call-guide-app.pages.dev"
 GITHUB_DATA_OWNER = "Miku-Events"
 GITHUB_DATA_REPO = "miku-call-guide-data"
 GITHUB_DATA_BASE_BRANCH = "main"

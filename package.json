@@ -38,6 +38,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test --config=playwright.ci.config.ts",
     "test:e2e:guard": "node scripts/check-e2e-source.mjs",
+    "smoke:browser": "node scripts/preview-browser-smoke.mjs",
     "smoke:deploy": "node scripts/post-deploy-smoke.mjs",
     "smoke:preview": "node scripts/preview-browser-smoke.mjs"
   },

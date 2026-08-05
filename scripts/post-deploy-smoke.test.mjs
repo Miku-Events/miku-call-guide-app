@@ -7,13 +7,13 @@ import {
 } from './post-deploy-smoke.mjs'
 
 const appOrigin = 'https://app.miku-events.dev'
-const legacyOrigin = 'https://miku.sekai.today'
 const deploymentOrigin = 'https://01234567.miku-call-guide-app.pages.dev'
 const manifestUrl = 'https://data.miku-events.dev/manifest.json'
 const releaseId = '0123456789abcdef0123456789abcdef01234567'
 const readinessContractHeader = 'x-miku-readiness-contract'
 const readinessContractVersion = 'runtime-config-v1'
 const staticSecurityHeaders = {
+  'cache-control': 'no-cache, no-transform',
   'content-security-policy': [
     "default-src 'self'",
     "base-uri 'self'",
@@ -51,8 +51,16 @@ function releaseMarkerUrl(origin) {
   return `${origin}/release.json?release=${encodeURIComponent(releaseId)}`
 }
 
-function legacyRedirectUrl() {
-  return `${legacyOrigin}/?legacy-release=${encodeURIComponent(releaseId)}`
+function scriptUrl(origin) {
+  return `${origin}/assets/index-smoke.js`
+}
+
+function stylesheetUrl(origin) {
+  return `${origin}/assets/index-smoke.css`
+}
+
+function missingAssetUrl(origin) {
+  return `${origin}/assets/__missing-${encodeURIComponent(releaseId)}.js`
 }
 
 function successfulResponse(url) {
@@ -60,6 +68,9 @@ function successfulResponse(url) {
     return new Response([
       '<!doctype html>',
       `<link rel="canonical" href="${appOrigin}/">`,
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Outfit">',
+      '<link rel="stylesheet" href="/assets/index-smoke.css">',
+      '<script type="module" src="/assets/index-smoke.js"></script>',
     ].join('\n'), {
       headers: staticSecurityHeaders,
       status: 200,
@@ -67,6 +78,24 @@ function successfulResponse(url) {
   }
   if (url === releaseMarkerUrl(appOrigin) || url === releaseMarkerUrl(deploymentOrigin)) {
     return Response.json({ releaseId })
+  }
+  if (url === scriptUrl(appOrigin) || url === scriptUrl(deploymentOrigin)) {
+    return new Response('export {}', {
+      headers: { 'content-type': 'text/javascript; charset=utf-8' },
+      status: 200,
+    })
+  }
+  if (url === stylesheetUrl(appOrigin) || url === stylesheetUrl(deploymentOrigin)) {
+    return new Response('body {}', {
+      headers: { 'content-type': 'text/css; charset=utf-8' },
+      status: 200,
+    })
+  }
+  if (url === missingAssetUrl(appOrigin) || url === missingAssetUrl(deploymentOrigin)) {
+    return new Response('<!doctype html><title>Not found</title>', {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+      status: 404,
+    })
   }
   if (url === `${appOrigin}/api/ready` || url === `${deploymentOrigin}/api/ready`) {
     return Response.json({ ready: true }, {
@@ -78,15 +107,6 @@ function successfulResponse(url) {
     return new Response(new Uint8Array(12_000), {
       headers: { 'content-type': 'image/png' },
       status: 200,
-    })
-  }
-  if (url === legacyRedirectUrl()) {
-    return new Response(null, {
-      headers: {
-        'cache-control': 'no-store',
-        location: `${appOrigin}/?legacy-release=${encodeURIComponent(releaseId)}`,
-      },
-      status: 308,
     })
   }
   if (url === manifestUrl) {
@@ -109,7 +129,6 @@ function smokeOptions(overrides = {}) {
     dataManifestUrl: manifestUrl,
     deploymentOrigin,
     expectedReleaseId: releaseId,
-    legacyAppOrigin: legacyOrigin,
     retryDelayMs: 0,
     ...overrides,
   }
@@ -250,21 +269,35 @@ describe('post-deploy smoke', () => {
 
     expect(new Set(fetchMock.mock.calls.map(([url]) => String(url)))).toEqual(new Set([
       `${deploymentOrigin}/`,
+      scriptUrl(deploymentOrigin),
+      stylesheetUrl(deploymentOrigin),
+      missingAssetUrl(deploymentOrigin),
       releaseMarkerUrl(deploymentOrigin),
       `${deploymentOrigin}/api/ready`,
       `${appOrigin}/`,
+      scriptUrl(appOrigin),
+      stylesheetUrl(appOrigin),
+      missingAssetUrl(appOrigin),
       releaseMarkerUrl(appOrigin),
       `${appOrigin}/api/ready`,
       `${appOrigin}/og-image.png`,
-      legacyRedirectUrl(),
       manifestUrl,
     ]))
     expect(report).toMatchObject({
-      app: { canonical: `${appOrigin}/`, releaseId },
+      app: {
+        assets: [{ kind: 'JavaScript' }, { kind: 'CSS' }],
+        canonical: `${appOrigin}/`,
+        missingAsset: { status: 404 },
+        releaseId,
+      },
       data: { dataVersion: '20260713T0000', schemaVersion: 1 },
-      deployment: { origin: deploymentOrigin, releaseId },
-      readiness: { canonical: 200, deployment: 200 },
-      legacyRedirect: { origin: legacyOrigin, status: 308 },
+      deployment: {
+        assets: [{ kind: 'JavaScript' }, { kind: 'CSS' }],
+        missingAsset: { status: 404 },
+        origin: deploymentOrigin,
+        releaseId,
+      },
+      readiness: { app: 200, deployment: 200 },
       ogImage: { bytes: 12_000 },
     })
     const readinessCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/ready'))
@@ -272,19 +305,97 @@ describe('post-deploy smoke', () => {
     for (const [, init] of readinessCalls) {
       expect(new Headers(init?.headers).has('x-miku-expected-app-origin')).toBe(false)
     }
-    const legacyCall = fetchMock.mock.calls.find(([url]) => String(url) === legacyRedirectUrl())
-    expect(legacyCall?.[1]?.redirect).toBe('manual')
+    const surfaceCalls = fetchMock.mock.calls.filter(([url]) => String(url) !== manifestUrl)
+    expect(surfaceCalls).not.toHaveLength(0)
+    for (const [, init] of surfaceCalls) {
+      expect(init?.redirect).toBe('manual')
+    }
   })
 
-  it('rejects a legacy origin that still serves HTML instead of redirecting', async () => {
+  it('rejects a redirect from the configured app surface', async () => {
     const fetchMock = vi.fn(async (url) => (
-      String(url) === legacyRedirectUrl()
-        ? new Response('<!doctype html>', { status: 200 })
+      String(url) === `${appOrigin}/`
+        ? new Response(null, {
+          headers: { location: 'https://miku-call-guide-app.pages.dev/' },
+          status: 308,
+        })
         : successfulResponse(String(url))
     ))
 
     await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
-      .rejects.toThrow(/Legacy application redirect.*200/i)
+      .rejects.toThrow(/Configured app root.*308/i)
+    const appCall = fetchMock.mock.calls.find(([url]) => String(url) === `${appOrigin}/`)
+    expect(appCall?.[1]?.redirect).toBe('manual')
+  })
+
+  it.each([
+    ['JavaScript', scriptUrl(appOrigin), 'text/html'],
+    ['CSS', stylesheetUrl(appOrigin), 'text/html'],
+  ])('rejects an HTML fallback for the configured %s asset', async (
+    _kind,
+    failedUrl,
+    contentType,
+  ) => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === failedUrl
+        ? new Response('<!doctype html>', {
+          headers: { 'content-type': contentType },
+          status: 200,
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/asset.*text\/html/i)
+  })
+
+  it('rejects a root document without emitted JavaScript and CSS assets', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === `${deploymentOrigin}/`
+        ? new Response(`<link rel="canonical" href="${appOrigin}/">`, {
+          headers: staticSecurityHeaders,
+          status: 200,
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/missing its module entry asset/i)
+  })
+
+  it('rejects an HTML document without cache-control transform protection', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === `${appOrigin}/`
+        ? new Response([
+          `<link rel="canonical" href="${appOrigin}/">`,
+          '<link rel="stylesheet" href="/assets/index-smoke.css">',
+          '<script type="module" src="/assets/index-smoke.js"></script>',
+        ].join('\n'), {
+          headers: {
+            ...staticSecurityHeaders,
+            'cache-control': 'no-cache',
+          },
+          status: 200,
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/cache-control: no-cache, no-transform/i)
+  })
+
+  it('rejects a successful HTML fallback for a missing fingerprint asset', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === missingAssetUrl(appOrigin)
+        ? new Response('<!doctype html>', {
+          headers: { 'content-type': 'text/html' },
+          status: 200,
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/missing fingerprint asset.*200/i)
   })
 
   it('rejects a healthy previous release instead of producing a false positive', async () => {
@@ -407,8 +518,6 @@ describe('post-deploy smoke', () => {
       .rejects.toThrow('DEPLOYMENT_SMOKE_ORIGIN is required')
     await expect(runPostDeploySmoke(smokeOptions({ expectedReleaseId: '', fetchImpl: fetchMock })))
       .rejects.toThrow('EXPECTED_RELEASE_ID is required')
-    await expect(runPostDeploySmoke(smokeOptions({ legacyAppOrigin: '', fetchImpl: fetchMock })))
-      .rejects.toThrow('LEGACY_APP_ORIGIN is required')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

@@ -16,6 +16,26 @@ function requiredEnv(name, environment) {
   }
   return value
 }
+
+function oauthRedirectUri(value) {
+  try {
+    const url = new URL(value)
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:')
+      || url.username
+      || url.password
+      || url.pathname !== '/api/auth/github/callback'
+      || url.search
+      || url.hash
+      || url.toString() !== value
+    ) {
+      throw new Error('Invalid OAuth redirect URI')
+    }
+    return value
+  } catch {
+    throw new HttpError(503, 'github_oauth_not_configured')
+  }
+}
  
 function base64UrlJson(value) {
   const jsonStr = JSON.stringify(value)
@@ -191,7 +211,8 @@ export async function installationToken(environment) {
   return result.token
 }
 
-export async function exchangeOAuthCode(code, codeVerifier, environment) {
+export async function exchangeOAuthCode(code, codeVerifier, redirectUri, environment) {
+  const callbackUrl = oauthRedirectUri(redirectUri)
   return withTimeout(undefined, async (signal) => {
     const response = await fetch('https://github.com/login/oauth/access_token', {
       body: JSON.stringify({
@@ -199,6 +220,7 @@ export async function exchangeOAuthCode(code, codeVerifier, environment) {
         client_secret: requiredEnv('GITHUB_OAUTH_CLIENT_SECRET', environment),
         code,
         code_verifier: codeVerifier,
+        redirect_uri: callbackUrl,
       }),
       headers: {
         accept: 'application/json',

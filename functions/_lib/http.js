@@ -31,6 +31,31 @@ function responseHeaders(headers) {
   return headers instanceof Headers ? headers : new Headers(headers)
 }
 
+export function requestOrigin(request) {
+  try {
+    const url = new URL(request.url)
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:')
+      || url.username
+      || url.password
+    ) {
+      return ''
+    }
+    return url.origin
+  } catch {
+    return ''
+  }
+}
+
+export function runtimeRequestOrigin(request, environment) {
+  const origin = requestOrigin(request)
+  if (!origin) return ''
+
+  const secureEnvironment = environment?.APP_ENV === 'preview'
+    || environment?.APP_ENV === 'production'
+  return !secureEnvironment || new URL(origin).protocol === 'https:' ? origin : ''
+}
+
 export function jsonResponse(body, status = 200, headers) {
   const resultHeaders = responseHeaders(headers)
   resultHeaders.set('content-type', 'application/json')
@@ -130,8 +155,24 @@ function applyApiHeaders(response, request, environment, requestId, method) {
   response.headers.set('access-control-allow-methods', 'GET,POST,OPTIONS')
 
   const origin = request.headers.get('origin') || ''
-  if (environment.APP_ORIGIN && origin === environment.APP_ORIGIN) {
-    response.headers.set('access-control-allow-origin', environment.APP_ORIGIN)
+  const requestUrlOrigin = runtimeRequestOrigin(request, environment)
+  const secureEnvironment = environment.APP_ENV === 'preview'
+    || environment.APP_ENV === 'production'
+  let allowedOrigin = secureEnvironment ? requestUrlOrigin : ''
+
+  if (!secureEnvironment && (environment.APP_ENV === 'local' || environment.APP_ENV === 'test')) {
+    try {
+      const configuredOrigin = new URL(environment.APP_ORIGIN || '').origin
+      allowedOrigin = configuredOrigin === environment.APP_ORIGIN
+        ? configuredOrigin
+        : requestUrlOrigin
+    } catch {
+      allowedOrigin = requestUrlOrigin
+    }
+  }
+
+  if (allowedOrigin && origin === allowedOrigin) {
+    response.headers.set('access-control-allow-origin', allowedOrigin)
     response.headers.set('access-control-allow-credentials', 'true')
     response.headers.set('vary', 'origin')
   }

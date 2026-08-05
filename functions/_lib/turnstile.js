@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { canonicalSecureHostname } from './productionHostname.js'
+import { runtimeRequestOrigin } from './http.js'
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_TEST_SECRET_KEY = '1x0000000000000000000000000000000AA'
@@ -27,7 +27,16 @@ function isPlaceholderSecret(value) {
     || normalized.startsWith('your_')
 }
 
-function turnstileConfiguration(environment) {
+function secureRequestHostname(request, environment) {
+  try {
+    const origin = runtimeRequestOrigin(request, environment)
+    return origin ? new URL(origin).hostname.toLowerCase() : ''
+  } catch {
+    return ''
+  }
+}
+
+function turnstileConfiguration(environment, request) {
   const appEnvironment = environment.APP_ENV
   if (!validAppEnvironments.has(appEnvironment)) {
     return null
@@ -42,7 +51,7 @@ function turnstileConfiguration(environment) {
     ? environment.TURNSTILE_EXPECTED_HOSTNAME.trim()
     : ''
   const expectedHostname = secure
-    ? canonicalSecureHostname(environment.TURNSTILE_EXPECTED_HOSTNAME)
+    ? secureRequestHostname(request, environment)
     : configuredHostname
 
   if (!secretKey || isPlaceholderSecret(secretKey)) {
@@ -85,7 +94,7 @@ export async function verifyTurnstileToken(token, request, environment, expected
     return false
   }
 
-  const configuration = turnstileConfiguration(environment)
+  const configuration = turnstileConfiguration(environment, request)
   if (!configuration) {
     return false
   }

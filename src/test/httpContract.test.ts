@@ -60,6 +60,37 @@ describe('Pages API handler contract', () => {
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
   })
 
+  it('derives secure-environment CORS from each request origin', async () => {
+    for (const origin of [
+      'https://miku-call-guide-app.pages.dev',
+      'https://next-custom-domain.dev',
+    ]) {
+      const request = new Request(`${origin}/api/test`, {
+        body: '{}',
+        headers: { 'content-type': 'application/json', origin },
+        method: 'POST',
+      })
+      const response = await handler(context(
+        request,
+        { APP_ENV: 'production', APP_ORIGIN: 'https://stale-domain.invalid' },
+      ))
+      expect(response.headers.get('access-control-allow-origin')).toBe(origin)
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true')
+    }
+  })
+
+  it('does not enable credentialed CORS for insecure production request URLs', async () => {
+    const request = new Request('http://app.example.test/api/test', {
+      body: '{}',
+      headers: { 'content-type': 'application/json', origin: 'http://app.example.test' },
+      method: 'POST',
+    })
+    const response = await handler(context(request, { APP_ENV: 'production' }))
+
+    expect(response.headers.get('access-control-allow-origin')).toBeNull()
+    expect(response.headers.get('access-control-allow-credentials')).toBeNull()
+  })
+
   it('ignores an inbound request ID and applies all security headers', async () => {
     const response = await handler(context(jsonRequest('/api/test', {}, { 'x-request-id': 'attacker' })))
     expect(response.headers.get('x-request-id')).not.toBe('attacker')

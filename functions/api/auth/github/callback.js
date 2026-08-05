@@ -1,5 +1,10 @@
 import { exchangeOAuthCode, fetchGitHubUser } from '../../../_lib/github.js'
-import { createApiHandler, HttpError, redirectResponse } from '../../../_lib/http.js'
+import {
+  createApiHandler,
+  HttpError,
+  redirectResponse,
+  runtimeRequestOrigin,
+} from '../../../_lib/http.js'
 import {
   clearAllOAuthTransactionCookies,
   clearOAuthTransactionCookie,
@@ -29,12 +34,22 @@ export function createOAuthCallbackHandler(dependencies = {}) {
     const code = query.get('code') || ''
     const state = verifyState(queryState, env)
     const transaction = readOAuthTransaction(request, env)
-    if (!state || !transaction || !code || !constantTimeEqual(queryState, transaction.state)) {
+    const origin = runtimeRequestOrigin(request, env)
+    const redirectUri = origin
+      ? new URL('/api/auth/github/callback', origin).toString()
+      : ''
+    if (
+      !state
+      || !transaction
+      || !code
+      || !constantTimeEqual(queryState, transaction.state)
+      || !constantTimeEqual(redirectUri, transaction.redirectUri)
+    ) {
       throw new HttpError(400, 'invalid_oauth_callback')
     }
 
     try {
-      const accessToken = await exchangeCode(code, transaction.codeVerifier, env)
+      const accessToken = await exchangeCode(code, transaction.codeVerifier, redirectUri, env)
       const user = await fetchUser(accessToken, env)
       setSessionCookie(headers, { id: user.id, login: user.login, ts: Date.now() }, env)
       return redirectResponse(typeof state.returnTo === 'string' ? state.returnTo : '/', 302, headers)

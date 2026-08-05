@@ -14,6 +14,7 @@ const oauthEnvironment = {
   GITHUB_OAUTH_CLIENT_ID: 'request-client-id',
   GITHUB_OAUTH_CLIENT_SECRET: 'request-client-secret',
 }
+const oauthRedirectUri = 'https://app.miku-events.dev/api/auth/github/callback'
 
 let pkcs1PrivateKeyPem = ''
 let pkcs8PrivateKeyPem = ''
@@ -90,9 +91,49 @@ describe('GitHub upstream security', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(exchangeOAuthCode('oauth-code', 'pkce-verifier', {})).rejects.toMatchObject({
+    await expect(exchangeOAuthCode(
+      'oauth-code',
+      'pkce-verifier',
+      oauthRedirectUri,
+      {},
+    )).rejects.toMatchObject({
       code: 'github_oauth_not_configured',
       message: 'github_oauth_not_configured',
+      status: 503,
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('passes the request-origin callback URI to the OAuth token exchange', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(responseJson({ access_token: 'access-token' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(exchangeOAuthCode(
+      'oauth-code',
+      'pkce-verifier',
+      oauthRedirectUri,
+      oauthEnvironment,
+    )).resolves.toBe('access-token')
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body).toMatchObject({ redirect_uri: oauthRedirectUri })
+  })
+
+  it.each([
+    undefined,
+    'https://other.example.dev/callback',
+    'https://app.miku-events.dev/api/auth/github/callback?unexpected=1',
+  ])('rejects invalid OAuth callback URI %s before a network call', async (redirectUri) => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(exchangeOAuthCode(
+      'oauth-code',
+      'pkce-verifier',
+      redirectUri,
+      oauthEnvironment,
+    )).rejects.toMatchObject({
+      code: 'github_oauth_not_configured',
       status: 503,
     })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -131,7 +172,12 @@ describe('GitHub upstream security', () => {
     ))
     vi.stubGlobal('fetch', fetchMock)
 
-    const pending = exchangeOAuthCode('oauth-code', 'pkce-verifier', oauthEnvironment)
+    const pending = exchangeOAuthCode(
+      'oauth-code',
+      'pkce-verifier',
+      oauthRedirectUri,
+      oauthEnvironment,
+    )
       .catch((error: unknown) => error)
     await vi.advanceTimersByTimeAsync(9_999)
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -155,7 +201,7 @@ describe('GitHub upstream security', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(hangingBody, { status: 200 })))
     let outcome: unknown = 'pending'
 
-    void exchangeOAuthCode('oauth-code', 'pkce-verifier', oauthEnvironment)
+    void exchangeOAuthCode('oauth-code', 'pkce-verifier', oauthRedirectUri, oauthEnvironment)
       .then(
         (value) => { outcome = value },
         (error: unknown) => { outcome = error },
@@ -177,7 +223,12 @@ describe('GitHub upstream security', () => {
   ])('maps %s OAuth responses to a sanitized 502 error', async (_label, responseFactory) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(responseFactory()))
 
-    const result = exchangeOAuthCode('oauth-code', 'pkce-verifier', oauthEnvironment)
+    const result = exchangeOAuthCode(
+      'oauth-code',
+      'pkce-verifier',
+      oauthRedirectUri,
+      oauthEnvironment,
+    )
 
     await expect(result).rejects.toMatchObject({
       code: 'github_upstream_failed',
@@ -190,7 +241,12 @@ describe('GitHub upstream security', () => {
   it.each([
     [
       'OAuth exchange',
-      () => exchangeOAuthCode('oauth-code', 'pkce-verifier', oauthEnvironment),
+      () => exchangeOAuthCode(
+        'oauth-code',
+        'pkce-verifier',
+        oauthRedirectUri,
+        oauthEnvironment,
+      ),
     ],
     [
       'GitHub API',
