@@ -6,8 +6,11 @@ import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 import { LinkProvider } from '@astryxdesign/core/Link'
 import { HashRouterSkipLinkGuard } from './shared/layout/HashRouterSkipLinkGuard'
+import { preloadInitialCatalogRoute } from './features/catalog/preloadCatalogRoute'
 import './index.css'
 import App from './App.tsx'
+
+preloadInitialCatalogRoute()
 
 // Map Astryx's href prop to React Router's to prop
 function RouterLink({ href, ...props }: { href: string; [key: string]: any }) {

@@ -1,11 +1,9 @@
 import {
+  commitCacheBatch,
   familyPointerCacheKey,
   loadCache,
   normalizeManifestIdentity,
-  removeCache,
   resourceCacheKey,
-  saveCache,
-  sweepCache,
   type CacheEntry,
   type CacheFreshness,
 } from './cacheStore'
@@ -21,6 +19,7 @@ import {
   type ResolvedLoadResult,
 } from './manifestShared'
 import type { RootManifest } from './types'
+import { dataRequestTimeoutReason } from './dataRequestTimeout'
 
 export type FamilyName = 'call-guide' | 'event-calendar'
 
@@ -127,50 +126,51 @@ function saveCompleteFamily<T extends { dataVersion: string }>(
     config.family,
     generation,
   )
-  if (!saveCache(rootKey, root, {
-    currentDataVersion: root.dataVersion,
-    protectKeys: [rootKey],
-  })) {
-    return
-  }
-  if (!saveCache(childKey, child, {
-    currentDataVersion: root.dataVersion,
-    protectKeys: [rootKey, childKey],
-  })) {
-    removeCache(rootKey)
-    return
-  }
   const pointerKey = familyPointerCacheKey(rootManifestUrl, config.family)
-  const pointerSaved = saveCache<FamilyPointer>(pointerKey, {
-    childKey,
-    childUrl,
-    dataVersion: root.dataVersion,
-    generation,
-    rootKey,
-    rootUrl: rootManifestUrl,
-  }, {
+  commitCacheBatch([
+    { key: rootKey, value: root },
+    { key: childKey, value: child },
+  ], {
     currentDataVersion: root.dataVersion,
-    protectKeys: [pointerKey, rootKey, childKey],
+    pointer: {
+      key: pointerKey,
+      value: {
+        childKey,
+        childUrl,
+        dataVersion: root.dataVersion,
+        generation,
+        rootKey,
+        rootUrl: rootManifestUrl,
+      } satisfies FamilyPointer,
+    },
+    staging: {
+      family: config.family,
+      generation,
+      rootManifestUrl,
+    },
   })
-  if (!pointerSaved) {
-    removeCache(rootKey)
-    removeCache(childKey)
-    return
-  }
-
-  sweepCache({ currentDataVersion: root.dataVersion })
 }
 
-function loadCompleteFamily<T extends { dataVersion: string }>(
+function sameFamilyPointer(
+  left: CacheEntry<FamilyPointer>,
+  right: CacheEntry<FamilyPointer>,
+): boolean {
+  const leftPointer = left.value as FamilyPointer | null | undefined
+  const rightPointer = right.value as FamilyPointer | null | undefined
+  return left.savedAt === right.savedAt
+    && leftPointer?.childKey === rightPointer?.childKey
+    && leftPointer?.childUrl === rightPointer?.childUrl
+    && leftPointer?.dataVersion === rightPointer?.dataVersion
+    && leftPointer?.generation === rightPointer?.generation
+    && leftPointer?.rootKey === rightPointer?.rootKey
+    && leftPointer?.rootUrl === rightPointer?.rootUrl
+}
+
+function loadFamilyFromPointer<T extends { dataVersion: string }>(
   rootManifestUrl: string,
   config: FamilyConfig<T>,
+  pointerEntry: CacheEntry<FamilyPointer>,
 ): CachedFamily<T> | null {
-  const pointerKey = familyPointerCacheKey(rootManifestUrl, config.family)
-  const pointerEntry = loadCache<FamilyPointer>(pointerKey)
-  if (!pointerEntry) {
-    return null
-  }
-
   try {
     const pointer = pointerEntry.value
     if (
@@ -238,6 +238,26 @@ function loadCompleteFamily<T extends { dataVersion: string }>(
   } catch {
     return null
   }
+}
+
+function loadCompleteFamily<T extends { dataVersion: string }>(
+  rootManifestUrl: string,
+  config: FamilyConfig<T>,
+): CachedFamily<T> | null {
+  const pointerKey = familyPointerCacheKey(rootManifestUrl, config.family)
+  let pointerEntry = loadCache<FamilyPointer>(pointerKey)
+  for (let attempt = 0; attempt < 2 && pointerEntry; attempt += 1) {
+    const cached = loadFamilyFromPointer(rootManifestUrl, config, pointerEntry)
+    const latestPointer = loadCache<FamilyPointer>(pointerKey)
+    if (!latestPointer) {
+      return null
+    }
+    if (sameFamilyPointer(pointerEntry, latestPointer)) {
+      return cached
+    }
+    pointerEntry = latestPointer
+  }
+  return null
 }
 
 type SettledChild<T> =
@@ -345,12 +365,13 @@ export function fetchManifestFamily<T extends { dataVersion: string }>(
     try {
       return await networkFamily(rootManifestUrl, config, options.signal)
     } catch (error) {
-      if (isAbortError(error) || options.signal?.aborted) {
+      const timeoutError = dataRequestTimeoutReason(options.signal)
+      if (!timeoutError && (isAbortError(error) || options.signal?.aborted)) {
         throw error
       }
       const cached = loadCompleteFamily(rootManifestUrl, config)
       if (!cached) {
-        throw error
+        throw timeoutError ?? error
       }
       return {
         data: cached.data,

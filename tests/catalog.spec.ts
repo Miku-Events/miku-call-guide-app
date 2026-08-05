@@ -1,6 +1,17 @@
 import { expect, test } from './fixtures/app-test'
-import { rootManifest } from './fixtures/data'
-import { expectLocatorMinTouchTarget, expectPageContained } from './fixtures/geometry'
+import { catalogManySongManifest, rootManifest } from './fixtures/data'
+import {
+  expectLocatorMinTouchTarget,
+  expectPageContained,
+  scrollLocatorToEndInSteps,
+} from './fixtures/geometry'
+
+async function useManySongCatalog(page: import('@playwright/test').Page): Promise<void> {
+  await page.unroute('**/call-guide-manifest.json')
+  await page.route('**/call-guide-manifest.json', async (route) => {
+    await route.fulfill({ json: catalogManySongManifest })
+  })
+}
 
 interface CatalogRequestCounts {
   childManifest: number
@@ -51,7 +62,26 @@ test('renders the catalog navigation, filters, and practice cards', { tag: '@des
   await expect(thumbnail).toHaveAttribute('src', 'https://i.ytimg.com/vi/iAU1LmhtCSw/hqdefault.jpg')
   await expect(thumbnail).toHaveAttribute('alt', '')
   await expect(thumbnail).toHaveAttribute('aria-hidden', 'true')
-  await expect(thumbnail).toHaveAttribute('loading', 'lazy')
+  await expect(thumbnail).toHaveAttribute('loading', 'eager')
+  await expect(thumbnail).toHaveAttribute('fetchpriority', 'high')
+
+  await useManySongCatalog(page)
+  const requestedThumbnails = new Set<string>()
+  page.on('request', (request) => {
+    const url = request.url()
+    if (url.includes('https://i.ytimg.com/vi/CATIMG')) {
+      requestedThumbnails.add(url)
+    }
+  })
+  await page.reload()
+
+  const cards = page.locator('.catalog-song-card')
+  await expect(cards).toHaveCount(14)
+  await expect.poll(() => requestedThumbnails.size).toBeGreaterThan(0)
+  expect(requestedThumbnails.size).toBeLessThan(14)
+
+  await scrollLocatorToEndInSteps(page.locator('.catalog-shell .app-main'))
+  await expect.poll(() => requestedThumbnails.size).toBe(14)
 })
 
 test('keeps the catalog usable and contained on a touch viewport', { tag: '@mobile' }, async ({ page }) => {
@@ -64,6 +94,7 @@ test('keeps the catalog usable and contained on a touch viewport', { tag: '@mobi
   await expect(songCard).toBeVisible()
   await expectLocatorMinTouchTarget(allFilter)
   await expectLocatorMinTouchTarget(songCard)
+
   await expectPageContained(page)
 })
 

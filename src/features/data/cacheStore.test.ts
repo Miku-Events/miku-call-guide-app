@@ -3,8 +3,10 @@ import {
   CACHE_FRESH_MS,
   CACHE_MAX_STALE_MS,
   CACHE_NAMESPACE_MAX_BYTES,
+  CACHE_STAGING_MAX_MS,
   cacheNamespaceBytes,
   cacheStorageKey,
+  commitCacheBatch,
   familyPointerCacheKey,
   loadCache,
   normalizeManifestIdentity,
@@ -18,6 +20,83 @@ afterEach(() => {
   vi.restoreAllMocks()
   window.localStorage.clear()
 })
+
+const familyRootUrl = 'https://data.example.test/manifest.json'
+
+function familyStagingKey(
+  rootManifestUrl: string,
+  family: 'call-guide' | 'event-calendar',
+  generation: string,
+): string {
+  return [
+    'data-staging',
+    encodeURIComponent(normalizeManifestIdentity(rootManifestUrl)),
+    family,
+    generation,
+  ].join(':')
+}
+
+function familyBatch(generation = '0123456789abcdef0123456789abcdef') {
+  const dataVersion = 'v2'
+  const rootKey = resourceCacheKey(
+    familyRootUrl,
+    dataVersion,
+    `@family-snapshot/call-guide/${generation}/root`,
+  )
+  const childKey = resourceCacheKey(
+    familyRootUrl,
+    dataVersion,
+    `@family-snapshot/call-guide/${generation}/child/call-guide-manifest.json`,
+  )
+  const pointerKey = familyPointerCacheKey(familyRootUrl, 'call-guide')
+  return {
+    childKey,
+    dataVersion,
+    generation,
+    pointerKey,
+    rootKey,
+    writes: [
+      {
+        key: rootKey,
+        value: {
+          dataVersion,
+          manifests: {
+            callGuide: 'call-guide-manifest.json',
+            eventCalendar: 'event-calendar/index.json',
+          },
+        },
+      },
+      { key: childKey, value: { dataVersion } },
+    ],
+    options: {
+      currentDataVersion: dataVersion,
+      pointer: {
+        key: pointerKey,
+        value: {
+          childKey,
+          childUrl: 'https://data.example.test/call-guide-manifest.json',
+          dataVersion,
+          generation,
+          rootKey,
+          rootUrl: familyRootUrl,
+        },
+      },
+      staging: {
+        family: 'call-guide' as const,
+        generation,
+        rootManifestUrl: familyRootUrl,
+      },
+    },
+  }
+}
+
+function storageEnvelope(value: unknown, savedAt = new Date().toISOString()): string {
+  return JSON.stringify({ savedAt, value })
+}
+
+function scanStarts(spy: ReturnType<typeof vi.spyOn>): number {
+  return spy.mock.calls.filter(([index]) => index === 0).length
+}
 
 describe('cacheStore', () => {
   it('normalizes manifest identity and namespaces origin, root path, version, and resource', () => {
@@ -110,6 +189,107 @@ describe('cacheStore', () => {
     const circular: { self?: unknown } = {}
     circular.self = circular
     expect(saveCache('stringify', circular)).toBe(false)
+  })
+
+  it('uses one namespace snapshot for cleanup and at most one scan for a normal leaf save', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'))
+    const expired = resourceCacheKey(familyRootUrl, 'v1', 'songs/expired.json')
+    const orphan = resourceCacheKey(
+      familyRootUrl,
+      'v2',
+      '@family-snapshot/call-guide/fedcba9876543210fedcba9876543210/root',
+    )
+    window.localStorage.setItem(cacheStorageKey(expired), storageEnvelope(
+      { expired: true },
+      new Date(Date.now() - CACHE_MAX_STALE_MS - 1).toISOString(),
+    ))
+    window.localStorage.setItem(cacheStorageKey(orphan), storageEnvelope({ orphan: true }))
+    const keySpy = vi.spyOn(Storage.prototype, 'key')
+
+    sweepCache({ currentDataVersion: 'v2' })
+
+    expect(scanStarts(keySpy)).toBe(1)
+    expect(window.localStorage.getItem(cacheStorageKey(expired))).toBeNull()
+    expect(window.localStorage.getItem(cacheStorageKey(orphan))).toBeNull()
+
+    window.localStorage.setItem('unrelated-state', '1')
+    keySpy.mockClear()
+    const leaf = resourceCacheKey(familyRootUrl, 'v2', 'songs/current.json')
+    expect(saveCache(leaf, { current: true }, { currentDataVersion: 'v2' })).toBe(true)
+    expect(scanStarts(keySpy)).toBe(1)
+  })
+
+  it('protects an in-progress family generation for 60 seconds and removes it after expiry', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'))
+    const batch = familyBatch()
+    const markerKey = familyStagingKey(
+      familyRootUrl,
+      'call-guide',
+      batch.generation,
+    )
+    for (const write of batch.writes) {
+      window.localStorage.setItem(cacheStorageKey(write.key), storageEnvelope(write.value))
+    }
+    window.localStorage.setItem(cacheStorageKey(markerKey), storageEnvelope({
+      dataVersion: batch.dataVersion,
+      pointerKey: batch.pointerKey,
+      resourceKeys: [batch.rootKey, batch.childKey],
+    }))
+
+    sweepCache({ currentDataVersion: batch.dataVersion })
+    expect(window.localStorage.getItem(cacheStorageKey(markerKey))).not.toBeNull()
+    expect(window.localStorage.getItem(cacheStorageKey(batch.rootKey))).not.toBeNull()
+    expect(window.localStorage.getItem(cacheStorageKey(batch.childKey))).not.toBeNull()
+
+    vi.setSystemTime(Date.now() + CACHE_STAGING_MAX_MS + 1)
+    sweepCache({ currentDataVersion: batch.dataVersion })
+    expect(window.localStorage.getItem(cacheStorageKey(markerKey))).toBeNull()
+    expect(window.localStorage.getItem(cacheStorageKey(batch.rootKey))).toBeNull()
+    expect(window.localStorage.getItem(cacheStorageKey(batch.childKey))).toBeNull()
+  })
+
+  it('commits a family pointer last with two normal scans and retries a quota failure once', () => {
+    window.localStorage.setItem('unrelated-state', '1')
+    const first = familyBatch()
+    const keySpy = vi.spyOn(Storage.prototype, 'key')
+    expect(commitCacheBatch(first.writes, first.options)).toBe(true)
+    expect(scanStarts(keySpy)).toBe(2)
+    expect(loadCache(first.pointerKey)?.value).toMatchObject({
+      childKey: first.childKey,
+      generation: first.generation,
+      rootKey: first.rootKey,
+    })
+    expect(window.localStorage.getItem(cacheStorageKey(familyStagingKey(
+      familyRootUrl,
+      'call-guide',
+      first.generation,
+    )))).toBeNull()
+
+    const second = familyBatch('fedcba9876543210fedcba9876543210')
+    const setItem = Storage.prototype.setItem
+    let quotaThrown = false
+    const writesInOrder: string[] = []
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      writesInOrder.push(String(key))
+      if (key === cacheStorageKey(second.childKey) && !quotaThrown) {
+        quotaThrown = true
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+      return setItem.call(this, key, value)
+    })
+
+    expect(commitCacheBatch(second.writes, second.options)).toBe(true)
+    expect(writesInOrder.filter((key) => key === cacheStorageKey(second.pointerKey))).toHaveLength(1)
+    expect(writesInOrder.at(-1)).toBe(cacheStorageKey(second.pointerKey))
+    expect(loadCache(second.pointerKey)?.value).toMatchObject({
+      childKey: second.childKey,
+      generation: second.generation,
+      rootKey: second.rootKey,
+    })
+    expect(window.localStorage.getItem(cacheStorageKey(first.rootKey))).toBeNull()
+    expect(window.localStorage.getItem(cacheStorageKey(first.childKey))).toBeNull()
   })
 
   it('sweeps expired, previous-version, and orphan resources while protecting a valid family snapshot', () => {

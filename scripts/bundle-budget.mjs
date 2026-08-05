@@ -8,14 +8,23 @@ const MAIN_JS_BASELINE_BYTES = Math.round(101.66 * KIB)
 const TOTAL_CSS_BASELINE_BYTES = Math.round(39.09 * KIB)
 const CALL_ROUTE_JS_GZIP_BYTES = 161_383
 const CALL_ROUTE_CSS_GZIP_BYTES = 39_312
+const MAIN_CLOSURE_JS_GZIP_BYTES = 118_640
+const MAIN_CLOSURE_CSS_GZIP_BYTES = 33_924
+const CATALOG_ROUTE_JS_GZIP_BYTES = 184_092
+const CATALOG_ROUTE_CSS_GZIP_BYTES = 36_023
 const VITE_MANIFEST_PATH = '.vite/manifest.json'
 const CALL_GUIDE_ENTRY_SOURCE = 'src/features/callGuide/CallGuidePage.tsx'
+const CATALOG_ENTRY_SOURCE = 'src/features/catalog/CatalogPage.tsx'
 
 export const DEFAULT_BUNDLE_BUDGET = Object.freeze({
   mainJsBaselineBytes: MAIN_JS_BASELINE_BYTES,
   mainJsGzipBytes: Math.floor(MAIN_JS_BASELINE_BYTES * 1.1),
   totalCssBaselineBytes: TOTAL_CSS_BASELINE_BYTES,
   totalCssGzipBytes: Math.floor(TOTAL_CSS_BASELINE_BYTES * 1.1),
+  mainClosureJsGzipBytes: MAIN_CLOSURE_JS_GZIP_BYTES,
+  mainClosureCssGzipBytes: MAIN_CLOSURE_CSS_GZIP_BYTES,
+  catalogRouteJsGzipBytes: CATALOG_ROUTE_JS_GZIP_BYTES,
+  catalogRouteCssGzipBytes: CATALOG_ROUTE_CSS_GZIP_BYTES,
   callRouteJsGzipBytes: CALL_ROUTE_JS_GZIP_BYTES,
   callRouteCssGzipBytes: CALL_ROUTE_CSS_GZIP_BYTES,
 })
@@ -100,6 +109,10 @@ function normalizeBudget(budget = DEFAULT_BUNDLE_BUDGET) {
   const normalized = {
     mainJsGzipBytes: budget.mainJsGzipBytes,
     totalCssGzipBytes: budget.totalCssGzipBytes,
+    mainClosureJsGzipBytes: budget.mainClosureJsGzipBytes ?? DEFAULT_BUNDLE_BUDGET.mainClosureJsGzipBytes,
+    mainClosureCssGzipBytes: budget.mainClosureCssGzipBytes ?? DEFAULT_BUNDLE_BUDGET.mainClosureCssGzipBytes,
+    catalogRouteJsGzipBytes: budget.catalogRouteJsGzipBytes ?? DEFAULT_BUNDLE_BUDGET.catalogRouteJsGzipBytes,
+    catalogRouteCssGzipBytes: budget.catalogRouteCssGzipBytes ?? DEFAULT_BUNDLE_BUDGET.catalogRouteCssGzipBytes,
     callRouteJsGzipBytes: budget.callRouteJsGzipBytes ?? DEFAULT_BUNDLE_BUDGET.callRouteJsGzipBytes,
     callRouteCssGzipBytes: budget.callRouteCssGzipBytes ?? DEFAULT_BUNDLE_BUDGET.callRouteCssGzipBytes,
   }
@@ -123,7 +136,7 @@ function validateManifestEntry(key, value) {
   if (!value || typeof value !== 'object' || typeof value.file !== 'string') {
     throw new Error(`Vite manifest entry ${key} is invalid`)
   }
-  for (const field of ['imports', 'css']) {
+  for (const field of ['imports', 'dynamicImports', 'css']) {
     if (value[field] !== undefined && (
       !Array.isArray(value[field])
       || value[field].some((item) => typeof item !== 'string')
@@ -133,8 +146,8 @@ function validateManifestEntry(key, value) {
   }
 }
 
-/** Returns the unique static-import closure for the main and call-guide entries. */
-export function collectCallRouteManifestClosure(manifest) {
+/** Returns a unique static-import closure. Dynamic imports are deliberately excluded. */
+export function collectManifestClosure(manifest, routeEntrySource) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     throw new Error('Vite manifest must be an object')
   }
@@ -149,12 +162,14 @@ export function collectCallRouteManifestClosure(manifest) {
   if (!mainEntry) {
     throw new Error('Vite manifest does not contain the index.html entry')
   }
-  const callEntry = entries.find(([key, value]) => (
-    normalizeSource(key) === CALL_GUIDE_ENTRY_SOURCE
-    || normalizeSource(value.src ?? '') === CALL_GUIDE_ENTRY_SOURCE
-  ))
-  if (!callEntry) {
-    throw new Error(`Vite manifest does not contain ${CALL_GUIDE_ENTRY_SOURCE}`)
+  const routeEntry = routeEntrySource
+    ? entries.find(([key, value]) => (
+        normalizeSource(key) === routeEntrySource
+        || normalizeSource(value.src ?? '') === routeEntrySource
+      ))
+    : undefined
+  if (routeEntrySource && !routeEntry) {
+    throw new Error(`Vite manifest does not contain ${routeEntrySource}`)
   }
 
   const visited = new Set()
@@ -173,11 +188,21 @@ export function collectCallRouteManifestClosure(manifest) {
     }
   }
   visit(mainEntry[0])
-  visit(callEntry[0])
+  if (routeEntry) {
+    visit(routeEntry[0])
+  }
   return {
-    callEntryKey: callEntry[0],
     entryKeys: [...visited],
     mainEntryKey: mainEntry[0],
+    ...(routeEntry ? { routeEntryKey: routeEntry[0] } : {}),
+  }
+}
+
+export function collectCallRouteManifestClosure(manifest) {
+  const closure = collectManifestClosure(manifest, CALL_GUIDE_ENTRY_SOURCE)
+  return {
+    ...closure,
+    callEntryKey: closure.routeEntryKey,
   }
 }
 
@@ -194,8 +219,8 @@ async function measureAssets(distDirectory, assets) {
     }))
 }
 
-async function measureCallRoute(distDirectory, manifest) {
-  const closure = collectCallRouteManifestClosure(manifest)
+async function measureManifestClosure(distDirectory, manifest, routeEntrySource) {
+  const closure = collectManifestClosure(manifest, routeEntrySource)
   const js = new Set()
   const css = new Set()
   for (const key of closure.entryKeys) {
@@ -236,17 +261,38 @@ function assetReport(label, measurement) {
 export function formatBundleBudgetReport(result) {
   const mainPassed = result.main.gzipBytes <= result.budget.mainJsGzipBytes
   const cssPassed = result.css.gzipBytes <= result.budget.totalCssGzipBytes
-  const routeJsPassed = result.callRoute.js.gzipBytes <= result.budget.callRouteJsGzipBytes
-  const routeCssPassed = result.callRoute.css.gzipBytes <= result.budget.callRouteCssGzipBytes
-  const status = mainPassed && cssPassed && routeJsPassed && routeCssPassed ? 'PASS' : 'FAIL'
+  const mainClosureJsPassed = result.mainClosure.js.gzipBytes <= result.budget.mainClosureJsGzipBytes
+  const mainClosureCssPassed = result.mainClosure.css.gzipBytes <= result.budget.mainClosureCssGzipBytes
+  const catalogJsPassed = result.catalogRoute.js.gzipBytes <= result.budget.catalogRouteJsGzipBytes
+  const catalogCssPassed = result.catalogRoute.css.gzipBytes <= result.budget.catalogRouteCssGzipBytes
+  const callJsPassed = result.callRoute.js.gzipBytes <= result.budget.callRouteJsGzipBytes
+  const callCssPassed = result.callRoute.css.gzipBytes <= result.budget.callRouteCssGzipBytes
+  const status = [
+    mainPassed,
+    cssPassed,
+    mainClosureJsPassed,
+    mainClosureCssPassed,
+    catalogJsPassed,
+    catalogCssPassed,
+    callJsPassed,
+    callCssPassed,
+  ].every(Boolean) ? 'PASS' : 'FAIL'
   return [
     `Bundle budget: ${status}`,
     `- main JS (${result.main.path}): ${formatSize(result.main.gzipBytes)} / ${formatSize(result.budget.mainJsGzipBytes)} ${mainPassed ? 'PASS' : 'FAIL'}`,
     `- total CSS (${result.css.paths.length} files): ${formatSize(result.css.gzipBytes)} / ${formatSize(result.budget.totalCssGzipBytes)} ${cssPassed ? 'PASS' : 'FAIL'}`,
-    `- cold call-route JS (${result.callRoute.js.assets.length} unique assets): ${formatSize(result.callRoute.js.gzipBytes)} / ${formatSize(result.budget.callRouteJsGzipBytes)} ${routeJsPassed ? 'PASS' : 'FAIL'}`,
-    ...assetReport('JS assets', result.callRoute.js),
-    `- cold call-route CSS (${result.callRoute.css.assets.length} unique assets): ${formatSize(result.callRoute.css.gzipBytes)} / ${formatSize(result.budget.callRouteCssGzipBytes)} ${routeCssPassed ? 'PASS' : 'FAIL'}`,
-    ...assetReport('CSS assets', result.callRoute.css),
+    `- main static JS closure (${result.mainClosure.js.assets.length} unique assets): ${formatSize(result.mainClosure.js.gzipBytes)} / ${formatSize(result.budget.mainClosureJsGzipBytes)} ${mainClosureJsPassed ? 'PASS' : 'FAIL'}`,
+    ...assetReport('Main JS assets', result.mainClosure.js),
+    `- main CSS closure (${result.mainClosure.css.assets.length} unique assets): ${formatSize(result.mainClosure.css.gzipBytes)} / ${formatSize(result.budget.mainClosureCssGzipBytes)} ${mainClosureCssPassed ? 'PASS' : 'FAIL'}`,
+    ...assetReport('Main CSS assets', result.mainClosure.css),
+    `- cold catalog-route JS (${result.catalogRoute.js.assets.length} unique assets): ${formatSize(result.catalogRoute.js.gzipBytes)} / ${formatSize(result.budget.catalogRouteJsGzipBytes)} ${catalogJsPassed ? 'PASS' : 'FAIL'}`,
+    ...assetReport('Catalog JS assets', result.catalogRoute.js),
+    `- cold catalog-route CSS (${result.catalogRoute.css.assets.length} unique assets): ${formatSize(result.catalogRoute.css.gzipBytes)} / ${formatSize(result.budget.catalogRouteCssGzipBytes)} ${catalogCssPassed ? 'PASS' : 'FAIL'}`,
+    ...assetReport('Catalog CSS assets', result.catalogRoute.css),
+    `- cold call-route JS (${result.callRoute.js.assets.length} unique assets): ${formatSize(result.callRoute.js.gzipBytes)} / ${formatSize(result.budget.callRouteJsGzipBytes)} ${callJsPassed ? 'PASS' : 'FAIL'}`,
+    ...assetReport('Call JS assets', result.callRoute.js),
+    `- cold call-route CSS (${result.callRoute.css.assets.length} unique assets): ${formatSize(result.callRoute.css.gzipBytes)} / ${formatSize(result.budget.callRouteCssGzipBytes)} ${callCssPassed ? 'PASS' : 'FAIL'}`,
+    ...assetReport('Call CSS assets', result.callRoute.css),
   ].join('\n')
 }
 
@@ -260,8 +306,10 @@ export async function checkBundleBudget({
   const cssAssets = await findCssAssets(normalizedDist)
   const manifest = JSON.parse(await readFile(path.join(normalizedDist, VITE_MANIFEST_PATH), 'utf8'))
   const normalizedBudget = normalizeBudget(budget)
-  const callRoute = await measureCallRoute(normalizedDist, manifest)
-  if (normalizeSource(manifest[callRoute.mainEntryKey].file) !== mainAsset.relativePath) {
+  const mainClosure = await measureManifestClosure(normalizedDist, manifest)
+  const catalogRoute = await measureManifestClosure(normalizedDist, manifest, CATALOG_ENTRY_SOURCE)
+  const callRoute = await measureManifestClosure(normalizedDist, manifest, CALL_GUIDE_ENTRY_SOURCE)
+  if (normalizeSource(manifest[mainClosure.mainEntryKey].file) !== mainAsset.relativePath) {
     throw new Error('Vite manifest main entry does not match the index.html module script')
   }
   const result = {
@@ -275,6 +323,8 @@ export async function checkBundleBudget({
         gzipBytes(await readFile(target))
       )))).reduce((total, bytes) => total + bytes, 0),
     },
+    mainClosure,
+    catalogRoute,
     callRoute,
     budget: normalizedBudget,
   }
@@ -283,6 +333,10 @@ export async function checkBundleBudget({
   if (
     result.main.gzipBytes > normalizedBudget.mainJsGzipBytes
     || result.css.gzipBytes > normalizedBudget.totalCssGzipBytes
+    || result.mainClosure.js.gzipBytes > normalizedBudget.mainClosureJsGzipBytes
+    || result.mainClosure.css.gzipBytes > normalizedBudget.mainClosureCssGzipBytes
+    || result.catalogRoute.js.gzipBytes > normalizedBudget.catalogRouteJsGzipBytes
+    || result.catalogRoute.css.gzipBytes > normalizedBudget.catalogRouteCssGzipBytes
     || result.callRoute.js.gzipBytes > normalizedBudget.callRouteJsGzipBytes
     || result.callRoute.css.gzipBytes > normalizedBudget.callRouteCssGzipBytes
   ) {

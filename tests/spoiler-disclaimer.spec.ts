@@ -5,10 +5,22 @@ import { expectLocatorMinTouchTarget, expectPageContained } from './fixtures/geo
 test.use({ spoilerDisclaimerAcknowledged: false })
 
 test('gates fresh touch visits accessibly and starts loading only after confirmation', { tag: '@mobile' }, async ({ page }) => {
-  let rootManifestRequests = 0
+  const requests = {
+    childManifest: 0,
+    rootManifest: 0,
+    song: 0,
+    thumbnail: 0,
+  }
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname.endsWith('/manifest.json')) {
-      rootManifestRequests += 1
+    const url = new URL(request.url())
+    if (url.hostname === 'i.ytimg.com') {
+      requests.thumbnail += 1
+    } else if (url.pathname.endsWith('/call-guide-manifest.json')) {
+      requests.childManifest += 1
+    } else if (url.pathname.endsWith('/manifest.json')) {
+      requests.rootManifest += 1
+    } else if (url.pathname.includes('/songs/')) {
+      requests.song += 1
     }
   })
 
@@ -22,7 +34,12 @@ test('gates fresh touch visits accessibly and starts loading only after confirma
   await expect(continueButton).toBeVisible()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toHaveCount(0)
   await expect(page.locator('.catalog-song-card')).toHaveCount(0)
-  expect(rootManifestRequests).toBe(0)
+  expect(requests).toEqual({
+    childManifest: 0,
+    rootManifest: 0,
+    song: 0,
+    thumbnail: 0,
+  })
 
   const accessibilityResults = await new AxeBuilder({ page }).analyze()
   const seriousOrCriticalViolations = accessibilityResults.violations.filter(
@@ -37,7 +54,10 @@ test('gates fresh touch visits accessibly and starts loading only after confirma
 
   await continueButton.tap()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
-  await expect.poll(() => rootManifestRequests).toBe(1)
+  await expect.poll(() => requests.rootManifest).toBe(1)
+  await expect.poll(() => requests.childManifest).toBe(1)
+  await expect.poll(() => requests.thumbnail).toBeGreaterThan(0)
+  expect(requests.song).toBe(0)
 })
 
 test('cannot be dismissed with Escape or a backdrop click', { tag: '@desktop' }, async ({ page }) => {

@@ -38,6 +38,21 @@ const callGuideManifest = {
   ],
 }
 
+const catalogManySongManifest = {
+  ...callGuideManifest,
+  songs: Array.from({ length: 14 }, (_, index) => {
+    const number = String(index + 1).padStart(5, '0')
+    return {
+      ...callGuideManifest.songs[0],
+      id: `catalog-song-${number}`,
+      title: { ko: `카탈로그 곡 ${number}`, ja: `Catalog Song ${number}` },
+      youtubeVideoId: `CATVID${number}`,
+      originalSongId: `CATIMG${number}`,
+      path: `songs/catalog-song-${number}.json`,
+    }
+  }),
+}
+
 const eventCalendarIndex = {
   schemaVersion: 1,
   generatedAt: '2026-05-18T00:00:00.000Z',
@@ -799,6 +814,7 @@ export {
   attakaitoWrappedEndAnchorSong,
   autoFollowSong,
   callGuideManifest,
+  catalogManySongManifest,
   closeNonOverlappingAnchorSong,
   crossLaneAnchorRailSong,
   dateOnlyEventDetail,

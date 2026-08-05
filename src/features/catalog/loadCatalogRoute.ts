@@ -1,3 +1,3 @@
 import { createRetryableRouteLoader } from '../../shared/routing/createRetryableRouteLoader'
 
-export const loadCallGuideRoute = createRetryableRouteLoader(() => import('./CallGuidePage'))
+export const loadCatalogRoute = createRetryableRouteLoader(() => import('./CatalogPage'))

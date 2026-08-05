@@ -1,6 +1,5 @@
-import { AlertTriangle, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X, ArrowRight } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ListMusic, RefreshCw, Search, FolderOpen, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router'
 import './catalog.css'
 import { getRootManifestUrl } from '../../app/config'
 import { localizedText } from '../../shared/i18n/localizedText'
@@ -10,87 +9,87 @@ import { Button } from '@astryxdesign/core/Button'
 import { Banner } from '@astryxdesign/core/Banner'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { loadCallGuideManifest, prefetchCallGuideSong } from '../data/callGuideSession'
-import type { CallGuideManifest, LoadResult, ManifestSong, LocalizedText } from '../data/types'
+import type { CallGuideManifest, LoadResult } from '../data/types'
 import { loadCallGuideRoute } from '../callGuide/loadCallGuideRoute'
-import { shuffledCopy } from './shuffle'
+import {
+  buildCatalogSnapshot,
+  fallbackEventTitle,
+  filterCatalogSongs,
+  type CatalogSnapshot,
+} from './catalogModel'
+import { SongCard } from './SongCard'
+import { useCatalogThumbnailObserver } from './useCatalogThumbnailObserver'
 
-const BLACKLIST_TAGS: string[] = []
-
-interface EventFolder {
-  id: string;
-  title: LocalizedText;
-  songCount: number;
-  songs: ManifestSong[];
-}
-
-interface ShuffledCatalog {
-  dataVersion: string
-  songs: ManifestSong[]
-}
-
-function formatFallbackEventTitle(tag: string): string {
-  return tag
-    .split('-')
-    .map(word => {
-      if (word === 'miku') return 'Miku'
-      if (word === 'expo') return 'EXPO'
-      if (word === 'vr') return 'VR'
-      return word.charAt(0).toUpperCase() + word.slice(1)
-    })
-    .join(' ')
-}
-
-function songMatches(song: ManifestSong, query: string): boolean {
-  const haystack = [
-    ...Object.values(song.title),
-    ...Object.values(song.artist),
-    ...Object.values(song.callSummary ?? {}),
-    song.youtubeVideoId,
-    ...song.tags,
-  ]
-    .join(' ')
-    .toLowerCase()
-
-  return haystack.includes(query.toLowerCase())
-}
-
-function youtubeThumbnailUrl(song: ManifestSong): string {
-  return `https://i.ytimg.com/vi/${song.originalSongId ?? song.youtubeVideoId}/hqdefault.jpg`
-}
+const PREFETCH_KEY_LIMIT = 5
 
 export function CatalogPage() {
   const [manifestResult, setManifestResult] = useState<LoadResult<CallGuideManifest> | null>(null)
-  const [shuffledCatalog, setShuffledCatalog] = useState<ShuffledCatalog | null>(null)
+  const [catalogSnapshot, setCatalogSnapshot] = useState<CatalogSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isRetrying, setIsRetrying] = useState(false)
   const [query, setQuery] = useState('')
   const [viewMode, setViewMode] = useState<'songs' | 'events'>('songs')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const catalogSnapshotRef = useRef<CatalogSnapshot | null>(null)
   const hoverPrefetchTimerRef = useRef<number | null>(null)
+  const prefetchedSongKeysRef = useRef(new Map<string, Promise<void>>())
+  const retryAttemptRef = useRef(0)
+  const retryControllerRef = useRef<AbortController | null>(null)
   const rootManifestUrl = getRootManifestUrl()
+  const {
+    loadedSongIds,
+    markThumbnailLoaded,
+    observeThumbnail,
+    resetThumbnailVersion,
+  } = useCatalogThumbnailObserver()
 
   const acceptManifest = useCallback((result: LoadResult<CallGuideManifest>) => {
+    if (catalogSnapshotRef.current?.dataVersion !== result.data.dataVersion) {
+      const nextSnapshot = buildCatalogSnapshot(result.data)
+      resetThumbnailVersion(result.data.dataVersion)
+      catalogSnapshotRef.current = nextSnapshot
+      prefetchedSongKeysRef.current.clear()
+      setCatalogSnapshot(nextSnapshot)
+    }
     setManifestResult(result)
-    setShuffledCatalog((current) => {
-      if (current?.dataVersion === result.data.dataVersion) {
-        return current
-      }
-
-      return {
-        dataVersion: result.data.dataVersion,
-        songs: shuffledCopy(result.data.songs),
-      }
-    })
     setError(null)
-  }, [])
+  }, [resetThumbnailVersion])
 
-  const load = useCallback(async () => {
+  const retryManifest = useCallback(async () => {
+    retryControllerRef.current?.abort()
+    const controller = new AbortController()
+    const attempt = retryAttemptRef.current + 1
+    retryAttemptRef.current = attempt
+    retryControllerRef.current = controller
+    setIsRetrying(true)
+
     try {
-      acceptManifest(await loadCallGuideManifest(rootManifestUrl, { force: true }))
+      const result = await loadCallGuideManifest(rootManifestUrl, {
+        force: true,
+        signal: controller.signal,
+      })
+      if (!controller.signal.aborted && retryAttemptRef.current === attempt) {
+        acceptManifest(result)
+      }
     } catch (loadError) {
-      setManifestResult(null)
-      setError(loadError instanceof Error ? loadError.message : 'Manifest load failed.')
+      if (!controller.signal.aborted && retryAttemptRef.current === attempt) {
+        if (!catalogSnapshotRef.current) {
+          setError(loadError instanceof Error ? loadError.message : 'Manifest load failed.')
+        }
+      }
+    } finally {
+      if (retryAttemptRef.current === attempt) {
+        retryControllerRef.current = null
+        setIsRetrying(false)
+      }
     }
   }, [acceptManifest, rootManifestUrl])
+
+  useEffect(() => () => {
+    retryAttemptRef.current += 1
+    retryControllerRef.current?.abort()
+    retryControllerRef.current = null
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -121,9 +120,42 @@ export function CatalogPage() {
     }
   }, [acceptManifest, rootManifestUrl])
 
-  const prefetchPractice = useCallback((songId: string) => {
-    void loadCallGuideRoute().catch(() => undefined)
-    void prefetchCallGuideSong(rootManifestUrl, songId).catch(() => undefined)
+  const prefetchPractice = useCallback((songId: string): Promise<void> => {
+    const dataVersion = catalogSnapshotRef.current?.dataVersion
+    if (!dataVersion) {
+      return Promise.resolve()
+    }
+
+    const key = `${dataVersion}\0${songId}`
+    const prefetchedSongs = prefetchedSongKeysRef.current
+    const existing = prefetchedSongs.get(key)
+    if (existing) {
+      prefetchedSongs.delete(key)
+      prefetchedSongs.set(key, existing)
+      return existing
+    }
+
+    const request = Promise.all([
+      loadCallGuideRoute(),
+      prefetchCallGuideSong(rootManifestUrl, songId),
+    ])
+      .then(() => undefined)
+    const trackedRequest = request
+      .catch((prefetchError: unknown) => {
+        if (prefetchedSongs.get(key) === trackedRequest) {
+          prefetchedSongs.delete(key)
+        }
+        throw prefetchError
+      })
+    prefetchedSongs.set(key, trackedRequest)
+    while (prefetchedSongs.size > PREFETCH_KEY_LIMIT) {
+      const oldestKey = prefetchedSongs.keys().next().value
+      if (oldestKey === undefined) {
+        break
+      }
+      prefetchedSongs.delete(oldestKey)
+    }
+    return trackedRequest
   }, [rootManifestUrl])
 
   const cancelHoverPrefetch = useCallback(() => {
@@ -137,13 +169,13 @@ export function CatalogPage() {
     cancelHoverPrefetch()
     hoverPrefetchTimerRef.current = window.setTimeout(() => {
       hoverPrefetchTimerRef.current = null
-      prefetchPractice(songId)
+      void prefetchPractice(songId).catch(() => undefined)
     }, 100)
   }, [cancelHoverPrefetch, prefetchPractice])
 
   const prefetchPracticeImmediately = useCallback((songId: string) => {
     cancelHoverPrefetch()
-    prefetchPractice(songId)
+    void prefetchPractice(songId).catch(() => undefined)
   }, [cancelHoverPrefetch, prefetchPractice])
 
   useEffect(() => cancelHoverPrefetch, [cancelHoverPrefetch])
@@ -156,74 +188,42 @@ export function CatalogPage() {
     const main = document.querySelector('.catalog-shell .app-main')
     if (!main) return
 
-    const sentinel = document.createElement('div')
-    sentinel.style.cssText = 'height:1px;pointer-events:none;'
-    main.prepend(sentinel)
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        main.setAttribute('data-scrolled', entry.isIntersecting ? 'false' : 'true')
-      },
-      { root: main, threshold: 0 }
-    )
-    observer.observe(sentinel)
+    let wasScrolled: boolean | null = null
+    const updateScrollState = () => {
+      const isScrolled = main.scrollTop > 0
+      if (isScrolled !== wasScrolled) {
+        wasScrolled = isScrolled
+        main.setAttribute('data-scrolled', isScrolled ? 'true' : 'false')
+      }
+    }
+    updateScrollState()
+    main.addEventListener('scroll', updateScrollState, { passive: true })
 
     return () => {
-      observer.disconnect()
-      sentinel.remove()
+      main.removeEventListener('scroll', updateScrollState)
     }
   }, [])
 
-  const eventFolders = useMemo<EventFolder[]>(() => {
-    if (!manifestResult) return []
-
-    const tagCounts: Record<string, { tag: string; songs: ManifestSong[] }> = {}
-
-    manifestResult.data.songs.forEach(song => {
-      song.tags.forEach(tag => {
-        if (BLACKLIST_TAGS.includes(tag)) return
-
-        if (!tagCounts[tag]) {
-          tagCounts[tag] = { tag, songs: [] }
-        }
-        tagCounts[tag].songs.push(song)
-      })
-    })
-
-    const eventRegistry = manifestResult.data.eventRegistry ?? {}
-
-    return Object.entries(tagCounts)
-      .filter(([, folder]) => folder.songs.length >= 2)
-      .map(([tag, folder]) => {
-        const registryEntry = eventRegistry[tag]
-        const title = registryEntry
-          ? registryEntry.title
-          : { ko: formatFallbackEventTitle(tag), en: formatFallbackEventTitle(tag), ja: formatFallbackEventTitle(tag) }
-        return {
-          id: tag,
-          title,
-          songCount: folder.songs.length,
-          songs: folder.songs,
-        }
-      })
-      .sort((a, b) => b.songCount - a.songCount)
-  }, [manifestResult])
+  const eventFolders = catalogSnapshot?.eventFolders ?? []
+  const manifestDataVersion = manifestResult?.data.dataVersion
 
   const filteredSongs = useMemo(() => {
-    if (!manifestResult || shuffledCatalog?.dataVersion !== manifestResult.data.dataVersion) {
+    if (!catalogSnapshot || catalogSnapshot.dataVersion !== manifestDataVersion) {
       return []
     }
 
-    let list = shuffledCatalog.songs
-    if (selectedTag) {
-      list = list.filter((song) => song.tags.includes(selectedTag))
-    }
-
-    return list.filter((song) => songMatches(song, query))
-  }, [manifestResult, query, selectedTag, shuffledCatalog])
+    return filterCatalogSongs(catalogSnapshot.songs, query, selectedTag)
+  }, [catalogSnapshot, manifestDataVersion, query, selectedTag])
 
   const songCount = manifestResult?.data.songs.length ?? 0
   const resultCount = filteredSongs.length
+  const prioritySongId = catalogSnapshot?.songs[0]?.song.id
+
+  useEffect(() => {
+    if (prioritySongId) {
+      markThumbnailLoaded(prioritySongId)
+    }
+  }, [markThumbnailLoaded, prioritySongId])
 
   return (
     <AppPageShell
@@ -285,9 +285,11 @@ export function CatalogPage() {
         <StatusBanner
           action={(
             <Button
+              isDisabled={isRetrying}
+              isLoading={isRetrying}
               label="다시 시도"
               variant="secondary"
-              onClick={load}
+              onClick={retryManifest}
               icon={<RefreshCw size={16} aria-hidden="true" />}
             />
           )}
@@ -302,9 +304,11 @@ export function CatalogPage() {
         <StatusBanner
           action={(
             <Button
+              isDisabled={isRetrying}
+              isLoading={isRetrying}
               label="다시 시도"
               variant="secondary"
-              onClick={load}
+              onClick={retryManifest}
               icon={<RefreshCw size={16} aria-hidden="true" />}
             />
           )}
@@ -323,7 +327,7 @@ export function CatalogPage() {
             container="card"
             title={
               <span>
-                이벤트 <strong>{localizedText((manifestResult?.data.eventRegistry ?? {})[selectedTag]?.title ?? { ko: formatFallbackEventTitle(selectedTag), en: formatFallbackEventTitle(selectedTag), ja: formatFallbackEventTitle(selectedTag) }, 'ko', ['ja', 'en'])}</strong>의 수록곡을 보고 있습니다.
+                이벤트 <strong>{localizedText((manifestResult?.data.eventRegistry ?? {})[selectedTag]?.title ?? fallbackEventTitle(selectedTag), 'ko', ['ja', 'en'])}</strong>의 수록곡을 보고 있습니다.
               </span>
             }
             endContent={
@@ -341,7 +345,7 @@ export function CatalogPage() {
         </div>
       ) : null}
 
-      <div className="catalog-content-layout">
+      <div aria-busy={isRetrying} className="catalog-content-layout">
         <div className="sr-only" aria-live="polite">
           {query ? `검색 결과가 ${resultCount}개 있습니다.` : `전체 ${songCount}개의 곡이 있습니다.`}
         </div>
@@ -372,41 +376,19 @@ export function CatalogPage() {
           ) : manifestResult && viewMode === 'songs' ? (
             <>
               <div className="catalog-song-grid">
-                {filteredSongs.map((song) => {
-                  const usesOriginalArtwork = Boolean(song.originalSongId)
-
+                {filteredSongs.map((entry) => {
+                  const isPriorityThumbnail = entry.song.id === prioritySongId
                   return (
-                    <Link
-                      className={`catalog-song-card${usesOriginalArtwork ? ' catalog-song-card--original-art' : ''}`}
-                      key={song.id}
-                      onFocus={() => prefetchPracticeImmediately(song.id)}
-                      onMouseEnter={() => scheduleHoverPrefetch(song.id)}
-                      onMouseLeave={cancelHoverPrefetch}
-                      onPointerDown={() => prefetchPracticeImmediately(song.id)}
-                      to={`/songs/${song.id}`}
-                    >
-                      <div className="catalog-song-media" aria-hidden="true">
-                        <div className="catalog-song-fallback-bg" />
-                        <img
-                          alt=""
-                          aria-hidden="true"
-                          className="catalog-song-thumbnail"
-                          loading="lazy"
-                          src={youtubeThumbnailUrl(song)}
-                          onError={(event) => {
-                            event.currentTarget.style.display = 'none'
-                          }}
-                        />
-                      </div>
-                      <div className="catalog-song-content">
-                        <h2>{localizedText(song.title, 'ko', ['ja', 'en'])}</h2>
-                        <p>{localizedText(song.artist, 'ko', ['ja', 'en'])}</p>
-                        <div className="catalog-card-action">
-                          <span>Practice</span>
-                          <ArrowRight size={16} aria-hidden="true" />
-                        </div>
-                      </div>
-                    </Link>
+                    <SongCard
+                      entry={entry}
+                      isPriorityThumbnail={isPriorityThumbnail}
+                      isThumbnailLoaded={isPriorityThumbnail || loadedSongIds.has(entry.song.id)}
+                      key={entry.song.id}
+                      observeThumbnail={observeThumbnail}
+                      onCancelHoverPrefetch={cancelHoverPrefetch}
+                      onImmediatePrefetch={prefetchPracticeImmediately}
+                      onScheduleHoverPrefetch={scheduleHoverPrefetch}
+                    />
                   )
                 })}
               </div>
