@@ -1,3 +1,5 @@
+import { parseCacheEnvelope, serializeCacheEnvelope, storedCacheBytes } from './cacheCodec'
+
 export const CACHE_FRESH_MS = 24 * 60 * 60 * 1000
 export const CACHE_MAX_STALE_MS = 30 * 24 * 60 * 60 * 1000
 export const CACHE_NAMESPACE_MAX_BYTES = 4 * 1024 * 1024
@@ -8,13 +10,10 @@ const snapshotGenerationPattern = /^[a-f0-9]{32}$/
 
 export type CacheFreshness = 'fresh' | 'stale'
 
-interface CacheEnvelope<T> {
+export interface CacheEntry<T> {
+  freshness: CacheFreshness
   savedAt: string
   value: T
-}
-
-export interface CacheEntry<T> extends CacheEnvelope<T> {
-  freshness: CacheFreshness
 }
 
 export type CacheFamily = 'call-guide' | 'event-calendar'
@@ -90,22 +89,20 @@ interface CacheSweepOptions {
   currentDataVersion?: string
   protectKeys?: Iterable<string>
   reserveBytes?: number
-  transientProtectKeys?: Iterable<string>
 }
 
-interface SaveCacheOptions extends CacheSweepOptions {
-  retryQuota?: boolean
-}
+type SaveCacheOptions = CacheSweepOptions
 
 export interface CacheBatchWrite {
   key: string
   value: unknown
 }
 
-export interface CommitCacheBatchOptions {
+export interface FamilySnapshotCommit {
+  child: CacheBatchWrite
   currentDataVersion: string
   pointer: CacheBatchWrite
-  retryQuota?: boolean
+  root: CacheBatchWrite
   staging: {
     family: CacheFamily
     generation: string
@@ -118,6 +115,7 @@ interface StoredEntry {
   raw: string
   savedAtMs: number
   storageKey: string
+  value: unknown
 }
 
 interface ParsedResourceKey {
@@ -146,24 +144,16 @@ function parseStoredEntry(storageKey: string, raw: string): StoredEntry | null {
     return null
   }
   try {
-    const envelope = JSON.parse(raw) as unknown
-    if (
-      !envelope
-      || typeof envelope !== 'object'
-      || typeof (envelope as CacheEnvelope<unknown>).savedAt !== 'string'
-      || !Object.hasOwn(envelope, 'value')
-    ) {
-      return null
-    }
-    const savedAtMs = new Date((envelope as CacheEnvelope<unknown>).savedAt).getTime()
-    if (!Number.isFinite(savedAtMs)) {
+    const envelope = parseCacheEnvelope(raw)
+    if (!envelope) {
       return null
     }
     return {
       innerKey: storageKey.slice(CACHE_NAMESPACE.length),
       raw,
-      savedAtMs,
+      savedAtMs: envelope.savedAtMs,
       storageKey,
+      value: envelope.value,
     }
   } catch {
     return null
@@ -245,23 +235,10 @@ function namespaceEntries(storage: Storage): Array<{ key: string; raw: string }>
   return entries
 }
 
-function storedBytes(key: string, raw: string): number {
-  // Web Storage stores DOMStrings, so count UTF-16 code units rather than UTF-8 bytes.
-  return 2 * (key.length + raw.length)
-}
-
-function envelopeValue(raw: string): unknown {
-  try {
-    const envelope = JSON.parse(raw) as CacheEnvelope<unknown>
-    return envelope.value
-  } catch {
-    return undefined
-  }
-}
-
 function validPointerBackingKeys(
   entries: Array<{ key: string; raw: string }>,
   now: number,
+  parsedByKey: ReadonlyMap<string, StoredEntry | null>,
 ): { invalidPointerKeys: Set<string>; protectedKeys: Set<string> } {
   const byKey = new Map(entries.map((entry) => [entry.key, entry.raw]))
   const protectedKeys = new Set<string>()
@@ -272,8 +249,8 @@ function validPointerBackingKeys(
     }
     try {
       const pointerKey = parseFamilyPointerKey(entry.key.slice(CACHE_NAMESPACE.length))
-      const parsed = parseStoredEntry(entry.key, entry.raw)
-      const pointer = envelopeValue(entry.raw)
+      const parsed = parsedByKey.get(entry.key)
+      const pointer = parsed?.value
       if (
         !pointerKey
         || !parsed
@@ -321,8 +298,8 @@ function validPointerBackingKeys(
       }
       const rootStorageKey = cacheStorageKey(typedPointer.rootKey)
       const rootRaw = byKey.get(rootStorageKey)
-      const rootEntry = rootRaw ? parseStoredEntry(rootStorageKey, rootRaw) : null
-      const root = rootRaw ? envelopeValue(rootRaw) : null
+      const rootEntry = rootRaw ? parsedByKey.get(rootStorageKey) : null
+      const root = rootEntry?.value
       if (
         !rootEntry
         || now - rootEntry.savedAtMs < 0
@@ -357,8 +334,8 @@ function validPointerBackingKeys(
       }
       const childStorageKey = cacheStorageKey(typedPointer.childKey)
       const childRaw = byKey.get(childStorageKey)
-      const childEntry = childRaw ? parseStoredEntry(childStorageKey, childRaw) : null
-      const child = childRaw ? envelopeValue(childRaw) : null
+      const childEntry = childRaw ? parsedByKey.get(childStorageKey) : null
+      const child = childEntry?.value
       if (
         !childEntry
         || now - childEntry.savedAtMs < 0
@@ -382,6 +359,7 @@ function validPointerBackingKeys(
 function validStagingBackingKeys(
   entries: Array<{ key: string; raw: string }>,
   now: number,
+  parsedByKey: ReadonlyMap<string, StoredEntry | null>,
 ): { invalidMarkerKeys: Set<string>; protectedKeys: Set<string> } {
   const invalidMarkerKeys = new Set<string>()
   const protectedKeys = new Set<string>()
@@ -391,8 +369,8 @@ function validStagingBackingKeys(
     }
     try {
       const markerKey = parseStagingKey(entry.key.slice(CACHE_NAMESPACE.length))
-      const parsed = parseStoredEntry(entry.key, entry.raw)
-      const marker = envelopeValue(entry.raw)
+      const parsed = parsedByKey.get(entry.key)
+      const marker = parsed?.value
       if (
         !markerKey
         || !parsed
@@ -455,8 +433,9 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
   try {
     const now = Date.now()
     const entries = namespaceEntries(storage)
-    const pointerProtection = validPointerBackingKeys(entries, now)
-    const stagingProtection = validStagingBackingKeys(entries, now)
+    const parsedByKey = new Map(entries.map((entry) => [entry.key, parseStoredEntry(entry.key, entry.raw)]))
+    const pointerProtection = validPointerBackingKeys(entries, now, parsedByKey)
+    const stagingProtection = validStagingBackingKeys(entries, now, parsedByKey)
     const protectedKeys = new Set([
       ...pointerProtection.protectedKeys,
       ...stagingProtection.protectedKeys,
@@ -465,16 +444,13 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
       protectedKeys.add(cacheStorageKey(key))
     }
     const cleanupProtectedKeys = new Set(protectedKeys)
-    for (const key of options.transientProtectKeys ?? []) {
-      cleanupProtectedKeys.add(cacheStorageKey(key))
-    }
 
     const removeKeys = new Set([
       ...pointerProtection.invalidPointerKeys,
       ...stagingProtection.invalidMarkerKeys,
     ])
     for (const entry of entries) {
-      const parsed = parseStoredEntry(entry.key, entry.raw)
+      const parsed = parsedByKey.get(entry.key)
       if (
         !parsed
         || now - parsed.savedAtMs < 0
@@ -505,7 +481,7 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
     }
 
     let totalBytes = entries.reduce(
-      (total, entry) => total + storedBytes(entry.key, entry.raw),
+      (total, entry) => total + storedCacheBytes(entry.key, entry.raw),
       0,
     )
     const removedKeys = new Set<string>()
@@ -518,7 +494,7 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
       try {
         storage.removeItem(key)
         removedKeys.add(key)
-        totalBytes -= storedBytes(entry.key, entry.raw)
+        totalBytes -= storedCacheBytes(entry.key, entry.raw)
       } catch {
         // Cleanup is best effort. Failed removals still count toward the cap.
       }
@@ -538,7 +514,7 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
         && !protectedKeys.has(entry.key)
         && parseResourceKey(entry.key.slice(CACHE_NAMESPACE.length)) !== null
       ))
-      .map((entry) => ({ ...entry, parsed: parseStoredEntry(entry.key, entry.raw) }))
+      .map((entry) => ({ ...entry, parsed: parsedByKey.get(entry.key) }))
       .sort((left, right) => (
         (left.parsed?.savedAtMs ?? Number.NEGATIVE_INFINITY)
         - (right.parsed?.savedAtMs ?? Number.NEGATIVE_INFINITY)
@@ -550,7 +526,7 @@ export function sweepCache(options: CacheSweepOptions = {}): void {
       }
       try {
         storage.removeItem(entry.key)
-        totalBytes -= storedBytes(entry.key, entry.raw)
+        totalBytes -= storedCacheBytes(entry.key, entry.raw)
       } catch {
         // Continue trying other leaves when one removal is blocked.
       }
@@ -567,20 +543,12 @@ function isQuotaError(error: unknown): boolean {
   return error instanceof Error && /quota/i.test(error.message)
 }
 
-function serializeEnvelope(value: unknown, savedAt = new Date().toISOString()): string | null {
-  try {
-    return JSON.stringify({ savedAt, value } satisfies CacheEnvelope<unknown>)
-  } catch {
-    return null
-  }
-}
-
 function replacedStorageBytes(storage: Storage, storageKey: string): { previous: string | null; replacedBytes: number } {
   try {
     const previous = storage.getItem(storageKey)
     return {
       previous,
-      replacedBytes: previous === null ? 0 : storedBytes(storageKey, previous),
+      replacedBytes: previous === null ? 0 : storedCacheBytes(storageKey, previous),
     }
   } catch {
     return { previous: null, replacedBytes: 0 }
@@ -593,18 +561,18 @@ export function saveCache<T>(key: string, value: T, options: SaveCacheOptions = 
     return false
   }
 
-  const serialized = serializeEnvelope(value)
+  const serialized = serializeCacheEnvelope(value)
   if (serialized === null) {
     return false
   }
 
   const storageKey = cacheStorageKey(key)
-  if (storedBytes(storageKey, serialized) > CACHE_NAMESPACE_MAX_BYTES) {
+  if (storedCacheBytes(storageKey, serialized) > CACHE_NAMESPACE_MAX_BYTES) {
     return false
   }
   const protectedKeys = [...options.protectKeys ?? []]
   const { replacedBytes } = replacedStorageBytes(storage, storageKey)
-  const pendingBytes = Math.max(0, storedBytes(storageKey, serialized) - replacedBytes)
+  const pendingBytes = Math.max(0, storedCacheBytes(storageKey, serialized) - replacedBytes)
   sweepCache({
     currentDataVersion: options.currentDataVersion,
     protectKeys: [...protectedKeys, key],
@@ -615,7 +583,7 @@ export function saveCache<T>(key: string, value: T, options: SaveCacheOptions = 
     storage.setItem(storageKey, serialized)
     return true
   } catch (error) {
-    if (options.retryQuota === false || !isQuotaError(error)) {
+    if (!isQuotaError(error)) {
       return false
     }
     sweepCache({
@@ -656,7 +624,7 @@ function restoreBatchWrites(storage: Storage, writes: readonly PreparedBatchWrit
 
 function validFamilyBatch(
   writes: readonly CacheBatchWrite[],
-  options: CommitCacheBatchOptions,
+  options: FamilySnapshotCommit,
 ): boolean {
   const { family, generation, rootManifestUrl } = options.staging
   if (!snapshotGenerationPattern.test(generation) || writes.length !== 2) {
@@ -707,10 +675,8 @@ function validFamilyBatch(
  * The pointer is always the final write, so readers see either complete
  * generation even when staging or quota recovery fails.
  */
-export function commitCacheBatch(
-  writes: readonly CacheBatchWrite[],
-  options: CommitCacheBatchOptions,
-): boolean {
+export function commitFamilySnapshot(options: FamilySnapshotCommit): boolean {
+  const writes = [options.root, options.child]
   const storage = localStorageOrNull()
   if (!storage) {
     return false
@@ -742,7 +708,7 @@ export function commitCacheBatch(
   const prepared: PreparedBatchWrite[] = []
   try {
     for (const write of orderedWrites) {
-      const raw = serializeEnvelope(write.value, savedAt)
+      const raw = serializeCacheEnvelope(write.value, savedAt)
       if (raw === null) {
         return false
       }
@@ -759,7 +725,7 @@ export function commitCacheBatch(
   }
 
   const committedBytes = prepared.slice(1).reduce(
-    (total, write) => total + storedBytes(write.storageKey, write.raw),
+    (total, write) => total + storedCacheBytes(write.storageKey, write.raw),
     0,
   )
   if (committedBytes > CACHE_NAMESPACE_MAX_BYTES) {
@@ -769,8 +735,8 @@ export function commitCacheBatch(
   const reserveBytes = prepared.reduce((total, write) => (
     total + Math.max(
       0,
-      storedBytes(write.storageKey, write.raw)
-        - (write.previous === null ? 0 : storedBytes(write.storageKey, write.previous)),
+      storedCacheBytes(write.storageKey, write.raw)
+        - (write.previous === null ? 0 : storedCacheBytes(write.storageKey, write.previous)),
     )
   ), 0)
   const protectKeys = prepared.map((write) => write.key)
@@ -801,7 +767,7 @@ export function commitCacheBatch(
   sweepForAttempt()
   let failure = attempt()
   if (failure !== null) {
-    if (options.retryQuota === false || !isQuotaError(failure)) {
+    if (!isQuotaError(failure)) {
       return false
     }
     sweepForAttempt()
@@ -822,7 +788,7 @@ export function cacheNamespaceBytes(): number {
   }
   try {
     return namespaceEntries(storage).reduce(
-      (total, entry) => total + storedBytes(entry.key, entry.raw),
+      (total, entry) => total + storedCacheBytes(entry.key, entry.raw),
       0,
     )
   } catch {
@@ -858,35 +824,19 @@ export function loadCache<T>(key: string): CacheEntry<T> | null {
     return null
   }
 
-  try {
-    const envelope = JSON.parse(raw) as unknown
-    if (
-      !envelope ||
-      typeof envelope !== 'object' ||
-      typeof (envelope as CacheEnvelope<T>).savedAt !== 'string' ||
-      !Object.hasOwn(envelope, 'value')
-    ) {
-      removeCache(key)
-      return null
-    }
-
-    const typed = envelope as CacheEnvelope<T>
-    const savedAtMs = new Date(typed.savedAt).getTime()
-    if (!Number.isFinite(savedAtMs)) {
-      removeCache(key)
-      return null
-    }
-    const ageMs = Date.now() - savedAtMs
-    if (ageMs < 0 || ageMs > CACHE_MAX_STALE_MS) {
-      removeCache(key)
-      return null
-    }
-    return {
-      ...typed,
-      freshness: ageMs <= CACHE_FRESH_MS ? 'fresh' : 'stale',
-    }
-  } catch {
+  const envelope = parseCacheEnvelope<T>(raw)
+  if (!envelope) {
     removeCache(key)
     return null
+  }
+  const ageMs = Date.now() - envelope.savedAtMs
+  if (ageMs < 0 || ageMs > CACHE_MAX_STALE_MS) {
+    removeCache(key)
+    return null
+  }
+  return {
+    savedAt: envelope.savedAt,
+    value: envelope.value,
+    freshness: ageMs <= CACHE_FRESH_MS ? 'fresh' : 'stale',
   }
 }

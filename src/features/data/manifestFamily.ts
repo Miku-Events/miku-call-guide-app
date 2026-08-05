@@ -1,5 +1,5 @@
 import {
-  commitCacheBatch,
+  commitFamilySnapshot,
   familyPointerCacheKey,
   loadCache,
   normalizeManifestIdentity,
@@ -14,12 +14,17 @@ import {
   fetchJson,
   isAbortError,
   resolveDataUrl,
-  withDedupe,
   type AssertFn,
   type ResolvedLoadResult,
 } from './manifestShared'
 import type { RootManifest } from './types'
-import { dataRequestTimeoutReason } from './dataRequestTimeout'
+import {
+  CALL_GUIDE_LOAD_DEADLINE_MS,
+  DataRequestTimeoutError,
+  dataRequestTimeoutReason,
+} from './dataRequestTimeout'
+import { forwardAbort } from './requestAbort'
+import { createSharedResourceStore } from './sharedResourceStore'
 
 export type FamilyName = 'call-guide' | 'event-calendar'
 
@@ -52,8 +57,24 @@ interface CachedFamily<T extends { dataVersion: string }> {
 }
 
 export interface ManifestLoadOptions {
+  force?: boolean
+  retain?: boolean
   signal?: AbortSignal
 }
+
+const rootManifestStore = createSharedResourceStore<RootManifest>({
+  completedLimit: Number.MAX_SAFE_INTEGER,
+})
+const callGuideFamilyStore = createSharedResourceStore<ResolvedLoadResult<{ dataVersion: string }>>({
+  completedLimit: 0,
+  deadline: {
+    error: () => new DataRequestTimeoutError('manifest'),
+    timeoutMs: CALL_GUIDE_LOAD_DEADLINE_MS,
+  },
+})
+const eventCalendarFamilyStore = createSharedResourceStore<ResolvedLoadResult<{ dataVersion: string }>>({
+  completedLimit: 0,
+})
 
 const snapshotGenerationPattern = /^[a-f0-9]{32}$/
 
@@ -127,10 +148,9 @@ function saveCompleteFamily<T extends { dataVersion: string }>(
     generation,
   )
   const pointerKey = familyPointerCacheKey(rootManifestUrl, config.family)
-  commitCacheBatch([
-    { key: rootKey, value: root },
-    { key: childKey, value: child },
-  ], {
+  commitFamilySnapshot({
+    root: { key: rootKey, value: root },
+    child: { key: childKey, value: child },
     currentDataVersion: root.dataVersion,
     pointer: {
       key: pointerKey,
@@ -264,27 +284,18 @@ type SettledChild<T> =
   | { ok: true; value: T }
   | { error: unknown; ok: false }
 
-function forwardAbort(source: AbortSignal | undefined, target: AbortController): () => void {
-  if (!source) {
-    return () => undefined
-  }
-  if (source.aborted) {
-    target.abort(abortReason(source))
-    return () => undefined
-  }
-  const abort = () => target.abort(abortReason(source))
-  source.addEventListener('abort', abort, { once: true })
-  return () => source.removeEventListener('abort', abort)
-}
-
 async function networkFamily<T extends { dataVersion: string }>(
   rootManifestUrl: string,
   config: FamilyConfig<T>,
-  signal: AbortSignal | undefined,
+  signal: AbortSignal,
 ): Promise<ResolvedLoadResult<T>> {
-  const rootPromise = fetchJson(rootManifestUrl, config.assertRoot, {
-    cache: 'no-cache',
-    ...(signal ? { signal } : {}),
+  const rootPromise = rootManifestStore.acquire(normalizeManifestIdentity(rootManifestUrl), {
+    force: true,
+    signal,
+    load: (rootSignal) => fetchJson(rootManifestUrl, config.assertRoot, {
+      cache: 'no-cache',
+      signal: rootSignal,
+    }),
   })
 
   const speculativePath = config.speculativeChildPath
@@ -320,19 +331,19 @@ async function networkFamily<T extends { dataVersion: string }>(
       if (firstAttempt.value.dataVersion === root.dataVersion) {
         child = firstAttempt.value
       } else {
-        if (signal?.aborted) {
+        if (signal.aborted) {
           throw abortReason(signal)
         }
         child = await fetchJson(childUrl, config.assertChild, {
           cache: 'no-cache',
-          ...(signal ? { signal } : {}),
+          signal,
         })
       }
     } else {
       speculativeController?.abort(new DOMException('Speculative child was not declared by root.', 'AbortError'))
       child = await fetchJson(childUrl, config.assertChild, {
         cache: 'no-cache',
-        ...(signal ? { signal } : {}),
+        signal,
       })
     }
 
@@ -344,7 +355,7 @@ async function networkFamily<T extends { dataVersion: string }>(
     unlinkAbort()
     if (!completed && !speculativeController?.signal.aborted) {
       speculativeController?.abort(
-        signal?.aborted
+        signal.aborted
           ? abortReason(signal)
           : new DOMException('Manifest family load did not complete.', 'AbortError'),
       )
@@ -360,27 +371,33 @@ export function fetchManifestFamily<T extends { dataVersion: string }>(
   if (!rootManifestUrl) {
     return Promise.reject(new Error('VITE_DATA_MANIFEST_URL is not configured.'))
   }
-  const dedupeKey = `family:${familyPointerCacheKey(rootManifestUrl, config.family)}`
-  return withDedupe(dedupeKey, options.signal, async () => {
-    try {
-      return await networkFamily(rootManifestUrl, config, options.signal)
-    } catch (error) {
-      const timeoutError = dataRequestTimeoutReason(options.signal)
-      if (!timeoutError && (isAbortError(error) || options.signal?.aborted)) {
-        throw error
+  const key = `family:${familyPointerCacheKey(rootManifestUrl, config.family)}`
+  const store = config.family === 'call-guide' ? callGuideFamilyStore : eventCalendarFamilyStore
+  return store.acquire(key, {
+    force: options.force,
+    retain: options.retain,
+    signal: options.signal,
+    load: async (signal) => {
+      try {
+        return await networkFamily(rootManifestUrl, config, signal)
+      } catch (error) {
+        const timeoutError = dataRequestTimeoutReason(signal)
+        if (!timeoutError && (isAbortError(error) || signal.aborted)) {
+          throw error
+        }
+        const cached = loadCompleteFamily(rootManifestUrl, config)
+        if (!cached) {
+          throw timeoutError ?? error
+        }
+        return {
+          data: cached.data,
+          source: 'cache',
+          url: cached.url,
+          warning: fallbackWarning(`${config.label} family`, cached),
+        }
       }
-      const cached = loadCompleteFamily(rootManifestUrl, config)
-      if (!cached) {
-        throw timeoutError ?? error
-      }
-      return {
-        data: cached.data,
-        source: 'cache',
-        url: cached.url,
-        warning: fallbackWarning(`${config.label} family`, cached),
-      }
-    }
-  })
+    },
+  }) as Promise<ResolvedLoadResult<T>>
 }
 
 export async function fetchRootManifestWithValidator(
@@ -391,13 +408,25 @@ export async function fetchRootManifestWithValidator(
   if (!rootManifestUrl) {
     throw new Error('VITE_DATA_MANIFEST_URL is not configured.')
   }
-  const root = await withDedupe(
-    `root:${normalizeManifestIdentity(rootManifestUrl)}`,
-    options.signal,
-    () => fetchJson(rootManifestUrl, assertRoot, {
+  const root = await rootManifestStore.acquire(normalizeManifestIdentity(rootManifestUrl), {
+    force: options.force,
+    retain: options.retain,
+    signal: options.signal,
+    load: (signal) => fetchJson(rootManifestUrl, assertRoot, {
       cache: 'no-cache',
-      ...(options.signal ? { signal: options.signal } : {}),
+      signal,
     }),
-  )
+  })
   return { data: root, source: 'network', url: rootManifestUrl }
+}
+
+export function resetManifestSessionForTests(): void {
+  callGuideFamilyStore.reset()
+  eventCalendarFamilyStore.reset()
+  rootManifestStore.reset()
+}
+
+export function manifestSessionSnapshotForTests(family: FamilyName) {
+  const familyStore = family === 'call-guide' ? callGuideFamilyStore : eventCalendarFamilyStore
+  return { family: familyStore.snapshot(), root: rootManifestStore.snapshot() }
 }

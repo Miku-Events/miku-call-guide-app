@@ -7,6 +7,7 @@ import {
   fetchEventDetail,
 } from './fetchManifest'
 import type { CallGuideManifest, EventCalendarIndex, EventCalendarMonth, EventGuide, RootManifest } from './types'
+import { resetManifestSessionForTests } from './manifestFamily'
 
 const rootManifest: RootManifest = {
   schemaVersion: 1,
@@ -69,9 +70,31 @@ function withoutDataVersion<T extends { dataVersion: string }>(value: T): Partia
 
 describe('fetch manifest helpers', () => {
   afterEach(() => {
+    resetManifestSessionForTests()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     window.localStorage.clear()
+  })
+
+  it('shares one root request across concurrent manifest families', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const value = url.endsWith('/manifest.json')
+        ? rootManifest
+        : url.endsWith('/call-guide-manifest.json')
+          ? callGuideManifest
+          : eventIndex
+      return { ok: true, json: async () => value }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await Promise.all([
+      fetchCallGuideManifest('https://example.test/manifest.json'),
+      fetchEventCalendarIndex('https://example.test/manifest.json'),
+    ])
+
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/manifest.json'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/call-guide-manifest.json'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/event-calendar/index.json'))).toHaveLength(1)
   })
 
   it('loads root and call-guide manifests from network and writes cache', async () => {
@@ -310,7 +333,7 @@ describe('fetch manifest helpers', () => {
     expect(result.url).toBe(requestedUrl.toString())
   })
 
-  it('forwards AbortSignal and never falls back to cache for AbortError', async () => {
+  it('uses an owned request signal and never falls back to cache for AbortError', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => month }))
     await fetchEventCalendarMonth('https://example.test/event-calendar/index.json', '2026-06', {
       expectedDataVersion: 'test',
@@ -326,8 +349,9 @@ describe('fetch manifest helpers', () => {
     })).rejects.toBe(abortError)
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.test/event-calendar/months/2026-06.json',
-      expect.objectContaining({ signal: controller.signal }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+    expect(fetchMock.mock.calls[0]?.[1].signal).not.toBe(controller.signal)
 
     const alreadyAborted = new AbortController()
     alreadyAborted.abort()
@@ -351,7 +375,7 @@ describe('fetch manifest helpers', () => {
     })).resolves.toMatchObject({ source: 'network', data: month })
   })
 
-  it('does not dedupe requests carrying distinct AbortSignals', async () => {
+  it('shares a healthy request across consumers carrying distinct AbortSignals', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => month })
     vi.stubGlobal('fetch', fetchMock)
     const first = new AbortController()
@@ -368,8 +392,8 @@ describe('fetch manifest helpers', () => {
       }),
     ])
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls.map(([, options]) => options.signal)).toEqual([first.signal, second.signal])
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0]?.[1].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('rejects an event detail whose id does not match the requested event', async () => {
