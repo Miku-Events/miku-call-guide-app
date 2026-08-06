@@ -1,20 +1,14 @@
-const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
-const CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN = 'https://static.cloudflareinsights.com'
-const CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN = 'https://cloudflareinsights.com'
-const YOUTUBE_SCRIPT_ORIGINS = [
-  'https://www.youtube.com',
-  'https://s.ytimg.com',
-]
-const YOUTUBE_FRAME_ORIGINS = [
-  'https://www.youtube.com',
-  'https://www.youtube-nocookie.com',
-]
-const X_ORIGINS = [
-  'https://platform.x.com',
-  'https://platform.twitter.com',
-  'https://syndication.twitter.com',
-  'https://cdn.syndication.twimg.com',
-]
+import {
+  CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
+  CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
+  GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
+  GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
+  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+  TURNSTILE_ORIGIN,
+  X_ORIGINS,
+  YOUTUBE_FRAME_ORIGINS,
+  YOUTUBE_SCRIPT_ORIGINS,
+} from './static-csp-sources.mjs'
 
 function configuredOrigin(name, value, optional = false) {
   const rawValue = String(value ?? '')
@@ -65,6 +59,7 @@ export function generateStaticHeaders(environment) {
       submissionOrigin,
       TURNSTILE_ORIGIN,
       CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
+      GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,
     ]),
@@ -72,6 +67,8 @@ export function generateStaticHeaders(environment) {
       "'self'",
       TURNSTILE_ORIGIN,
       CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
+      GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+      ...GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
       ...YOUTUBE_SCRIPT_ORIGINS,
       ...X_ORIGINS,
     ]),

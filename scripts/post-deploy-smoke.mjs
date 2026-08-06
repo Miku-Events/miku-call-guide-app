@@ -1,6 +1,17 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
+import {
+  CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
+  CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
+  GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
+  GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
+  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+  TURNSTILE_ORIGIN,
+  X_ORIGINS,
+  YOUTUBE_FRAME_ORIGINS,
+  YOUTUBE_SCRIPT_ORIGINS,
+} from './static-csp-sources.mjs'
 
 const DEFAULT_SMOKE_ATTEMPTS = 8
 const DEFAULT_SMOKE_RETRY_DELAY_MS = 5_000
@@ -11,23 +22,6 @@ const EXPECTED_PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=()'
 const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 export const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
 export const READINESS_CONTRACT_VERSION = 'runtime-config-v1'
-const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
-const CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN = 'https://static.cloudflareinsights.com'
-const CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN = 'https://cloudflareinsights.com'
-const YOUTUBE_SCRIPT_ORIGINS = [
-  'https://www.youtube.com',
-  'https://s.ytimg.com',
-]
-const YOUTUBE_FRAME_ORIGINS = [
-  'https://www.youtube.com',
-  'https://www.youtube-nocookie.com',
-]
-const X_ORIGINS = [
-  'https://platform.x.com',
-  'https://platform.twitter.com',
-  'https://syndication.twitter.com',
-  'https://cdn.syndication.twimg.com',
-]
 const IMMUTABLE_DEPLOYMENT_ORIGIN_PATTERN = (
   /^https:\/\/[0-9a-f]{8}\.miku-call-guide-app\.pages\.dev$/
 )
@@ -35,6 +29,8 @@ const STATIC_SCRIPT_ALLOWLIST = new Set([
   "'self'",
   TURNSTILE_ORIGIN,
   CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
+  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+  ...GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
   ...YOUTUBE_SCRIPT_ORIGINS,
   ...X_ORIGINS,
 ])
@@ -216,6 +212,7 @@ function assertStaticCsp(csp, label, { appOrigin, dataOrigin, submissionOrigin }
       submissionOrigin,
       TURNSTILE_ORIGIN,
       CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
+      GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,
     ])],

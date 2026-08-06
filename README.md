@@ -63,6 +63,8 @@ node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.
 
 Pages Functions는 고정 hostname을 신뢰하지 않고 각 `Request.url`의 origin을 CORS, OAuth callback/return 경로와 Turnstile hostname 검증의 기준으로 사용합니다. 따라서 연결된 custom domain은 `pages.dev`로 이동하지 않고 현재 브라우저 location에서 그대로 동작합니다. 향후 primary domain을 바꿀 때는 Pages에 새 domain을 먼저 연결하고, GitHub의 `VITE_APP_ORIGIN`, Turnstile 허용 hostname과 GitHub App callback URL을 갱신한 뒤 재배포하면 됩니다. 기존 domain은 전환 검증이 끝난 뒤 제거합니다.
 
+Cloudflare Google Tag Gateway의 자동 태그 삽입은 유지합니다. 자동 삽입되는 inline bootstrap은 `unsafe-inline`이 아니라 `scripts/static-csp-sources.mjs`의 정확한 SHA-256으로만 허용하며, production browser smoke가 실제 custom domain의 CSP 위반과 asset MIME을 검사합니다. Google tag ID나 자동 삽입 구성을 바꾸면 배포 전에 실제 삽입 본문의 hash를 갱신해야 합니다. 단순히 Pages custom domain만 교체하고 같은 Google tag 구성을 유지하는 경우에는 hash 변경이 필요하지 않습니다.
+
 ### 4. 개발 서버 구동
 ```bash
 # 로컬 개발 서버 구동 (기본 포트: 5173)

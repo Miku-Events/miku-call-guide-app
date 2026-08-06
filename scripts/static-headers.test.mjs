@@ -53,6 +53,17 @@ describe('static Cloudflare Pages headers', () => {
       .toContain('https://cloudflareinsights.com')
   })
 
+  it('allows the automatic Google Tag Gateway bootstraps by exact hash', () => {
+    const scripts = directive(generateStaticHeaders(environment), 'script-src')
+
+    expect(scripts).toContain('https://www.googletagmanager.com')
+    expect(scripts).toContain("'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU='")
+    expect(scripts).toContain("'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='")
+    expect(scripts).not.toContain("'unsafe-inline'")
+    expect(directive(generateStaticHeaders(environment), 'connect-src'))
+      .toContain('https://www.google-analytics.com')
+  })
+
   it('emits the required static response security headers', () => {
     const headers = generateStaticHeaders(environment)
 
