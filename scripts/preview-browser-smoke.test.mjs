@@ -4,10 +4,12 @@ import {
   appAssetFailure,
   assertNoBrowserSecurityErrors,
   assertSurfaceNavigation,
+  BrowserAssetDeliveryError,
   BROWSER_SMOKE_ROUTES,
   formatPreviewSmokeReport,
   mainLandmarkLocator,
   PREVIEW_ROUTES,
+  withAssetPropagationRetry,
   waitForRouteReady,
 } from './preview-browser-smoke.mjs'
 
@@ -140,10 +142,39 @@ describe('preview browser smoke diagnostics', () => {
       'text/javascript; charset=utf-8',
     ), 'https://miku.sekai.today')).toBe('')
     expect(appAssetFailure(assetResponse(
+      'https://miku.sekai.today/assets/index.js',
+      304,
+      '',
+    ), 'https://miku.sekai.today')).toBe('')
+    expect(appAssetFailure(assetResponse(
       'https://www.googletagmanager.com/gtag/js',
       200,
       'application/javascript',
     ), 'https://miku.sekai.today')).toBe('')
+  })
+
+  it('retries only identified Pages asset propagation failures', async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new BrowserAssetDeliveryError('chunk is still propagating'))
+      .mockResolvedValue({ routes: BROWSER_SMOKE_ROUTES })
+    const waitImpl = vi.fn()
+
+    await expect(withAssetPropagationRetry(run, {
+      attempts: 2,
+      retryDelayMs: 5_000,
+      waitImpl,
+    })).resolves.toEqual({ routes: BROWSER_SMOKE_ROUTES })
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(waitImpl).toHaveBeenCalledExactlyOnceWith(5_000)
+  })
+
+  it('does not retry CSP, semantic, or application failures', async () => {
+    const failure = new Error('CSP violation')
+    const run = vi.fn().mockRejectedValue(failure)
+
+    await expect(withAssetPropagationRetry(run, { attempts: 8 }))
+      .rejects.toBe(failure)
+    expect(run).toHaveBeenCalledOnce()
   })
 
   it.each([

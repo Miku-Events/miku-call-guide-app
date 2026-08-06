@@ -5,6 +5,9 @@ import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.
 import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
+const DEFAULT_ASSET_PROPAGATION_ATTEMPTS = 8
+const DEFAULT_ASSET_PROPAGATION_RETRY_DELAY_MS = 5_000
+export const BROWSER_ASSET_DELIVERY_ERROR_CODE = 'BROWSER_ASSET_DELIVERY'
 export const BROWSER_SMOKE_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
 export const PREVIEW_ROUTES = BROWSER_SMOKE_ROUTES
 
@@ -93,6 +96,42 @@ function detail(value) {
   }
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+export class BrowserAssetDeliveryError extends Error {
+  constructor(message, options) {
+    super(message, options)
+    this.name = 'BrowserAssetDeliveryError'
+    this.code = BROWSER_ASSET_DELIVERY_ERROR_CODE
+  }
+}
+
+export async function withAssetPropagationRetry(check, {
+  attempts = DEFAULT_ASSET_PROPAGATION_ATTEMPTS,
+  retryDelayMs = DEFAULT_ASSET_PROPAGATION_RETRY_DELAY_MS,
+  waitImpl = wait,
+} = {}) {
+  if (!Number.isSafeInteger(attempts) || attempts < 1) {
+    throw new Error('attempts must be at least 1')
+  }
+
+  let lastError
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await check()
+    } catch (error) {
+      lastError = error
+      if (error?.code !== BROWSER_ASSET_DELIVERY_ERROR_CODE || attempt === attempts) {
+        throw error
+      }
+    }
+    if (retryDelayMs > 0) await waitImpl(retryDelayMs)
+  }
+  throw lastError
+}
+
 export function appAssetFailure(response, surfaceOrigin) {
   let url
   try {
@@ -105,6 +144,9 @@ export function appAssetFailure(response, surfaceOrigin) {
   const extension = url.pathname.match(/\.(css|js)$/i)?.[1]?.toLowerCase()
   if (!extension) return ''
   const status = response.status()
+  // Playwright exposes a successful conditional cache revalidation as 304;
+  // the browser reuses the previously validated body and MIME metadata.
+  if (status === 304) return ''
   const contentType = String(response.headers()['content-type'] || '').toLowerCase()
   const expectedType = extension === 'css' ? 'text/css' : /javascript|ecmascript/
   const typeMatches = typeof expectedType === 'string'
@@ -268,7 +310,11 @@ export async function runBrowserSmoke({
     await page.addInitScript(() => {
       globalThis.__mikuPreviewCspViolations = []
       try {
-        localStorage.removeItem('miku-call-guide:spoiler-disclaimer-acknowledged')
+        const initializationKey = 'miku-call-guide:browser-smoke-initialized'
+        if (sessionStorage.getItem(initializationKey) !== '1') {
+          localStorage.removeItem('miku-call-guide:spoiler-disclaimer-acknowledged')
+          sessionStorage.setItem(initializationKey, '1')
+        }
       } catch {
         // The gate intentionally remains required when storage is unavailable.
       }
@@ -308,13 +354,15 @@ export async function runBrowserSmoke({
             acknowledgeInitialSpoilerDisclaimer(page).then(() => ''),
             firstAssetFailure,
           ])
-          if (acknowledgementFailure) throw new Error(acknowledgementFailure)
+          if (acknowledgementFailure) {
+            throw new BrowserAssetDeliveryError(acknowledgementFailure)
+          }
         }
         const readinessFailure = await Promise.race([
           waitForRouteReady(page).then(() => ''),
           firstAssetFailure,
         ])
-        if (readinessFailure) throw new Error(readinessFailure)
+        if (readinessFailure) throw new BrowserAssetDeliveryError(readinessFailure)
         assertSurfaceNavigation(
           response,
           page.url(),
@@ -331,7 +379,7 @@ export async function runBrowserSmoke({
       }
     } catch (error) {
       const state = await browserFailureState(page)
-      throw new Error([
+      const wrappedError = new Error([
         error instanceof Error ? error.message : String(error),
         `Browser bootstrap diagnostics: ${detail({
           assetFailures,
@@ -339,10 +387,16 @@ export async function runBrowserSmoke({
           state,
           url: page.url(),
         })}`,
-      ].join('\n'))
+      ].join('\n'), { cause: error })
+      if (error?.code === BROWSER_ASSET_DELIVERY_ERROR_CODE) {
+        wrappedError.code = BROWSER_ASSET_DELIVERY_ERROR_CODE
+      }
+      throw wrappedError
     }
     if (assetFailures.length > 0) {
-      throw new Error(`Browser smoke asset failures:\n${assetFailures.join('\n')}`)
+      throw new BrowserAssetDeliveryError(
+        `Browser smoke asset failures:\n${assetFailures.join('\n')}`,
+      )
     }
     assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
     await assertReleaseMarker(
@@ -399,7 +453,7 @@ async function runCli() {
     throw new Error('BROWSER_SMOKE_ORIGIN and PREVIEW_SMOKE_ORIGIN must not conflict')
   }
   const isPreview = !browserOrigin
-  const report = await runBrowserSmoke({
+  const report = await withAssetPropagationRetry(() => runBrowserSmoke({
     appOrigin: process.env.APP_SMOKE_ORIGIN,
     dataManifestUrl: process.env.DATA_MANIFEST_URL,
     expectedReleaseId: process.env.EXPECTED_RELEASE_ID,
@@ -407,7 +461,7 @@ async function runCli() {
     surfaceLabel: isPreview ? 'Preview' : 'Production',
     surfaceOrigin: browserOrigin || previewOrigin,
     submissionApiUrl: process.env.SUBMISSION_API_URL,
-  })
+  }))
   process.stdout.write(`${formatPreviewSmokeReport(report)}\n`)
 }
 
