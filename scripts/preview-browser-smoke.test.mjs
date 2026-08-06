@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   acknowledgeInitialSpoilerDisclaimer,
+  appAssetFailure,
   assertNoBrowserSecurityErrors,
   assertSurfaceNavigation,
   BROWSER_SMOKE_ROUTES,
@@ -9,6 +10,14 @@ import {
   PREVIEW_ROUTES,
   waitForRouteReady,
 } from './preview-browser-smoke.mjs'
+
+function assetResponse(url, status, contentType) {
+  return {
+    headers: () => ({ 'content-type': contentType }),
+    status: () => status,
+    url: () => url,
+  }
+}
 
 describe('preview browser smoke diagnostics', () => {
   it('visits the catalog, events, and representative song routes', () => {
@@ -106,6 +115,35 @@ describe('preview browser smoke diagnostics', () => {
       'https://miku.sekai.today',
       'Production root',
     )).toThrow(/did not return a navigation response/i)
+  })
+
+  it.each([
+    ['a JavaScript chunk served as HTML', assetResponse(
+      'https://miku.sekai.today/assets/CatalogPage-old.js',
+      200,
+      'text/html; charset=utf-8',
+    )],
+    ['a missing stylesheet', assetResponse(
+      'https://miku.sekai.today/assets/index-old.css',
+      404,
+      'text/html; charset=utf-8',
+    )],
+  ])('reports %s before a semantic bootstrap timeout', (_label, response) => {
+    expect(appAssetFailure(response, 'https://miku.sekai.today'))
+      .toMatch(/HTTP (?:200|404).*content-type text\/html/i)
+  })
+
+  it('accepts correctly typed app assets and ignores third-party scripts', () => {
+    expect(appAssetFailure(assetResponse(
+      'https://miku.sekai.today/assets/index.js',
+      200,
+      'text/javascript; charset=utf-8',
+    ), 'https://miku.sekai.today')).toBe('')
+    expect(appAssetFailure(assetResponse(
+      'https://www.googletagmanager.com/gtag/js',
+      200,
+      'application/javascript',
+    ), 'https://miku.sekai.today')).toBe('')
   })
 
   it.each([

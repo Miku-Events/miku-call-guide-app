@@ -93,6 +93,40 @@ function detail(value) {
   }
 }
 
+export function appAssetFailure(response, surfaceOrigin) {
+  let url
+  try {
+    url = new URL(response.url())
+  } catch {
+    return ''
+  }
+  if (url.origin !== surfaceOrigin || !url.pathname.startsWith('/assets/')) return ''
+
+  const extension = url.pathname.match(/\.(css|js)$/i)?.[1]?.toLowerCase()
+  if (!extension) return ''
+  const status = response.status()
+  const contentType = String(response.headers()['content-type'] || '').toLowerCase()
+  const expectedType = extension === 'css' ? 'text/css' : /javascript|ecmascript/
+  const typeMatches = typeof expectedType === 'string'
+    ? contentType.startsWith(expectedType)
+    : expectedType.test(contentType)
+  if (status === 200 && typeMatches) return ''
+
+  return `${url.href} returned HTTP ${status} with content-type ${contentType || '(missing)'}`
+}
+
+async function browserFailureState(page) {
+  try {
+    return await page.evaluate(() => ({
+      root: (document.querySelector('#root')?.textContent || '').trim().slice(0, 500),
+      scripts: Array.from(document.scripts, (script) => script.src || '[inline]').slice(0, 20),
+      violations: globalThis.__mikuPreviewCspViolations || [],
+    }))
+  } catch (error) {
+    return { inspectionError: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 export function assertNoBrowserSecurityErrors({
   cspViolations = [],
   pageErrors = [],
@@ -199,12 +233,45 @@ export async function runBrowserSmoke({
     const consoleDiagnostics = []
     const cspViolations = []
     const pageErrors = []
+    const assetFailures = []
+    let resolveFirstAssetFailure
+    const firstAssetFailure = new Promise((resolve) => {
+      resolveFirstAssetFailure = resolve
+    })
+    const recordAssetFailure = (failure) => {
+      if (!failure || assetFailures.includes(failure)) return
+      assetFailures.push(failure)
+      if (assetFailures.length === 1) resolveFirstAssetFailure(failure)
+    }
     page.on('console', (message) => {
       consoleDiagnostics.push({ type: message.type(), text: message.text() })
     })
     page.on('pageerror', (error) => pageErrors.push(error.message))
+    page.on('response', (response) => {
+      recordAssetFailure(appAssetFailure(response, normalizedSurfaceOrigin))
+    })
+    page.on('requestfailed', (request) => {
+      let url
+      try {
+        url = new URL(request.url())
+      } catch {
+        return
+      }
+      if (
+        url.origin !== normalizedSurfaceOrigin
+        || !/\/assets\/.*\.(?:css|js)$/i.test(url.pathname)
+      ) return
+      recordAssetFailure(
+        `${url.href} request failed: ${request.failure()?.errorText || 'unknown error'}`,
+      )
+    })
     await page.addInitScript(() => {
       globalThis.__mikuPreviewCspViolations = []
+      try {
+        localStorage.removeItem('miku-call-guide:spoiler-disclaimer-acknowledged')
+      } catch {
+        // The gate intentionally remains required when storage is unavailable.
+      }
       document.addEventListener('securitypolicyviolation', (event) => {
         globalThis.__mikuPreviewCspViolations.push({
           blockedURI: event.blockedURI,
@@ -215,43 +282,67 @@ export async function runBrowserSmoke({
       })
     })
 
-    for (const [index, route] of BROWSER_SMOKE_ROUTES.entries()) {
-      const separator = route.includes('?') ? '&' : '?'
-      const response = await page.goto(
-        `${normalizedSurfaceOrigin}${route}${separator}browser-smoke=${encodeURIComponent(normalizedReleaseId)}`,
-        { waitUntil: 'domcontentloaded' },
-      )
-      const routeLabel = `${surfaceLabel} route ${route}`
-      const navigationOptions = { requireResponse: index === 0 }
-      assertSurfaceNavigation(
-        response,
-        page.url(),
-        normalizedSurfaceOrigin,
-        routeLabel,
-        navigationOptions,
-      )
-      if (index === 0) {
-        assertStaticSecurityHeaders(await responseHeaders(response), {
-          appOrigin: normalizedAppOrigin,
-          dataOrigin: new URL(normalizedManifestUrl).origin,
-          submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
-        }, `${surfaceLabel} root`)
-        await acknowledgeInitialSpoilerDisclaimer(page)
+    try {
+      for (const [index, route] of BROWSER_SMOKE_ROUTES.entries()) {
+        const separator = route.includes('?') ? '&' : '?'
+        const response = await page.goto(
+          `${normalizedSurfaceOrigin}${route}${separator}browser-smoke=${encodeURIComponent(normalizedReleaseId)}`,
+          { waitUntil: 'domcontentloaded' },
+        )
+        const routeLabel = `${surfaceLabel} route ${route}`
+        const navigationOptions = { requireResponse: index === 0 }
+        assertSurfaceNavigation(
+          response,
+          page.url(),
+          normalizedSurfaceOrigin,
+          routeLabel,
+          navigationOptions,
+        )
+        if (index === 0) {
+          assertStaticSecurityHeaders(await responseHeaders(response), {
+            appOrigin: normalizedAppOrigin,
+            dataOrigin: new URL(normalizedManifestUrl).origin,
+            submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
+          }, `${surfaceLabel} root`)
+          const acknowledgementFailure = await Promise.race([
+            acknowledgeInitialSpoilerDisclaimer(page).then(() => ''),
+            firstAssetFailure,
+          ])
+          if (acknowledgementFailure) throw new Error(acknowledgementFailure)
+        }
+        const readinessFailure = await Promise.race([
+          waitForRouteReady(page).then(() => ''),
+          firstAssetFailure,
+        ])
+        if (readinessFailure) throw new Error(readinessFailure)
+        assertSurfaceNavigation(
+          response,
+          page.url(),
+          normalizedSurfaceOrigin,
+          routeLabel,
+          navigationOptions,
+        )
+        const routeViolations = await page.evaluate(() => {
+          const violations = globalThis.__mikuPreviewCspViolations || []
+          globalThis.__mikuPreviewCspViolations = []
+          return violations
+        })
+        cspViolations.push(...routeViolations.map((violation) => ({ route, ...violation })))
       }
-      await waitForRouteReady(page)
-      assertSurfaceNavigation(
-        response,
-        page.url(),
-        normalizedSurfaceOrigin,
-        routeLabel,
-        navigationOptions,
-      )
-      const routeViolations = await page.evaluate(() => {
-        const violations = globalThis.__mikuPreviewCspViolations || []
-        globalThis.__mikuPreviewCspViolations = []
-        return violations
-      })
-      cspViolations.push(...routeViolations.map((violation) => ({ route, ...violation })))
+    } catch (error) {
+      const state = await browserFailureState(page)
+      throw new Error([
+        error instanceof Error ? error.message : String(error),
+        `Browser bootstrap diagnostics: ${detail({
+          assetFailures,
+          pageErrors,
+          state,
+          url: page.url(),
+        })}`,
+      ].join('\n'))
+    }
+    if (assetFailures.length > 0) {
+      throw new Error(`Browser smoke asset failures:\n${assetFailures.join('\n')}`)
     }
     assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
     await assertReleaseMarker(
