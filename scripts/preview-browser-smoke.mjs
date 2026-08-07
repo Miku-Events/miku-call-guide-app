@@ -167,7 +167,10 @@ export function appAssetFailure(response, surfaceOrigin) {
 
 export function initialDocumentDeliveryFailure(response, label) {
   if (!response) return ''
-  const status = response.status()
+  return deploymentHttpStatusFailure(response.status(), label)
+}
+
+export function deploymentHttpStatusFailure(status, label) {
   if (status !== 404 && status < 500) return ''
   return `${label} returned HTTP ${status} while the Pages deployment is propagating`
 }
@@ -260,6 +263,11 @@ async function assertReleaseMarker(request, surfaceOrigin, expectedReleaseId, la
     `${surfaceOrigin}/release.json?release=${encodeURIComponent(expectedReleaseId)}`,
     { headers: { 'cache-control': 'no-cache' } },
   )
+  const deliveryFailure = deploymentHttpStatusFailure(
+    response.status(),
+    `${label} release marker`,
+  )
+  if (deliveryFailure) throw new BrowserDeploymentPropagationError(deliveryFailure)
   assertStatus(response, 200, `${label} release marker`)
   const marker = await response.json()
   if (
@@ -269,7 +277,9 @@ async function assertReleaseMarker(request, surfaceOrigin, expectedReleaseId, la
     || Object.keys(marker).length !== 1
     || marker.releaseId !== expectedReleaseId
   ) {
-    throw new Error(`${label} release marker does not match the requested commit SHA`)
+    throw new BrowserDeploymentPropagationError(
+      `${label} release marker does not match the requested commit SHA`,
+    )
   }
 }
 
