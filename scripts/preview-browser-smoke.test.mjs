@@ -6,6 +6,7 @@ import {
   assertSurfaceNavigation,
   BrowserDeploymentPropagationError,
   BROWSER_SMOKE_ROUTES,
+  deploymentHttpStatusFailure,
   formatPreviewSmokeReport,
   initialDocumentDeliveryFailure,
   mainLandmarkLocator,
@@ -166,6 +167,11 @@ describe('preview browser smoke diagnostics', () => {
   it.each([200, 301, 403])('does not retry an initial HTTP %s response', (status) => {
     expect(initialDocumentDeliveryFailure({ status: () => status }, 'Preview route /'))
       .toBe('')
+  })
+
+  it('classifies a missing release marker as deployment propagation', () => {
+    expect(deploymentHttpStatusFailure(404, 'Preview release marker'))
+      .toMatch(/release marker.*HTTP 404.*propagating/i)
   })
 
   it('retries only identified Pages asset propagation failures', async () => {
