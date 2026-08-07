@@ -4,13 +4,14 @@ import {
   appAssetFailure,
   assertNoBrowserSecurityErrors,
   assertSurfaceNavigation,
-  BrowserAssetDeliveryError,
+  BrowserDeploymentPropagationError,
   BROWSER_SMOKE_ROUTES,
   formatPreviewSmokeReport,
   initialDocumentDeliveryFailure,
   mainLandmarkLocator,
+  missingTagGatewayPolicySources,
   PREVIEW_ROUTES,
-  withAssetPropagationRetry,
+  withDeploymentPropagationRetry,
   waitForRouteReady,
 } from './preview-browser-smoke.mjs'
 
@@ -169,11 +170,11 @@ describe('preview browser smoke diagnostics', () => {
 
   it('retries only identified Pages asset propagation failures', async () => {
     const run = vi.fn()
-      .mockRejectedValueOnce(new BrowserAssetDeliveryError('chunk is still propagating'))
+      .mockRejectedValueOnce(new BrowserDeploymentPropagationError('chunk is propagating'))
       .mockResolvedValue({ routes: BROWSER_SMOKE_ROUTES })
     const waitImpl = vi.fn()
 
-    await expect(withAssetPropagationRetry(run, {
+    await expect(withDeploymentPropagationRetry(run, {
       attempts: 2,
       retryDelayMs: 5_000,
       waitImpl,
@@ -186,9 +187,29 @@ describe('preview browser smoke diagnostics', () => {
     const failure = new Error('CSP violation')
     const run = vi.fn().mockRejectedValue(failure)
 
-    await expect(withAssetPropagationRetry(run, { attempts: 8 }))
+    await expect(withDeploymentPropagationRetry(run, { attempts: 8 }))
       .rejects.toBe(failure)
     expect(run).toHaveBeenCalledOnce()
+  })
+
+  it('identifies only missing deployed Google Tag Gateway CSP sources', () => {
+    const complete = new Headers({
+      'content-security-policy': [
+        "connect-src 'self' https://www.google-analytics.com",
+        "script-src 'self' https://www.googletagmanager.com 'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU=' 'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='",
+      ].join('; '),
+    })
+    const stale = new Headers({
+      'content-security-policy': "connect-src 'self'; script-src 'self'",
+    })
+
+    expect(missingTagGatewayPolicySources(complete)).toEqual([])
+    expect(missingTagGatewayPolicySources(stale)).toEqual([
+      'https://www.google-analytics.com',
+      'https://www.googletagmanager.com',
+      "'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU='",
+      "'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='",
+    ])
   })
 
   it.each([

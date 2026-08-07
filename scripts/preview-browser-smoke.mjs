@@ -3,11 +3,16 @@ import { pathToFileURL } from 'node:url'
 import { chromium } from '@playwright/test'
 import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
+import {
+  GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
+  GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
+  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+} from './static-csp-sources.mjs'
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
-const DEFAULT_ASSET_PROPAGATION_ATTEMPTS = 8
-const DEFAULT_ASSET_PROPAGATION_RETRY_DELAY_MS = 5_000
-export const BROWSER_ASSET_DELIVERY_ERROR_CODE = 'BROWSER_ASSET_DELIVERY'
+const DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS = 8
+const DEFAULT_DEPLOYMENT_PROPAGATION_RETRY_DELAY_MS = 5_000
+export const BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE = 'BROWSER_DEPLOYMENT_PROPAGATION'
 export const BROWSER_SMOKE_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
 export const PREVIEW_ROUTES = BROWSER_SMOKE_ROUTES
 
@@ -100,17 +105,17 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-export class BrowserAssetDeliveryError extends Error {
+export class BrowserDeploymentPropagationError extends Error {
   constructor(message, options) {
     super(message, options)
-    this.name = 'BrowserAssetDeliveryError'
-    this.code = BROWSER_ASSET_DELIVERY_ERROR_CODE
+    this.name = 'BrowserDeploymentPropagationError'
+    this.code = BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE
   }
 }
 
-export async function withAssetPropagationRetry(check, {
-  attempts = DEFAULT_ASSET_PROPAGATION_ATTEMPTS,
-  retryDelayMs = DEFAULT_ASSET_PROPAGATION_RETRY_DELAY_MS,
+export async function withDeploymentPropagationRetry(check, {
+  attempts = DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS,
+  retryDelayMs = DEFAULT_DEPLOYMENT_PROPAGATION_RETRY_DELAY_MS,
   waitImpl = wait,
 } = {}) {
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
@@ -123,7 +128,10 @@ export async function withAssetPropagationRetry(check, {
       return await check()
     } catch (error) {
       lastError = error
-      if (error?.code !== BROWSER_ASSET_DELIVERY_ERROR_CODE || attempt === attempts) {
+      if (
+        error?.code !== BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE
+        || attempt === attempts
+      ) {
         throw error
       }
     }
@@ -162,6 +170,19 @@ export function initialDocumentDeliveryFailure(response, label) {
   const status = response.status()
   if (status !== 404 && status < 500) return ''
   return `${label} returned HTTP ${status} while the Pages deployment is propagating`
+}
+
+export function missingTagGatewayPolicySources(headers) {
+  const sources = new Set(
+    String(headers.get('content-security-policy') || '')
+      .split(/[;\s]+/)
+      .filter(Boolean),
+  )
+  return [
+    GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
+    GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+    ...GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
+  ].filter((source) => !sources.has(source))
 }
 
 async function browserFailureState(page) {
@@ -348,7 +369,7 @@ export async function runBrowserSmoke({
           ? initialDocumentDeliveryFailure(response, routeLabel)
           : ''
         if (initialDeliveryFailure) {
-          throw new BrowserAssetDeliveryError(initialDeliveryFailure)
+          throw new BrowserDeploymentPropagationError(initialDeliveryFailure)
         }
         assertSurfaceNavigation(
           response,
@@ -358,7 +379,14 @@ export async function runBrowserSmoke({
           navigationOptions,
         )
         if (index === 0) {
-          assertStaticSecurityHeaders(await responseHeaders(response), {
+          const rootHeaders = await responseHeaders(response)
+          const missingTagGatewaySources = missingTagGatewayPolicySources(rootHeaders)
+          if (missingTagGatewaySources.length > 0) {
+            throw new BrowserDeploymentPropagationError(
+              `${surfaceLabel} root is missing deployed Google Tag Gateway CSP sources: ${missingTagGatewaySources.join(', ')}`,
+            )
+          }
+          assertStaticSecurityHeaders(rootHeaders, {
             appOrigin: normalizedAppOrigin,
             dataOrigin: new URL(normalizedManifestUrl).origin,
             submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
@@ -368,14 +396,16 @@ export async function runBrowserSmoke({
             firstAssetFailure,
           ])
           if (acknowledgementFailure) {
-            throw new BrowserAssetDeliveryError(acknowledgementFailure)
+            throw new BrowserDeploymentPropagationError(acknowledgementFailure)
           }
         }
         const readinessFailure = await Promise.race([
           waitForRouteReady(page).then(() => ''),
           firstAssetFailure,
         ])
-        if (readinessFailure) throw new BrowserAssetDeliveryError(readinessFailure)
+        if (readinessFailure) {
+          throw new BrowserDeploymentPropagationError(readinessFailure)
+        }
         assertSurfaceNavigation(
           response,
           page.url(),
@@ -401,13 +431,13 @@ export async function runBrowserSmoke({
           url: page.url(),
         })}`,
       ].join('\n'), { cause: error })
-      if (error?.code === BROWSER_ASSET_DELIVERY_ERROR_CODE) {
-        wrappedError.code = BROWSER_ASSET_DELIVERY_ERROR_CODE
+      if (error?.code === BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE) {
+        wrappedError.code = BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE
       }
       throw wrappedError
     }
     if (assetFailures.length > 0) {
-      throw new BrowserAssetDeliveryError(
+      throw new BrowserDeploymentPropagationError(
         `Browser smoke asset failures:\n${assetFailures.join('\n')}`,
       )
     }
@@ -466,7 +496,7 @@ async function runCli() {
     throw new Error('BROWSER_SMOKE_ORIGIN and PREVIEW_SMOKE_ORIGIN must not conflict')
   }
   const isPreview = !browserOrigin
-  const report = await withAssetPropagationRetry(() => runBrowserSmoke({
+  const report = await withDeploymentPropagationRetry(() => runBrowserSmoke({
     appOrigin: process.env.APP_SMOKE_ORIGIN,
     dataManifestUrl: process.env.DATA_MANIFEST_URL,
     expectedReleaseId: process.env.EXPECTED_RELEASE_ID,
