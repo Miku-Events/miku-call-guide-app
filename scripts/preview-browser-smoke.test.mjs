@@ -7,6 +7,7 @@ import {
   BrowserAssetDeliveryError,
   BROWSER_SMOKE_ROUTES,
   formatPreviewSmokeReport,
+  initialDocumentDeliveryFailure,
   mainLandmarkLocator,
   PREVIEW_ROUTES,
   withAssetPropagationRetry,
@@ -151,6 +152,19 @@ describe('preview browser smoke diagnostics', () => {
       200,
       'application/javascript',
     ), 'https://miku.sekai.today')).toBe('')
+  })
+
+  it.each([404, 500, 503, 524])(
+    'classifies an initial HTTP %s as Pages deployment propagation',
+    (status) => {
+      expect(initialDocumentDeliveryFailure({ status: () => status }, 'Preview route /'))
+        .toMatch(new RegExp(`HTTP ${status}.*propagating`, 'i'))
+    },
+  )
+
+  it.each([200, 301, 403])('does not retry an initial HTTP %s response', (status) => {
+    expect(initialDocumentDeliveryFailure({ status: () => status }, 'Preview route /'))
+      .toBe('')
   })
 
   it('retries only identified Pages asset propagation failures', async () => {

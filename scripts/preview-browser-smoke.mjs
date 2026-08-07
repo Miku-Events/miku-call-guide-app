@@ -157,6 +157,13 @@ export function appAssetFailure(response, surfaceOrigin) {
   return `${url.href} returned HTTP ${status} with content-type ${contentType || '(missing)'}`
 }
 
+export function initialDocumentDeliveryFailure(response, label) {
+  if (!response) return ''
+  const status = response.status()
+  if (status !== 404 && status < 500) return ''
+  return `${label} returned HTTP ${status} while the Pages deployment is propagating`
+}
+
 async function browserFailureState(page) {
   try {
     return await page.evaluate(() => ({
@@ -337,6 +344,12 @@ export async function runBrowserSmoke({
         )
         const routeLabel = `${surfaceLabel} route ${route}`
         const navigationOptions = { requireResponse: index === 0 }
+        const initialDeliveryFailure = index === 0
+          ? initialDocumentDeliveryFailure(response, routeLabel)
+          : ''
+        if (initialDeliveryFailure) {
+          throw new BrowserAssetDeliveryError(initialDeliveryFailure)
+        }
         assertSurfaceNavigation(
           response,
           page.url(),
