@@ -4,6 +4,7 @@ import {
   expectAllMarkerGeometryReady,
   expectLocatorCentered,
   expectLocatorContained,
+  expectLocatorContainedInVisualViewport,
   expectLocatorMinTouchTarget,
   expectLocatorNoHorizontalOverflow,
   expectLocatorScrollSettled,
@@ -11,7 +12,10 @@ import {
   expectMarkerGeometryReady,
   expectPageContained,
   expectPageScrollY,
+  expectPracticeRootScrollReady,
+  expectPracticeRootScrollRestored,
   swipeLocatorUp,
+  wheelPageFromLocator,
   wheelLocatorBy,
 } from './fixtures/geometry'
 import {
@@ -188,6 +192,29 @@ test('[PLY-M-01] contains the mobile player, video, lyrics, and touch controls',
   await expectPageContained(page)
   await expectLocatorContained(page.locator('.live-lyrics-panel'), page.locator('.lyric-list-shell'))
   await expectLocatorMinTouchTarget(page.getByRole('button', { name: /声を重ねよう/ }))
+
+  const header = page.locator('.player-top-bar')
+  const visibleNavigation = header.locator('nav a:visible')
+  const headerAction = header.locator('.app-top-bar-action')
+  await expectLocatorContained(header, visibleNavigation.or(header.locator('.player-clock')))
+  await expectLocatorsNotToOverlap(visibleNavigation, headerAction)
+
+  const browserChromeDragHandle = page.locator('.browser-chrome-drag-handle')
+  await expect(browserChromeDragHandle).toBeVisible()
+  await expectLocatorMinTouchTarget(browserChromeDragHandle)
+  await expectPracticeRootScrollReady(page, browserChromeDragHandle)
+
+  // Headless browsers have no address bar; native wheel scrolling verifies the
+  // same root-scroll path that a trusted pan gesture uses on a real device.
+  await wheelPageFromLocator(browserChromeDragHandle, 160)
+  await expectLocatorContainedInVisualViewport(
+    page,
+    page.locator('.call-guide-sticky-frame, .player-shell, .live-lyrics-panel'),
+  )
+
+  await page.getByRole('link', { name: 'Catalog' }).click()
+  await expect(page).toHaveURL(/#\/$/)
+  await expectPracticeRootScrollRestored(page)
 })
 
 test('[PLY-M-02] keeps cross-lane markers clear of mobile lyrics and pronunciation', { tag: '@mobile' }, async ({ page }) => {
@@ -245,6 +272,13 @@ test('[PLY-M-04] restores touch auto-follow without scrolling or clipping the mo
   await expectPageScrollY(page, 0)
   await expectPageContained(page)
   await expectLocatorsNotToOverlap(page.locator('.player-top-bar'), video)
+  const viewportBoundPlayer = page.locator(
+    '.player-shell, .live-lyrics-panel, .lyric-list-shell, .lyric-list, .lyric-line[data-position="current"]',
+  )
+  await expectLocatorContainedInVisualViewport(page, viewportBoundPlayer)
+
+  await page.setViewportSize({ width: 412, height: 650 })
+  await expectLocatorContainedInVisualViewport(page, viewportBoundPlayer)
 })
 
 test('[PLY-M-05] keeps progressive detail bounded through rapid touch scroll and distant activation', { tag: '@mobile' }, async ({ page }) => {
