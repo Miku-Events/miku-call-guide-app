@@ -75,31 +75,34 @@ export async function expectPageScrollY(page: Page, expected = 0, tolerance = 1)
   ).toBeLessThanOrEqual(expected + tolerance)
 }
 
-export async function expectPracticeRootScrollReady(page: Page, dragHandle: Locator): Promise<void> {
+export async function expectBrowserRootScrollReady(page: Page, scrollSurface: Locator): Promise<void> {
   await expect.poll(
-    () => dragHandle.evaluate((element) => {
+    () => scrollSurface.evaluate((element) => {
       const root = document.documentElement
       const scrollingElement = document.scrollingElement
       const rootOverflowY = getComputedStyle(root).overflowY
       const touchAction = getComputedStyle(element).touchAction
+      const allowsVerticalPan = touchAction === 'auto'
+        || touchAction === 'manipulation'
+        || touchAction.split(' ').includes('pan-y')
 
       return (
-        root.classList.contains('call-guide-root-scroll')
+        root.classList.contains('browser-chrome-root-scroll')
         && scrollingElement === root
         && (rootOverflowY === 'auto' || rootOverflowY === 'scroll')
         && scrollingElement.scrollHeight > scrollingElement.clientHeight
-        && touchAction === 'pan-y'
+        && allowsVerticalPan
       )
     }),
-    { message: 'expected the call guide drag handle to expose a native root-scroll path' },
+    { message: 'expected the route to expose a native document-scroll path from the target surface' },
   ).toBe(true)
 }
 
-export async function expectPracticeRootScrollRestored(page: Page): Promise<void> {
+export async function expectBrowserRootScrollRestored(page: Page): Promise<void> {
   await expect.poll(
     () => page.evaluate(() => {
       const root = document.documentElement
-      return !root.classList.contains('call-guide-root-scroll') && getComputedStyle(root).overflowY === 'hidden'
+      return !root.classList.contains('browser-chrome-root-scroll') && getComputedStyle(root).overflowY === 'hidden'
     }),
     { message: 'expected route navigation to restore the locked application root' },
   ).toBe(true)
@@ -116,7 +119,7 @@ export async function wheelPageFromLocator(locator: Locator, deltaY: number): Pr
   await page.mouse.wheel(0, deltaY)
   await expect.poll(
     () => page.evaluate(() => window.scrollY),
-    { message: 'expected the native root scroller to move from the drag handle' },
+    { message: 'expected the native root scroller to move from the target surface' },
   ).toBeGreaterThan(previousScrollY)
 }
 
@@ -241,6 +244,36 @@ export async function scrollLocatorToEndInSteps(locator: Locator): Promise<void>
     await expect.poll(
       () => locator.evaluate((element) => element.scrollTop),
       { message: 'expected the scroll container to reach the next image-loading step' },
+    ).toBeGreaterThanOrEqual(target.next - 1)
+
+    if (target.next >= target.maximum - 1 || target.next <= previous) {
+      return
+    }
+    previous = target.next
+  }
+}
+
+export async function scrollPageToEndInSteps(page: Page): Promise<void> {
+  let previous = -1
+
+  while (true) {
+    const target = await page.evaluate(() => {
+      const scrollingElement = document.scrollingElement
+      if (!scrollingElement) {
+        return { maximum: 0, next: 0 }
+      }
+      const maximum = Math.max(0, scrollingElement.scrollHeight - scrollingElement.clientHeight)
+      const next = Math.min(
+        maximum,
+        scrollingElement.scrollTop + Math.max(1, scrollingElement.clientHeight * 0.75),
+      )
+      scrollingElement.scrollTo({ behavior: 'instant', top: next })
+      return { maximum, next }
+    })
+
+    await expect.poll(
+      () => page.evaluate(() => document.scrollingElement?.scrollTop ?? 0),
+      { message: 'expected the document scroller to reach the next image-loading step' },
     ).toBeGreaterThanOrEqual(target.next - 1)
 
     if (target.next >= target.maximum - 1 || target.next <= previous) {

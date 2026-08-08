@@ -111,7 +111,7 @@ describe('useCatalogThumbnailObserver', () => {
 
     expect(IntersectionObserverHarness.instances).toHaveLength(1)
     const observer = IntersectionObserverHarness.instances[0]
-    expect(observer.root).toBe(view.container.querySelector('.app-main'))
+    expect(observer.root).toBeNull()
     expect(observer.rootMargin).toBe('200px 0px')
     expect(observer.thresholds).toEqual([0.01])
     expect(observer.targets.size).toBe(3)

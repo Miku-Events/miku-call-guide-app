@@ -565,10 +565,6 @@
   padding: 0.75rem 0.9rem;
 }
 
-.browser-chrome-drag-handle {
-  display: none;
-}
-
 .player-shell {
   /* Static Fallbacks for Tests */
   --player-bg: #09090b;
@@ -1093,20 +1089,6 @@
 }
 
 @media (max-width: 920px) {
-  :root.call-guide-root-scroll {
-    height: auto;
-    min-height: 100%;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  :root.call-guide-root-scroll body,
-  :root.call-guide-root-scroll #root {
-    height: auto;
-    min-height: 100%;
-    overflow: visible;
-  }
-
   .call-guide-scroll-runway {
     min-height: calc(100vh + 1px);
     /* Preserve native root-scroll travel as browser chrome moves from svh to lvh. */
@@ -1146,22 +1128,9 @@
     overflow: hidden;
   }
 
-  .browser-chrome-drag-handle {
-    display: flex;
-    width: 100%;
-    min-height: var(--app-touch-target);
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    border-bottom: 1px solid var(--player-outline-soft);
-    color: var(--player-text-muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+  .player-title-block {
+    min-block-size: var(--app-touch-target);
     touch-action: pan-y;
-    -webkit-user-select: none;
-    user-select: none;
   }
 
   .player-main > div,

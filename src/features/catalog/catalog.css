@@ -20,11 +20,14 @@
   background: var(--catalog-bg);
 }
 
+.catalog-shell.app-page-shell--auto {
+  min-height: calc(100vh + 1px);
+  /* Keep enough document travel to collapse dynamic browser chrome on short catalogs. */
+  min-height: calc(200lvh - 100svh + 1px);
+}
+
 .catalog-shell .app-main {
-  overflow-y: auto;
-  overflow-x: hidden;
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
   padding-top: 0;
 }
 
@@ -80,7 +83,7 @@
 .catalog-shell .app-toolbar {
   grid-template-columns: minmax(0, 1fr) auto;
   position: sticky;
-  top: 0;
+  top: 4rem;
   z-index: 2;
   background: var(--catalog-bg);
   border-bottom: 1px solid var(--color-border);

@@ -1,9 +1,15 @@
 import { expect, test } from './fixtures/app-test'
 import { catalogManySongManifest, rootManifest } from './fixtures/data'
 import {
+  expectBrowserRootScrollReady,
+  expectBrowserRootScrollRestored,
+  expectLocatorContainedInVisualViewport,
   expectLocatorMinTouchTarget,
+  expectLocatorsNotToOverlap,
   expectPageContained,
-  scrollLocatorToEndInSteps,
+  expectPageScrollY,
+  scrollPageToEndInSteps,
+  wheelPageFromLocator,
 } from './fixtures/geometry'
 
 async function useManySongCatalog(page: import('@playwright/test').Page): Promise<void> {
@@ -80,22 +86,36 @@ test('[CAT-D-01] renders the catalog navigation, filters, and practice cards', {
   await expect.poll(() => requestedThumbnails.size).toBeGreaterThan(0)
   expect(requestedThumbnails.size).toBeLessThan(14)
 
-  await scrollLocatorToEndInSteps(page.locator('.catalog-shell .app-main'))
+  await scrollPageToEndInSteps(page)
   await expect.poll(() => requestedThumbnails.size).toBe(14)
 })
 
 test('[CAT-M-01] keeps the catalog usable and contained on a touch viewport', { tag: '@mobile' }, async ({ page }) => {
+  await useManySongCatalog(page)
   await page.goto('/?mockPlayer=1')
 
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
   const allFilter = page.getByRole('button', { name: '전체' })
-  const songCard = page.locator('.catalog-song-card', { hasText: '퓨처 라이트 샘플' })
+  const songCard = page.locator('.catalog-song-card').first()
   await expect(allFilter).toHaveAttribute('data-active', 'true')
   await expect(songCard).toBeVisible()
   await expectLocatorMinTouchTarget(allFilter)
   await expectLocatorMinTouchTarget(songCard)
+  await expectBrowserRootScrollReady(page, page.locator('.catalog-content-panel'))
+
+  await wheelPageFromLocator(songCard, 320)
+  await expect(page.locator('.catalog-shell .app-main')).toHaveAttribute('data-scrolled', 'true')
+
+  const header = page.locator('.app-top-bar')
+  const toolbar = page.locator('.catalog-shell .app-toolbar')
+  await expectLocatorsNotToOverlap(header, toolbar)
+  await expectLocatorContainedInVisualViewport(page, header.or(toolbar))
 
   await expectPageContained(page)
+
+  await page.getByRole('link', { name: 'Events' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+  await expectBrowserRootScrollRestored(page)
 })
 
 test('[CAT-D-02] shows catalog retry only when the initial manifest request fails', { tag: '@desktop' }, async ({ page }) => {
@@ -184,6 +204,9 @@ test('[CAT-M-02] shares pointer-down-prefetched data with touch practice navigat
   await songCard.tap()
 
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
+  await expect(page.locator('.browser-chrome-drag-handle')).toHaveCount(0)
+  await expectBrowserRootScrollReady(page, page.locator('.player-title-block'))
+  await expectPageScrollY(page, 0)
   await expect.poll(() => requests.song).toBe(1)
   expect(requests.rootManifest).toBe(1)
   expect(requests.childManifest).toBe(1)
