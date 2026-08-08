@@ -181,10 +181,32 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  document.documentElement.classList.remove('call-guide-root-scroll')
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
   vi.clearAllMocks()
 })
 
 describe('CallGuidePage route identity', () => {
+  it('scopes native root scrolling to the mounted call guide route', () => {
+    harness.fetchCallGuideManifest.mockImplementationOnce(() => new Promise(() => {}))
+
+    const { container, unmount } = render(<CallGuidePage />)
+
+    expect(document.documentElement).toHaveClass('call-guide-root-scroll')
+    expect(container.querySelector('.call-guide-scroll-runway')).toBeInTheDocument()
+    expect(container.querySelector('.call-guide-sticky-frame')).toBeInTheDocument()
+    expect(container.querySelector('.browser-chrome-drag-handle')).toHaveTextContent('위로 밀어 화면 넓히기')
+
+    document.documentElement.scrollTop = 72
+    document.body.scrollTop = 72
+    unmount()
+
+    expect(document.documentElement).not.toHaveClass('call-guide-root-scroll')
+    expect(document.documentElement.scrollTop).toBe(0)
+    expect(document.body.scrollTop).toBe(0)
+  })
+
   it('announces loading and marks the content busy while the song is deferred', () => {
     harness.fetchCallGuideManifest.mockImplementationOnce(() => new Promise(() => {}))
 

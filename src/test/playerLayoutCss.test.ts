@@ -178,6 +178,9 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(playerShell, '--player-text', 'var(--color-text-primary, #f4f4f5)')
     expectDeclaration(playerShell, '--player-accent', 'var(--color-text-cyan, #39c5bb)')
     expectDeclaration(playerShell, 'color-scheme', 'dark')
+    expectDeclaration(playerShell, 'height', '100vh')
+    expectDeclaration(playerShell, 'height', '100dvh')
+    expectDeclaration(playerShell, 'min-height', '0')
     expectDeclaration(playerShell, 'background', 'var(--player-bg)')
 
     const topBar = getBlock(css, '.player-top-bar')
@@ -334,5 +337,80 @@ describe('player layout CSS contracts', () => {
 
     const playerCurrentLyric = getBlock(css, '.player-shell .lyric-line[data-position="current"] .lyric-original')
     expectDeclaration(playerCurrentLyric, 'row-gap', '1.45rem')
+  })
+
+  it('bounds the mobile player and lyric viewport to the dynamic visual height', () => {
+    const mobileCss = getBlock(css, '@media (max-width: 920px)')
+    const mobileRoot = getBlock(mobileCss, ':root.call-guide-root-scroll')
+    expectDeclaration(mobileRoot, 'height', 'auto')
+    expectDeclaration(mobileRoot, 'min-height', '100%')
+    expectDeclaration(mobileRoot, 'overflow-x', 'hidden')
+    expectDeclaration(mobileRoot, 'overflow-y', 'auto')
+
+    const mobileDocument = getBlock(mobileCss, ':root.call-guide-root-scroll body,')
+    expectDeclaration(mobileDocument, 'height', 'auto')
+    expectDeclaration(mobileDocument, 'min-height', '100%')
+    expectDeclaration(mobileDocument, 'overflow', 'visible')
+
+    const mobileRunway = getBlock(mobileCss, '.call-guide-scroll-runway')
+    expectDeclaration(mobileRunway, 'min-height', 'calc(100vh + 1px)')
+    expectDeclaration(mobileRunway, 'min-height', 'calc(200lvh - 100svh + 1px)')
+
+    const mobileStickyFrame = getBlock(mobileCss, '.call-guide-sticky-frame')
+    expectDeclaration(mobileStickyFrame, 'position', 'sticky')
+    expectDeclaration(mobileStickyFrame, 'top', '0')
+    expectDeclaration(mobileStickyFrame, 'height', '100vh')
+    expectDeclaration(mobileStickyFrame, 'height', '100dvh')
+    expectDeclaration(mobileStickyFrame, 'min-height', '0')
+
+    const mobileDragHandle = getBlock(mobileCss, '.browser-chrome-drag-handle')
+    expectDeclaration(mobileDragHandle, 'display', 'flex')
+    expectDeclaration(mobileDragHandle, 'min-height', 'var(--app-touch-target)')
+    expectDeclaration(mobileDragHandle, 'touch-action', 'pan-y')
+
+    const mobileMain = getBlock(mobileCss, '.player-main')
+    expectDeclaration(mobileMain, 'display', 'flex')
+    expectDeclaration(mobileMain, 'height', '100%')
+    expectDeclaration(mobileMain, 'min-height', '0')
+    expectDeclaration(mobileMain, 'gap', '0')
+    expectDeclaration(
+      mobileMain,
+      'padding-bottom',
+      'max(1rem, env(safe-area-max-inset-bottom, env(safe-area-inset-bottom)))',
+    )
+    expectDeclaration(mobileMain, 'overflow', 'hidden')
+
+    const mobileLayoutContent = getBlock(mobileCss, '.player-main .astryx-layout-content')
+    expectDeclaration(mobileLayoutContent, 'height', '0')
+    expectDeclaration(mobileLayoutContent, 'min-height', '0')
+    expectDeclaration(mobileLayoutContent, 'flex', '1 1 0')
+    expectDeclaration(mobileLayoutContent, 'overflow', 'hidden')
+
+    const mobileLayoutWrapper = getBlock(mobileCss, '.player-main > div > div > div {', 1)
+    expectDeclaration(mobileLayoutWrapper, 'display', 'flex')
+    expectDeclaration(mobileLayoutWrapper, 'flex-direction', 'column')
+    expectDeclaration(mobileLayoutWrapper, 'overflow', 'hidden')
+
+    const mobileGrid = getBlock(mobileCss, '.player-grid')
+    expectDeclaration(mobileGrid, 'grid-template-rows', 'auto minmax(0, 1fr)')
+    expectDeclaration(mobileGrid, 'height', '100%')
+    expectDeclaration(mobileGrid, 'min-height', '0')
+    expectDeclaration(mobileGrid, 'overflow', 'hidden')
+
+    const mobileLyricsPanel = getBlock(mobileCss, '.live-lyrics-panel', 1)
+    expectDeclaration(mobileLyricsPanel, 'min-height', '0')
+    expectDeclaration(mobileLyricsPanel, 'overflow', 'hidden')
+
+    const mobileLyricShell = getBlock(mobileCss, '.player-shell .lyric-list-shell')
+    expectDeclaration(mobileLyricShell, 'height', '0')
+    expectDeclaration(mobileLyricShell, 'min-height', '0')
+    expectDeclaration(mobileLyricShell, 'flex', '1 1 0')
+
+    const mobileLyricList = getBlock(mobileCss, '.player-shell .lyric-list {')
+    expectDeclaration(mobileLyricList, 'height', '100%')
+    expectDeclaration(mobileLyricList, 'max-height', 'none')
+    expectDeclaration(mobileLyricList, 'min-height', '0')
+    expectDeclaration(mobileLyricList, 'padding-top', '0 !important')
+    expectDeclaration(mobileLyricList, 'padding-bottom', '0 !important')
   })
 })

@@ -565,6 +565,10 @@
   padding: 0.75rem 0.9rem;
 }
 
+.browser-chrome-drag-handle {
+  display: none;
+}
+
 .player-shell {
   /* Static Fallbacks for Tests */
   --player-bg: #09090b;
@@ -589,7 +593,9 @@
   --player-outline-soft: rgba(255, 255, 255, 0.07);
   --player-accent: var(--color-text-cyan, #39c5bb);
   color-scheme: dark;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   color: var(--player-text);
   background: var(--player-bg);
 }
@@ -633,6 +639,7 @@
   display: grid;
   width: 100%;
   max-width: 86rem;
+  min-height: 0;
   gap: 1rem;
   margin: 0 auto;
   padding: 1rem;
@@ -918,7 +925,7 @@
 }
 
 .player-shell .call-marker[data-kind="chant"] .call-marker-text {
-  background-color: rgba(22, 10, 12, 0.94);
+  background-color: #0d0608;
 }
 
 .player-shell .call-marker[data-kind="penlight"] .call-marker-text {
@@ -976,6 +983,7 @@
 @media (min-width: 921px) {
   .player-shell {
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
   }
 
@@ -993,6 +1001,7 @@
   .player-main {
     max-width: none;
     height: calc(100vh - 4rem);
+    height: calc(100dvh - 4rem);
     margin-top: 4rem;
     padding: 0;
     overflow: hidden;
@@ -1028,6 +1037,7 @@
   .player-video-stack {
     width: 100%;
     max-width: min(75rem, calc((100vh - 8rem) * 1.78));
+    max-width: min(75rem, calc((100dvh - 8rem) * 1.78));
     gap: clamp(1rem, 2.4vh, 1.6rem);
   }
 
@@ -1083,6 +1093,40 @@
 }
 
 @media (max-width: 920px) {
+  :root.call-guide-root-scroll {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  :root.call-guide-root-scroll body,
+  :root.call-guide-root-scroll #root {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+
+  .call-guide-scroll-runway {
+    min-height: calc(100vh + 1px);
+    /* Preserve native root-scroll travel as browser chrome moves from svh to lvh. */
+    min-height: calc(200lvh - 100svh + 1px);
+    background: var(--color-background-body, #09090b);
+  }
+
+  .call-guide-sticky-frame {
+    position: sticky;
+    top: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .call-guide-sticky-frame > .player-shell {
+    height: 100%;
+  }
+
   .player-shell {
     background-color: var(--player-bg);
     background-image:
@@ -1091,7 +1135,60 @@
   }
 
   .player-main {
-    padding-top: 0.5rem;
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0;
+    padding-top: 0;
+    padding-bottom: max(1rem, env(safe-area-max-inset-bottom, env(safe-area-inset-bottom)));
+    overflow: hidden;
+  }
+
+  .browser-chrome-drag-handle {
+    display: flex;
+    width: 100%;
+    min-height: var(--app-touch-target);
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border-bottom: 1px solid var(--player-outline-soft);
+    color: var(--player-text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    touch-action: pan-y;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .player-main > div,
+  .player-main > div > div,
+  .player-main > div > div > div {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .player-main > div > div > div {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .player-main .astryx-layout-content {
+    height: 0;
+    min-height: 0;
+    flex: 1 1 0;
+    overflow: hidden;
+  }
+
+  .player-grid {
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .player-video-panel,
@@ -1101,6 +1198,19 @@
     box-shadow: none;
     padding-right: 0;
     padding-left: 0;
+  }
+
+  .live-lyrics-panel {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .player-shell .lyric-list-shell {
+    height: 0;
+    min-height: 0;
+    flex: 1 1 0;
   }
 
   /* Info Density Reduction */
@@ -1198,9 +1308,27 @@
 
   /* Adjust active lyric centering offset (shift active lyric up to eye level) */
   .player-shell .lyric-list {
-    padding-top: 15% !important;
-    padding-bottom: 50% !important;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
     gap: clamp(1rem, 2vh, 1.4rem) !important;
+  }
+
+  .player-shell .lyric-list::before,
+  .player-shell .lyric-list::after {
+    width: 100%;
+    content: "";
+    pointer-events: none;
+  }
+
+  .player-shell .lyric-list::before {
+    flex: 0 0 15%;
+  }
+
+  .player-shell .lyric-list::after {
+    flex: 0 0 50%;
   }
 
   /* Compact typography & lane spaces on mobile */
@@ -1238,6 +1366,38 @@
 }
 
 @media (max-width: 520px) {
+  .player-top-bar {
+    padding-inline: 0.5rem;
+  }
+
+  .player-top-bar > div {
+    gap: 0.35rem;
+  }
+
+  .player-top-bar .app-brand {
+    width: var(--app-touch-target);
+    min-width: var(--app-touch-target);
+    min-height: var(--app-touch-target);
+    justify-content: center;
+    gap: 0;
+  }
+
+  .player-top-bar .app-brand-label,
+  .player-top-bar nav a[aria-current="page"] {
+    display: none;
+  }
+
+  .player-top-bar nav a {
+    padding-inline: 0.5rem;
+  }
+
+  .player-top-bar .app-top-bar-action {
+    flex: 0 0 auto;
+  }
+
+  .player-top-bar .app-top-bar-action > div {
+    gap: 0.35rem;
+  }
 
 
   .player-clock span {

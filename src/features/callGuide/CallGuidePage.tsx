@@ -1,5 +1,5 @@
-import { AlertTriangle, CircleAlert, ListMusic } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { AlertTriangle, CircleAlert, GripHorizontal, ListMusic } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router'
 import './callGuide.css'
 import { getRootManifestUrl, shouldUseMockPlayer } from '../../app/config'
@@ -32,6 +32,8 @@ import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 
 type LoadStage = 'manifest' | 'song'
+
+const CALL_GUIDE_ROOT_SCROLL_CLASS = 'call-guide-root-scroll'
 
 function isAbortError(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
@@ -72,6 +74,18 @@ export function CallGuidePage() {
   const rootManifestUrl = getRootManifestUrl()
   const mockPlayer = shouldUseMockPlayer()
   const requestKey = `${rootManifestUrl}\u0000${songId ?? ''}\u0000${retryRequest.revision}`
+
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    // Mobile browser chrome responds to trusted root scrolling, not the nested lyric scroller.
+    root.classList.add(CALL_GUIDE_ROOT_SCROLL_CLASS)
+
+    return () => {
+      root.scrollTop = 0
+      document.body.scrollTop = 0
+      root.classList.remove(CALL_GUIDE_ROOT_SCROLL_CLASS)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -215,36 +229,42 @@ export function CallGuidePage() {
 
   return (
     <Theme theme={neutralTheme} mode="dark">
-      <AccessibleAppShell
-        className="player-shell"
-        topNav={
-          <AppHeader
-            activeNav="practice"
-            endContent={
-              <div className="flex items-center gap-3">
-                <StatusDot
-                  variant={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'accent' : 'success'}
-                  label={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'cached' : 'live'}
-                />
-                <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
-                  <PlaybackClock active={Boolean(song)} store={playbackTimeStore} />
+      <div className="call-guide-scroll-runway">
+        <div className="call-guide-sticky-frame">
+          <AccessibleAppShell
+            className="player-shell"
+            topNav={
+              <AppHeader
+                activeNav="practice"
+                endContent={
+                  <div className="flex items-center gap-3">
+                    <StatusDot
+                      variant={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'accent' : 'success'}
+                      label={currentManifestResult?.source === 'cache' || currentSongResult?.source === 'cache' ? 'cached' : 'live'}
+                    />
+                    <div className="player-clock font-mono text-sm px-2 py-0.5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-background-surface)]">
+                      <PlaybackClock active={Boolean(song)} store={playbackTimeStore} />
+                    </div>
+                  </div>
+                }
+              />
+            }
+          >
+          <Layout className="player-main">
+            <div className="browser-chrome-drag-handle" aria-hidden="true">
+              <GripHorizontal aria-hidden="true" size={18} strokeWidth={2.25} />
+              <span>위로 밀어 화면 넓히기</span>
+            </div>
+            {currentManifestResult?.warning || currentSongResult?.warning ? (
+              <div className="mx-4 my-2">
+                <div className="status-banner flex items-center gap-3" role="alert">
+                  <AlertTriangle aria-hidden="true" className="shrink-0" size={20} />
+                  <p className="m-0">
+                    {currentManifestResult?.warning ?? currentSongResult?.warning ?? ''}
+                  </p>
                 </div>
               </div>
-            }
-          />
-        }
-      >
-      <Layout className="player-main">
-        {currentManifestResult?.warning || currentSongResult?.warning ? (
-          <div className="mx-4 my-2">
-            <div className="status-banner flex items-center gap-3" role="alert">
-              <AlertTriangle aria-hidden="true" className="shrink-0" size={20} />
-              <p className="m-0">
-                {currentManifestResult?.warning ?? currentSongResult?.warning ?? ''}
-              </p>
-            </div>
-          </div>
-        ) : null}
+            ) : null}
 
         {error ? (
           <div className="mx-4 my-2">
@@ -380,8 +400,10 @@ export function CallGuidePage() {
             </div>
           ) : null}
         </LayoutContent>
-      </Layout>
-    </AccessibleAppShell>
-  </Theme>
-)
+          </Layout>
+        </AccessibleAppShell>
+        </div>
+      </div>
+    </Theme>
+  )
 }

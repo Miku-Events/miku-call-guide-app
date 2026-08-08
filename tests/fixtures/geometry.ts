@@ -75,6 +75,78 @@ export async function expectPageScrollY(page: Page, expected = 0, tolerance = 1)
   ).toBeLessThanOrEqual(expected + tolerance)
 }
 
+export async function expectPracticeRootScrollReady(page: Page, dragHandle: Locator): Promise<void> {
+  await expect.poll(
+    () => dragHandle.evaluate((element) => {
+      const root = document.documentElement
+      const scrollingElement = document.scrollingElement
+      const rootOverflowY = getComputedStyle(root).overflowY
+      const touchAction = getComputedStyle(element).touchAction
+
+      return (
+        root.classList.contains('call-guide-root-scroll')
+        && scrollingElement === root
+        && (rootOverflowY === 'auto' || rootOverflowY === 'scroll')
+        && scrollingElement.scrollHeight > scrollingElement.clientHeight
+        && touchAction === 'pan-y'
+      )
+    }),
+    { message: 'expected the call guide drag handle to expose a native root-scroll path' },
+  ).toBe(true)
+}
+
+export async function expectPracticeRootScrollRestored(page: Page): Promise<void> {
+  await expect.poll(
+    () => page.evaluate(() => {
+      const root = document.documentElement
+      return !root.classList.contains('call-guide-root-scroll') && getComputedStyle(root).overflowY === 'hidden'
+    }),
+    { message: 'expected route navigation to restore the locked application root' },
+  ).toBe(true)
+  await expectPageScrollY(page, 0)
+}
+
+export async function wheelPageFromLocator(locator: Locator, deltaY: number): Promise<void> {
+  const page = locator.page()
+  const box = await locator.boundingBox()
+  if (!box) throw new Error('cannot wheel from a locator without a rendered bounding box')
+
+  const previousScrollY = await page.evaluate(() => window.scrollY)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.wheel(0, deltaY)
+  await expect.poll(
+    () => page.evaluate(() => window.scrollY),
+    { message: 'expected the native root scroller to move from the drag handle' },
+  ).toBeGreaterThan(previousScrollY)
+}
+
+export async function expectLocatorContainedInVisualViewport(
+  page: Page,
+  locator: Locator,
+  tolerance = 1,
+): Promise<void> {
+  await expect.poll(
+    () => locator.evaluateAll((elements, allowedOverflow) => {
+      const viewport = window.visualViewport
+      const left = viewport?.offsetLeft ?? 0
+      const top = viewport?.offsetTop ?? 0
+      const right = left + (viewport?.width ?? window.innerWidth)
+      const bottom = top + (viewport?.height ?? window.innerHeight)
+
+      return elements.length > 0 && elements.every((element) => {
+        const rect = element.getBoundingClientRect()
+        return (
+          rect.left >= left - allowedOverflow
+          && rect.right <= right + allowedOverflow
+          && rect.top >= top - allowedOverflow
+          && rect.bottom <= bottom + allowedOverflow
+        )
+      })
+    }, tolerance),
+    { message: 'expected every target to remain inside the visual viewport' },
+  ).toBe(true)
+}
+
 export async function expectLocatorContained(
   scope: Locator,
   target: Locator,
