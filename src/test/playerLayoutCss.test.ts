@@ -9,10 +9,10 @@ const cssFiles = [
   ['features', 'events', 'events.css'],
 ] as const
 
-const [baseCss, ...featureCss] = cssFiles.map((parts) => (
+const [baseCss, catalogCss, callGuideCss, eventCss] = cssFiles.map((parts) => (
   readFileSync(join(process.cwd(), 'src', ...parts), 'utf8').replace(/\r\n/g, '\n')
 ))
-const css = [baseCss, ...featureCss].join('\n')
+const css = [baseCss, catalogCss, callGuideCss, eventCss].join('\n')
 
 function getBlock(source: string, marker: string, occurrence = 0) {
   let markerIndex = -1
@@ -339,18 +339,38 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(playerCurrentLyric, 'row-gap', '1.45rem')
   })
 
-  it('bounds the mobile player and lyric viewport to the dynamic visual height', () => {
-    const mobileCss = getBlock(css, '@media (max-width: 920px)')
-    const mobileRoot = getBlock(mobileCss, ':root.call-guide-root-scroll')
-    expectDeclaration(mobileRoot, 'height', 'auto')
-    expectDeclaration(mobileRoot, 'min-height', '100%')
-    expectDeclaration(mobileRoot, 'overflow-x', 'hidden')
-    expectDeclaration(mobileRoot, 'overflow-y', 'auto')
+  it('lets catalog content own document scrolling without overlapping its sticky header', () => {
+    const rootScroll = getBlock(baseCss, ':root.browser-chrome-root-scroll')
+    expectDeclaration(rootScroll, 'height', 'auto')
+    expectDeclaration(rootScroll, 'min-height', '100%')
+    expectDeclaration(rootScroll, 'overflow-x', 'hidden')
+    expectDeclaration(rootScroll, 'overflow-y', 'auto')
 
-    const mobileDocument = getBlock(mobileCss, ':root.call-guide-root-scroll body,')
-    expectDeclaration(mobileDocument, 'height', 'auto')
-    expectDeclaration(mobileDocument, 'min-height', '100%')
-    expectDeclaration(mobileDocument, 'overflow', 'visible')
+    const rootScrollDocument = getBlock(baseCss, ':root.browser-chrome-root-scroll body,')
+    expectDeclaration(rootScrollDocument, 'height', 'auto')
+    expectDeclaration(rootScrollDocument, 'min-height', '100%')
+    expectDeclaration(rootScrollDocument, 'overflow', 'visible')
+
+    const autoShell = getBlock(baseCss, '.app-page-shell.app-page-shell--auto')
+    expectDeclaration(autoShell, 'height', 'auto')
+    expectDeclaration(autoShell, 'min-height', '100vh')
+    expectDeclaration(autoShell, 'min-height', '100dvh')
+    expectDeclaration(autoShell, 'overflow', 'visible')
+
+    const catalogRunway = getBlock(catalogCss, '.catalog-shell.app-page-shell--auto')
+    expectDeclaration(catalogRunway, 'min-height', 'calc(100vh + 1px)')
+    expectDeclaration(catalogRunway, 'min-height', 'calc(200lvh - 100svh + 1px)')
+
+    const catalogMain = getBlock(catalogCss, '.catalog-shell .app-main')
+    expectDeclaration(catalogMain, 'overflow', 'visible')
+
+    const catalogToolbar = getBlock(catalogCss, '.catalog-shell .app-toolbar')
+    expectDeclaration(catalogToolbar, 'position', 'sticky')
+    expectDeclaration(catalogToolbar, 'top', '4rem')
+  })
+
+  it('bounds the mobile player and lyric viewport to the dynamic visual height', () => {
+    const mobileCss = getBlock(callGuideCss, '@media (max-width: 920px)')
 
     const mobileRunway = getBlock(mobileCss, '.call-guide-scroll-runway')
     expectDeclaration(mobileRunway, 'min-height', 'calc(100vh + 1px)')
@@ -363,10 +383,10 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(mobileStickyFrame, 'height', '100dvh')
     expectDeclaration(mobileStickyFrame, 'min-height', '0')
 
-    const mobileDragHandle = getBlock(mobileCss, '.browser-chrome-drag-handle')
-    expectDeclaration(mobileDragHandle, 'display', 'flex')
-    expectDeclaration(mobileDragHandle, 'min-height', 'var(--app-touch-target)')
-    expectDeclaration(mobileDragHandle, 'touch-action', 'pan-y')
+    const mobilePanSurface = getBlock(mobileCss, '.player-title-block')
+    expectDeclaration(mobilePanSurface, 'min-block-size', 'var(--app-touch-target)')
+    expectDeclaration(mobilePanSurface, 'touch-action', 'pan-y')
+    expect(callGuideCss).not.toContain('.browser-chrome-drag-handle')
 
     const mobileMain = getBlock(mobileCss, '.player-main')
     expectDeclaration(mobileMain, 'display', 'flex')

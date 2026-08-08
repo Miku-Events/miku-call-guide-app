@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { expect, setMockedSong, test } from './fixtures/app-test'
 import {
   expectAllMarkerGeometryReady,
+  expectBrowserRootScrollReady,
   expectLocatorCentered,
   expectLocatorContained,
   expectLocatorContainedInVisualViewport,
@@ -12,8 +13,6 @@ import {
   expectMarkerGeometryReady,
   expectPageContained,
   expectPageScrollY,
-  expectPracticeRootScrollReady,
-  expectPracticeRootScrollRestored,
   swipeLocatorUp,
   wheelPageFromLocator,
   wheelLocatorBy,
@@ -199,14 +198,14 @@ test('[PLY-M-01] contains the mobile player, video, lyrics, and touch controls',
   await expectLocatorContained(header, visibleNavigation.or(header.locator('.player-clock')))
   await expectLocatorsNotToOverlap(visibleNavigation, headerAction)
 
-  const browserChromeDragHandle = page.locator('.browser-chrome-drag-handle')
-  await expect(browserChromeDragHandle).toBeVisible()
-  await expectLocatorMinTouchTarget(browserChromeDragHandle)
-  await expectPracticeRootScrollReady(page, browserChromeDragHandle)
+  await expect(page.locator('.browser-chrome-drag-handle')).toHaveCount(0)
+  const browserChromePanSurface = page.locator('.player-title-block')
+  await expect(browserChromePanSurface).toBeVisible()
+  await expectBrowserRootScrollReady(page, browserChromePanSurface)
 
   // Headless browsers have no address bar; native wheel scrolling verifies the
   // same root-scroll path that a trusted pan gesture uses on a real device.
-  await wheelPageFromLocator(browserChromeDragHandle, 160)
+  await wheelPageFromLocator(browserChromePanSurface, 160)
   await expectLocatorContainedInVisualViewport(
     page,
     page.locator('.call-guide-sticky-frame, .player-shell, .live-lyrics-panel'),
@@ -214,7 +213,9 @@ test('[PLY-M-01] contains the mobile player, video, lyrics, and touch controls',
 
   await page.getByRole('link', { name: 'Catalog' }).click()
   await expect(page).toHaveURL(/#\/$/)
-  await expectPracticeRootScrollRestored(page)
+  await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
+  await expectBrowserRootScrollReady(page, page.locator('.catalog-content-panel'))
+  await expectPageScrollY(page, 0)
 })
 
 test('[PLY-M-02] keeps cross-lane markers clear of mobile lyrics and pronunciation', { tag: '@mobile' }, async ({ page }) => {

@@ -190,7 +190,8 @@ export function CatalogPage() {
 
     let wasScrolled: boolean | null = null
     const updateScrollState = () => {
-      const isScrolled = main.scrollTop > 0
+      const rootScrollTop = document.scrollingElement?.scrollTop ?? window.scrollY
+      const isScrolled = Math.max(main.scrollTop, rootScrollTop) > 0
       if (isScrolled !== wasScrolled) {
         wasScrolled = isScrolled
         main.setAttribute('data-scrolled', isScrolled ? 'true' : 'false')
@@ -198,9 +199,11 @@ export function CatalogPage() {
     }
     updateScrollState()
     main.addEventListener('scroll', updateScrollState, { passive: true })
+    window.addEventListener('scroll', updateScrollState, { passive: true })
 
     return () => {
       main.removeEventListener('scroll', updateScrollState)
+      window.removeEventListener('scroll', updateScrollState)
     }
   }, [])
 
@@ -223,6 +226,7 @@ export function CatalogPage() {
     <AppPageShell
       activeNav="catalog"
       className="catalog-shell"
+      height="auto"
       kicker="Call Guide Library"
       summaryItems={[
         { icon: <ListMusic size={14} aria-hidden="true" />, label: 'Songs', value: songCount },

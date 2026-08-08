@@ -65,6 +65,20 @@ button {
   min-height: 0;
 }
 
+:root.browser-chrome-root-scroll {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+:root.browser-chrome-root-scroll body,
+:root.browser-chrome-root-scroll #root {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
 .app-page-shell {
   /* Static Fallbacks for Tests */
   --app-bg: #09090b;
@@ -98,6 +112,13 @@ button {
   color: var(--app-text);
   color-scheme: dark;
   background: var(--app-bg);
+}
+
+.app-page-shell.app-page-shell--auto {
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
 }
 
 .app-page-shell a {
@@ -207,6 +228,11 @@ button {
   flex-direction: column;
   overflow: hidden;
   padding: 1.25rem 0 1rem;
+}
+
+.app-page-shell--auto .app-main {
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .app-heading-row {

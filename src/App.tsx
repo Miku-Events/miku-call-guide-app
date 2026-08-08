@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react'
-import { Route, Routes, useLocation } from 'react-router'
+import { matchPath, Route, Routes, useLocation } from 'react-router'
 import { AppErrorBoundary } from './shared/errors/AppErrorBoundary'
 import { NotFoundPage } from './shared/errors/NotFoundPage'
+import { BrowserChromeRootScrollController } from './shared/layout/BrowserChromeRootScrollController'
 import { PageShellSkeleton } from './shared/layout/PageShellSkeleton'
 import { SpoilerDisclaimerGate } from './features/spoilerDisclaimer/SpoilerDisclaimerGate'
 import { loadCallGuideRoute } from './features/callGuide/loadCallGuideRoute'
@@ -19,9 +20,15 @@ const EventCalendarPage = lazy(() =>
 
 export default function App() {
   const location = useLocation()
+  const usesBrowserChromeRootScroll = location.pathname === '/'
+    || Boolean(matchPath('/songs/:songId', location.pathname))
 
   return (
     <SpoilerDisclaimerGate>
+      <BrowserChromeRootScrollController
+        active={usesBrowserChromeRootScroll}
+        resetKey={location.pathname}
+      />
       <AppErrorBoundary resetKey={location.key}>
         <Suspense fallback={<PageShellSkeleton />}>
           <Routes>

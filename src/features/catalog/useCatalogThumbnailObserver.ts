@@ -34,7 +34,6 @@ export function useCatalogThumbnailObserver(): CatalogThumbnailObserver {
 
     songIdsByTargetRef.current.set(target, songId)
     if (!observerRef.current) {
-      const root = target.closest('.app-main')
       observerRef.current = new IntersectionObserver((entries, observer) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) {
@@ -48,7 +47,7 @@ export function useCatalogThumbnailObserver(): CatalogThumbnailObserver {
           observer.unobserve(entry.target)
         }
       }, {
-        root,
+        root: null,
         rootMargin: '200px 0px',
         threshold: 0.01,
       })

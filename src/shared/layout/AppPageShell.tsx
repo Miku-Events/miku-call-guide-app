@@ -19,6 +19,7 @@ export interface AppPageShellProps {
   activeNav: AppPageNavKey
   children: ReactNode
   className?: string
+  height?: 'auto' | 'fill'
   kicker: string
   summaryItems: SummaryItem[]
   title: string
@@ -56,24 +57,30 @@ export function AppPageShell({
   activeNav,
   children,
   className,
+  height = 'fill',
   kicker,
   summaryItems,
   title,
   toolbar,
 }: AppPageShellProps) {
   const titleId = `${activeNav}-page-title`
+  const resolvedClassName = [
+    'app-page-shell',
+    height === 'auto' ? 'app-page-shell--auto' : '',
+    className ?? '',
+  ].filter(Boolean).join(' ')
 
   return (
     <AppShell
-      height="fill"
+      height={height}
       variant="elevated"
       contentPadding={0}
-      className={`app-page-shell${className ? ` ${className}` : ''}`}
+      className={resolvedClassName}
       topNav={
         <AppHeader activeNav={activeNav} />
       }
     >
-      <Layout className="app-main" aria-labelledby={titleId}>
+      <Layout className="app-main" aria-labelledby={titleId} height={height}>
         <LayoutHeader className="px-4">
           <div className="app-heading-row flex justify-between items-end w-full">
             <div>

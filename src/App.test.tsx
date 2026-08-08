@@ -27,7 +27,12 @@ vi.mock('./features/callGuide/CallGuidePage', () => ({
 
 function RouteControl() {
   const navigate = useNavigate()
-  return <button onClick={() => navigate('/events')} type="button">Open events</button>
+  return (
+    <>
+      <button onClick={() => navigate('/events')} type="button">Open events</button>
+      <button onClick={() => navigate('/songs/song-a')} type="button">Open song</button>
+    </>
+  )
 }
 
 describe('App routes', () => {
@@ -49,6 +54,9 @@ describe('App routes', () => {
 
   afterEach(() => {
     window.localStorage.removeItem(SPOILER_DISCLAIMER_STORAGE_KEY)
+    document.documentElement.classList.remove('browser-chrome-root-scroll')
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
     consoleError.mockRestore()
   })
 
@@ -76,5 +84,35 @@ describe('App routes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open events' }))
 
     expect(await screen.findByRole('heading', { name: 'Events route' })).toBeInTheDocument()
+  })
+
+  it('keeps document scrolling active between catalog and practice, then locks it on events', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <RouteControl />
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Catalog route' })).toBeInTheDocument()
+    expect(document.documentElement).toHaveClass('browser-chrome-root-scroll')
+
+    document.documentElement.scrollTop = 72
+    document.body.scrollTop = 72
+    fireEvent.click(screen.getByRole('button', { name: 'Open song' }))
+
+    expect(await screen.findByRole('heading', { name: 'Song route' })).toBeInTheDocument()
+    expect(document.documentElement).toHaveClass('browser-chrome-root-scroll')
+    expect(document.documentElement.scrollTop).toBe(0)
+    expect(document.body.scrollTop).toBe(0)
+
+    document.documentElement.scrollTop = 72
+    document.body.scrollTop = 72
+    fireEvent.click(screen.getByRole('button', { name: 'Open events' }))
+
+    expect(await screen.findByRole('heading', { name: 'Events route' })).toBeInTheDocument()
+    expect(document.documentElement).not.toHaveClass('browser-chrome-root-scroll')
+    expect(document.documentElement.scrollTop).toBe(0)
+    expect(document.body.scrollTop).toBe(0)
   })
 })
