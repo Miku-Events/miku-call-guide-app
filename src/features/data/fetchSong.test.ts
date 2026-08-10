@@ -80,7 +80,11 @@ describe('fetchSong', () => {
     expect(window.localStorage.length).toBe(1)
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.test/songs/sample-song.json?_miku_data_version=v1',
-      { cache: 'force-cache' },
+      expect.objectContaining({
+        cache: 'force-cache',
+        redirect: 'error',
+        signal: expect.any(AbortSignal),
+      }),
     )
   })
 
@@ -93,6 +97,32 @@ describe('fetchSong', () => {
       'sample-song',
       { expectedDataVersion: 'v1' },
     )).rejects.toThrow('Song request failed with 503.')
+  })
+
+  it('falls back only to the validated same-version cache after an oversized response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => song }))
+    await fetchSong('https://example.test/manifest.json', 'songs/sample-song.json', 'sample-song', {
+      expectedDataVersion: 'v1',
+    })
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', {
+      headers: {
+        'content-length': String((512 * 1024) + 1),
+        'content-type': 'application/json',
+      },
+    })))
+    await expect(fetchSong(
+      'https://example.test/manifest.json',
+      'songs/sample-song.json',
+      'sample-song',
+      { expectedDataVersion: 'v1' },
+    )).resolves.toMatchObject({ source: 'cache', data: { dataVersion: 'v1' } })
+    await expect(fetchSong(
+      'https://example.test/manifest.json',
+      'songs/sample-song.json',
+      'sample-song',
+      { expectedDataVersion: 'v2' },
+    )).rejects.toThrow(/response limit/i)
   })
 
   it.each([
@@ -267,8 +297,9 @@ describe('fetchSong', () => {
     })).rejects.toBe(abortError)
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.test/songs/sample-song.json?_miku_data_version=v1',
-      expect.objectContaining({ signal: controller.signal }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+    expect(fetchMock.mock.calls[0]?.[1].signal).not.toBe(controller.signal)
   })
 
   it('returns a valid network song when localStorage is unavailable', async () => {

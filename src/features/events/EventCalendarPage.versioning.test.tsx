@@ -20,6 +20,7 @@ const harness = vi.hoisted(() => ({
 vi.mock('../../app/config', () => ({
   getRootManifestUrl: () => 'https://example.test/manifest.json',
   getSubmissionApiBaseUrl: () => 'https://example.test',
+  isSubmissionReadOnlyEnvironment: () => false,
 }))
 
 vi.mock('../../shared/layout/AppPageShell', () => ({

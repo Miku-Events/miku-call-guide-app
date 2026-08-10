@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { canonicalProductionOrigin } from './productionHostname.js'
 
 export const JSON_BODY_LIMIT_BYTES = 16 * 1024
 
@@ -13,12 +14,13 @@ const API_SECURITY_HEADERS = Object.freeze({
 const jsonMediaTypePattern = /^application\/(?:json|[a-z0-9!#$&^_.+-]+\+json)$/i
 
 export class HttpError extends Error {
-  constructor(status, code, details) {
+  constructor(status, code, details, logMetadata) {
     super(code)
     this.name = 'HttpError'
     this.status = status
     this.code = code
     this.details = details
+    this.logMetadata = logMetadata
   }
 }
 
@@ -151,14 +153,25 @@ function applyApiHeaders(response, request, environment, requestId, method) {
   response.headers.set('content-security-policy', API_CONTENT_SECURITY_POLICY)
   response.headers.set('x-request-id', requestId)
   response.headers.set('allow', method)
-  response.headers.set('access-control-allow-headers', 'content-type')
+  response.headers.set('access-control-allow-headers', 'content-type, idempotency-key')
   response.headers.set('access-control-allow-methods', 'GET,POST,OPTIONS')
+  response.headers.set(
+    'access-control-expose-headers',
+    'idempotency-replayed, retry-after, x-request-id',
+  )
 
   const origin = request.headers.get('origin') || ''
   const requestUrlOrigin = runtimeRequestOrigin(request, environment)
   const secureEnvironment = environment.APP_ENV === 'preview'
     || environment.APP_ENV === 'production'
-  let allowedOrigin = secureEnvironment ? requestUrlOrigin : ''
+  let allowedOrigin = environment.APP_ENV === 'preview' ? requestUrlOrigin : ''
+
+  if (environment.APP_ENV === 'production') {
+    const configuredOrigin = canonicalProductionOrigin(environment.APP_ORIGIN)
+    allowedOrigin = configuredOrigin && configuredOrigin === requestUrlOrigin
+      ? configuredOrigin
+      : ''
+  }
 
   if (!secureEnvironment && (environment.APP_ENV === 'local' || environment.APP_ENV === 'test')) {
     try {
@@ -179,19 +192,22 @@ function applyApiHeaders(response, request, environment, requestId, method) {
   return response
 }
 
-function logSanitizedError(request, requestId, authUser, code) {
+function logSanitizedResult(request, requestId, code, metadata = {}, level = 'error') {
   let endpoint = '/'
   try {
     endpoint = new URL(request.url).pathname
   } catch {
     // Keep the sanitized fallback.
   }
-  console.error(JSON.stringify({
+  const entry = JSON.stringify({
     endpoint,
-    githubUser: typeof authUser === 'string' ? authUser : null,
     requestId,
     resultCode: code,
-  }))
+    rollback: typeof metadata.rollback === 'boolean' ? metadata.rollback : null,
+    replay: typeof metadata.replay === 'boolean' ? metadata.replay : null,
+  })
+  if (level === 'info') console.info(entry)
+  else console.error(entry)
 }
 
 export function createApiHandler({
@@ -199,6 +215,8 @@ export function createApiHandler({
   jsonBody = false,
   fallback = { code: 'upstream_failed', status: 502 },
   headers: configuredHeaders,
+  audit = false,
+  preflight,
 }, operation) {
   return async function onRequest(context) {
     const request = context.request
@@ -212,7 +230,8 @@ export function createApiHandler({
       body: undefined,
       requestId,
       headers,
-      authUser: null,
+      logMetadata: {},
+      resultCode: 'ok',
     }
 
     let response
@@ -222,6 +241,9 @@ export function createApiHandler({
       } else if (request.method !== method) {
         response = jsonResponse({ error: 'method_not_allowed', requestId }, 405, headers)
       } else {
+        if (preflight) {
+          await preflight(operationContext)
+        }
         if (jsonBody) {
           operationContext.body = await readJsonBody(request)
         }
@@ -229,25 +251,30 @@ export function createApiHandler({
         if (!(response instanceof Response)) {
           throw new Error('API operation must return a Response')
         }
+        if (audit) {
+          logSanitizedResult(
+            request,
+            requestId,
+            operationContext.resultCode,
+            operationContext.logMetadata,
+            'info',
+          )
+        }
       }
     } catch (error) {
       const known = error instanceof HttpError
       const status = known ? error.status : fallback.status
       const code = known ? error.code : fallback.code
       const details = known && error.details?.length ? { details: error.details } : {}
-      if (status >= 500) {
-        logSanitizedError(request, requestId, operationContext.authUser, code)
+      const logMetadata = known && error.logMetadata
+        ? { ...operationContext.logMetadata, ...error.logMetadata }
+        : operationContext.logMetadata
+      if (status >= 500 || audit) {
+        logSanitizedResult(request, requestId, code, logMetadata)
       }
       response = jsonResponse({ error: code, requestId, ...details }, status, headers)
     }
 
     return applyApiHeaders(response, request, environment, requestId, method)
-  }
-}
-
-export function apiSecurityHeaders() {
-  return {
-    ...API_SECURITY_HEADERS,
-    'content-security-policy': API_CONTENT_SECURITY_POLICY,
   }
 }

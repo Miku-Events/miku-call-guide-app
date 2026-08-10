@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
 import { GitHubMarkIcon } from '../icons/GitHubMarkIcon'
 
-export type AppNavKey = 'catalog' | 'events' | 'practice'
+type AppNavKey = 'catalog' | 'events' | 'practice' | 'privacy'
 
-export interface AppHeaderProps {
+interface AppHeaderProps {
   activeNav: AppNavKey
   endContent?: ReactNode
 }
@@ -25,7 +25,7 @@ export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
 
   const defaultEndContent = (
     <div className="flex items-center gap-3">
-      {(activeNav === 'catalog' || activeNav === 'events') && (
+      {(activeNav === 'catalog' || activeNav === 'events' || activeNav === 'privacy') && (
         <a
           aria-label="GitHub Repository"
           href="https://github.com/Miku-Events/miku-call-guide-app"

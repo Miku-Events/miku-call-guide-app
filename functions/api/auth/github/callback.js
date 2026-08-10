@@ -13,6 +13,7 @@ import {
   setSessionCookie,
   verifyState,
 } from '../../../_lib/session.js'
+import { requireOAuthRequest } from '../../../_lib/runtimePolicy.js'
 
 export function createOAuthCallbackHandler(dependencies = {}) {
   const exchangeCode = dependencies.exchangeOAuthCode || exchangeOAuthCode
@@ -22,6 +23,7 @@ export function createOAuthCallbackHandler(dependencies = {}) {
     method: 'GET',
     fallback: { code: 'github_oauth_failed', status: 502 },
   }, async ({ request, env, headers }) => {
+    requireOAuthRequest(request, env)
     try {
       clearOAuthTransactionCookie(headers, env)
     } catch {
@@ -65,5 +67,4 @@ export function createOAuthCallbackHandler(dependencies = {}) {
   })
 }
 
-export const createCallbackHandler = createOAuthCallbackHandler
 export const onRequest = createOAuthCallbackHandler()

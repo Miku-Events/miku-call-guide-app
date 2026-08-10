@@ -24,6 +24,9 @@ vi.mock('./features/events/EventCalendarPage', () => ({
 vi.mock('./features/callGuide/CallGuidePage', () => ({
   CallGuidePage: () => <h1>Song route</h1>,
 }))
+vi.mock('./features/privacy/PrivacyPage', () => ({
+  PrivacyPage: () => <h1>Privacy route</h1>,
+}))
 
 function RouteControl() {
   const navigate = useNavigate()
@@ -68,6 +71,18 @@ describe('App routes', () => {
     )
 
     expect(await screen.findByRole('heading', { name: '페이지를 찾을 수 없습니다.' })).toBeInTheDocument()
+  })
+
+  it('keeps the privacy route available before spoiler acknowledgement', async () => {
+    window.localStorage.removeItem(SPOILER_DISCLAIMER_STORAGE_KEY)
+    render(
+      <MemoryRouter initialEntries={['/privacy']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Privacy route' })).toBeInTheDocument()
+    expect(screen.queryByTestId('spoiler-disclaimer-gate')).not.toBeInTheDocument()
   })
 
   it('resets a captured page error after navigation changes location', async () => {

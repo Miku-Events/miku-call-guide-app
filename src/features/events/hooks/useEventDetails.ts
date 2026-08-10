@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { resourceCacheKey } from '../../data/cacheStore'
 import { fetchEventDetail } from '../../data/fetchEventManifest'
+import {
+  CALL_GUIDE_LOAD_DEADLINE_MS,
+  DataRequestTimeoutError,
+} from '../../data/dataRequestTimeout'
 import type {
   CalendarEventSummary,
   EventCalendarMonth,
@@ -9,6 +13,7 @@ import type {
 } from '../../data/types'
 
 type EventMonthResult = (LoadResult<EventCalendarMonth> & { url: string }) | null
+const EVENT_DETAIL_CONCURRENCY = 6
 
 function detailKey(monthManifestUrl: string, dataVersion: string, eventPath: string, eventId: string): string {
   return `${resourceCacheKey(monthManifestUrl, dataVersion, eventPath)}:${encodeURIComponent(eventId)}`
@@ -48,6 +53,7 @@ export function useEventDetails(
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
+    let deadline: ReturnType<typeof globalThis.setTimeout> | undefined
 
     async function loadDetails() {
       setError(null)
@@ -63,15 +69,41 @@ export function useEventDetails(
         return
       }
 
-      const loaded = await Promise.all(
-        missing.map(async (event) => [
-          detailKey(monthResult.url, dataVersion, event.path, event.id),
-          await fetchEventDetail(monthResult.url, event.path, event.id, {
-            expectedDataVersion: dataVersion,
-            signal: controller.signal,
-          }),
-        ] as const),
-      )
+      deadline = globalThis.setTimeout(() => {
+        if (!controller.signal.aborted) {
+          controller.abort(new DataRequestTimeoutError('resource'))
+        }
+      }, CALL_GUIDE_LOAD_DEADLINE_MS)
+
+      const loaded = new Array<readonly [string, LoadResult<EventGuide>]>(missing.length)
+      let nextIndex = 0
+      const worker = async () => {
+        while (nextIndex < missing.length) {
+          const index = nextIndex
+          nextIndex += 1
+          const event = missing[index]
+          loaded[index] = [
+            detailKey(monthResult.url, dataVersion, event.path, event.id),
+            await fetchEventDetail(monthResult.url, event.path, event.id, {
+              expectedDataVersion: dataVersion,
+              signal: controller.signal,
+            }),
+          ] as const
+        }
+      }
+      try {
+        await Promise.all(
+          Array.from({ length: Math.min(EVENT_DETAIL_CONCURRENCY, missing.length) }, worker),
+        )
+      } catch (loadError) {
+        if (!controller.signal.aborted) controller.abort(loadError)
+        throw loadError
+      } finally {
+        if (deadline !== undefined) {
+          globalThis.clearTimeout(deadline)
+          deadline = undefined
+        }
+      }
 
       if (!cancelled) {
         setCachedDetails((current) => ({ ...current, ...Object.fromEntries(loaded) }))
@@ -89,6 +121,7 @@ export function useEventDetails(
 
     return () => {
       cancelled = true
+      if (deadline !== undefined) globalThis.clearTimeout(deadline)
       controller.abort()
     }
   }, [cachedDetails, monthResult, selectedEvents])

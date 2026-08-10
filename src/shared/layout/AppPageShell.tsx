@@ -6,16 +6,15 @@ import { Toolbar } from '@astryxdesign/core/Toolbar'
 import { Card } from '@astryxdesign/core/Card'
 import { AppHeader } from './AppHeader'
 
-export type { AppNavKey } from './AppHeader'
-export type AppPageNavKey = 'catalog' | 'events'
+type AppPageNavKey = 'catalog' | 'events' | 'privacy'
 
-export interface SummaryItem {
+interface SummaryItem {
   icon?: ReactNode
   label: string
   value: string | number
 }
 
-export interface AppPageShellProps {
+interface AppPageShellProps {
   activeNav: AppPageNavKey
   children: ReactNode
   className?: string

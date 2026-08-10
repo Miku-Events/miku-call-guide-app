@@ -1,9 +1,11 @@
 export const CALL_GUIDE_LOAD_DEADLINE_MS = 15_000
+export const DATA_REQUEST_TIMEOUT_MS = 10_000
 
-export type DataRequestKind = 'manifest' | 'song'
+export type DataRequestKind = 'manifest' | 'resource' | 'song'
 
 const timeoutLabels: Record<DataRequestKind, string> = {
   manifest: 'Call-guide manifest',
+  resource: 'Data resource',
   song: 'Song data',
 }
 

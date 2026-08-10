@@ -14,6 +14,7 @@ import {
 
 interface MockSession {
   authenticated: boolean
+  id?: string
   login?: string
 }
 

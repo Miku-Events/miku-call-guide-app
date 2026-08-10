@@ -8,13 +8,20 @@ import {
   createOAuthTransaction,
   setOAuthTransactionCookie,
 } from '../../../_lib/session.js'
+import { requireOAuthRequest } from '../../../_lib/runtimePolicy.js'
 
 export function safeReturnTo(value, origin) {
   if (typeof value !== 'string' || !value) return '/'
 
   try {
     const url = new URL(value, origin)
-    if (url.origin === origin) return url.pathname + url.search + url.hash
+    if (
+      url.origin === origin
+      && url.pathname.startsWith('/')
+      && !url.pathname.startsWith('//')
+    ) {
+      return url.pathname + url.search + url.hash
+    }
   } catch {
     return '/'
   }
@@ -22,6 +29,7 @@ export function safeReturnTo(value, origin) {
 }
 
 export const onRequest = createApiHandler({ method: 'GET' }, ({ request, env, headers }) => {
+  requireOAuthRequest(request, env)
   const clientId = env.GITHUB_OAUTH_CLIENT_ID
   if (!clientId) throw new HttpError(503, 'github_oauth_not_configured')
 

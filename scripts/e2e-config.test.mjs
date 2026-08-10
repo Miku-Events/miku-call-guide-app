@@ -40,10 +40,10 @@ describe('risk-based E2E configuration', () => {
     ])
   })
 
-  it('lists exactly 26 desktop and 13 mobile standard instances', async () => {
+  it('lists exactly 28 desktop and 13 mobile standard instances', async () => {
     const listed = await listedTests('playwright.ci.config.ts')
-    expect(listed.projects).toEqual({ desktop: 26, mobile: 13 })
-    expect(listed.stdout).toContain('Total: 39 tests')
+    expect(listed.projects).toEqual({ desktop: 28, mobile: 13 })
+    expect(listed.stdout).toContain('Total: 41 tests')
 
     const listedCoverage = new Map()
     for (const match of listed.stdout.matchAll(/^\s*\[(desktop|mobile)\].*\[([A-Z0-9-]+)\]/gm)) {

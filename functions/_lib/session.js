@@ -4,6 +4,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto'
+import { normalizeGitHubSession } from './input.js'
 
 const LEGACY_SESSION_COOKIE_NAME = 'miku_call_guide_session'
 const SECURE_SESSION_COOKIE_NAME = '__Host-miku_call_guide_session'
@@ -104,18 +105,18 @@ function oauthCookieName(environment) {
     : LOCAL_OAUTH_COOKIE_NAME
 }
 
-function cookieAttributes(maxAgeSeconds, secure) {
+function cookieAttributes(maxAgeSeconds, secure, sameSite) {
   return [
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax',
+    `SameSite=${sameSite}`,
     `Max-Age=${maxAgeSeconds}`,
     secure ? 'Secure' : null,
   ].filter(Boolean).join('; ')
 }
 
-function expiredCookie(name, secure) {
-  return `${name}=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0${secure ? '; Secure' : ''}`
+function expiredCookie(name, secure, sameSite = 'Lax') {
+  return `${name}=; Path=/; HttpOnly; SameSite=${sameSite}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0${secure ? '; Secure' : ''}`
 }
 
 function appendSetCookie(headers, value) {
@@ -148,14 +149,6 @@ export function verifyState(value, environment) {
   return payload
 }
 
-export function createState(returnTo, environment) {
-  return signState({
-    nonce: randomBytes(32).toString('base64url'),
-    returnTo,
-    ts: Date.now(),
-  }, environment)
-}
-
 export function createOAuthTransaction(returnTo, redirectUri, environment) {
   const ts = Date.now()
   const state = signState({
@@ -180,7 +173,7 @@ export function setOAuthTransactionCookie(headers, transaction, environment) {
   }, environment)
   appendSetCookie(
     headers,
-    `${oauthCookieName(environment)}=${value}; ${cookieAttributes(OAUTH_TTL_SECONDS, isSecureEnvironment(environment))}`,
+    `${oauthCookieName(environment)}=${value}; ${cookieAttributes(OAUTH_TTL_SECONDS, isSecureEnvironment(environment), 'Lax')}`,
   )
 }
 
@@ -212,27 +205,34 @@ export function clearAllOAuthTransactionCookies(headers) {
 }
 
 export function setSessionCookie(headers, session, environment) {
-  const body = base64Url(JSON.stringify(session))
+  const normalizedSession = normalizeGitHubSession(session)
+  if (!normalizedSession || !hasValidTimestamp(normalizedSession, SESSION_TTL_MS)) {
+    throw new Error('Invalid GitHub session')
+  }
+  const body = base64Url(JSON.stringify(normalizedSession))
   const value = `${body}.${sign(body, environment)}`
   appendSetCookie(
     headers,
-    `${sessionCookieName(environment)}=${value}; ${cookieAttributes(SESSION_TTL_SECONDS, isSecureEnvironment(environment))}`,
+    `${sessionCookieName(environment)}=${value}; ${cookieAttributes(SESSION_TTL_SECONDS, isSecureEnvironment(environment), 'Strict')}`,
   )
 }
 
 export function readSession(request, environment) {
   const cookies = parseCookies(request)
-  const names = [sessionCookieName(environment), LEGACY_SESSION_COOKIE_NAME]
+  const names = isSecureEnvironment(environment)
+    ? [SECURE_SESSION_COOKIE_NAME]
+    : [LEGACY_SESSION_COOKIE_NAME]
   const value = names.map((name) => cookies[name]).find(Boolean)
   if (!value) {
     return null
   }
 
   const session = readSignedJson(value, environment)
-  if (!session || !hasValidTimestamp(session, SESSION_TTL_MS)) {
+  const normalizedSession = normalizeGitHubSession(session)
+  if (!normalizedSession || !hasValidTimestamp(normalizedSession, SESSION_TTL_MS)) {
     return null
   }
-  return session
+  return normalizedSession
 }
 
 export function clearAllAuthCookies(headers) {
@@ -242,6 +242,7 @@ export function clearAllAuthCookies(headers) {
     [SECURE_OAUTH_COOKIE_NAME, true],
     [LOCAL_OAUTH_COOKIE_NAME, false],
   ]) {
-    appendSetCookie(headers, expiredCookie(name, secure))
+    const sameSite = name.includes('_session') ? 'Strict' : 'Lax'
+    appendSetCookie(headers, expiredCookie(name, secure, sameSite))
   }
 }

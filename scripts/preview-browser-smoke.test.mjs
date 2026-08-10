@@ -3,15 +3,14 @@ import {
   acknowledgeInitialSpoilerDisclaimer,
   appAssetFailure,
   assertNoBrowserSecurityErrors,
+  assertPreviewReadOnly,
+  assertRouteDataHealthy,
   assertSurfaceNavigation,
   BrowserDeploymentPropagationError,
   BROWSER_SMOKE_ROUTES,
   deploymentHttpStatusFailure,
   formatPreviewSmokeReport,
   initialDocumentDeliveryFailure,
-  mainLandmarkLocator,
-  missingTagGatewayPolicySources,
-  PREVIEW_ROUTES,
   withDeploymentPropagationRetry,
   waitForRouteReady,
 } from './preview-browser-smoke.mjs'
@@ -26,16 +25,7 @@ function assetResponse(url, status, contentType) {
 
 describe('preview browser smoke diagnostics', () => {
   it('visits the catalog, events, and representative song routes', () => {
-    expect(PREVIEW_ROUTES).toEqual(['/', '/#/events', '/#/songs/39-music'])
-    expect(BROWSER_SMOKE_ROUTES).toBe(PREVIEW_ROUTES)
-  })
-
-  it('locates the visible semantic main landmark instead of a main element tag', () => {
-    const landmark = { waitFor: vi.fn() }
-    const getByRole = vi.fn(() => landmark)
-
-    expect(mainLandmarkLocator({ getByRole })).toBe(landmark)
-    expect(getByRole).toHaveBeenCalledWith('main')
+    expect(BROWSER_SMOKE_ROUTES).toEqual(['/', '/#/events', '/#/songs/39-music'])
   })
 
   it('acknowledges the required spoiler disclaimer before waiting for route requests', async () => {
@@ -66,6 +56,50 @@ describe('preview browser smoke diagnostics', () => {
     expect(waitForFunction).toHaveBeenCalledOnce()
   })
 
+  it('fails a handled data-error screen instead of treating it as route readiness', async () => {
+    const page = {
+      evaluate: vi.fn().mockResolvedValue({
+        alertText: 'Manifest load failed.',
+        hasExpectedContent: false,
+      }),
+      waitForFunction: vi.fn(),
+    }
+
+    await expect(assertRouteDataHealthy(page, '/')).rejects.toThrow(/handled data error/i)
+    expect(page.waitForFunction).toHaveBeenCalledOnce()
+  })
+
+  it('requires representative route content after a clean data load', async () => {
+    const page = {
+      evaluate: vi.fn().mockResolvedValue({ alertText: '', hasExpectedContent: true }),
+      waitForFunction: vi.fn(),
+    }
+
+    await expect(assertRouteDataHealthy(page, '/#/songs/39-music')).resolves.toBeUndefined()
+  })
+
+  it('requires Pages preview UI to be read-only without submission controls or Turnstile', async () => {
+    const healthyPage = {
+      evaluate: vi.fn().mockResolvedValue({
+        hasReadOnlyLabel: true,
+        hasOauthControl: false,
+        hasSubmissionButton: false,
+        hasTurnstile: false,
+      }),
+    }
+    await expect(assertPreviewReadOnly(healthyPage)).resolves.toBeUndefined()
+
+    const writablePage = {
+      evaluate: vi.fn().mockResolvedValue({
+        hasReadOnlyLabel: false,
+        hasOauthControl: true,
+        hasSubmissionButton: true,
+        hasTurnstile: true,
+      }),
+    }
+    await expect(assertPreviewReadOnly(writablePage)).rejects.toThrow(/not read-only/i)
+  })
+
   it('records console diagnostics without treating them as promotion failures', () => {
     expect(() => assertNoBrowserSecurityErrors({
       consoleErrors: ['recoverable third-party diagnostic'],
@@ -79,7 +113,7 @@ describe('preview browser smoke diagnostics', () => {
       callbackUrl: 'https://app.example/api/auth/github/callback',
       consoleDiagnostics: [{ type: 'warning', text: 'third-party warning' }],
       releaseId: 'a'.repeat(40),
-      routes: PREVIEW_ROUTES,
+      routes: BROWSER_SMOKE_ROUTES,
       surfaceLabel: 'Production',
       surfaceOrigin: 'https://miku.sekai.today',
     })
@@ -150,21 +184,18 @@ describe('preview browser smoke diagnostics', () => {
       '',
     ), 'https://miku.sekai.today')).toBe('')
     expect(appAssetFailure(assetResponse(
-      'https://www.googletagmanager.com/gtag/js',
+      'https://www.youtube.com/iframe_api',
       200,
       'application/javascript',
     ), 'https://miku.sekai.today')).toBe('')
   })
 
-  it.each([404, 500, 503, 524])(
-    'classifies an initial HTTP %s as Pages deployment propagation',
-    (status) => {
-      expect(initialDocumentDeliveryFailure({ status: () => status }, 'Preview route /'))
-        .toMatch(new RegExp(`HTTP ${status}.*propagating`, 'i'))
-    },
-  )
+  it('classifies only an initial HTTP 404 as Pages deployment propagation', () => {
+    expect(initialDocumentDeliveryFailure({ status: () => 404 }, 'Preview route /'))
+      .toMatch(/HTTP 404.*propagating/i)
+  })
 
-  it.each([200, 301, 403])('does not retry an initial HTTP %s response', (status) => {
+  it.each([200, 301, 403, 500, 503, 524])('does not retry an initial HTTP %s response', (status) => {
     expect(initialDocumentDeliveryFailure({ status: () => status }, 'Preview route /'))
       .toBe('')
   })
@@ -198,24 +229,23 @@ describe('preview browser smoke diagnostics', () => {
     expect(run).toHaveBeenCalledOnce()
   })
 
-  it('identifies only missing deployed Google Tag Gateway CSP sources', () => {
-    const complete = new Headers({
-      'content-security-policy': [
-        "connect-src 'self' https://www.google-analytics.com",
-        "script-src 'self' https://www.googletagmanager.com 'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU=' 'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='",
-      ].join('; '),
-    })
-    const stale = new Headers({
-      'content-security-policy': "connect-src 'self'; script-src 'self'",
-    })
+  it('enforces a real 120-second browser propagation deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const run = vi.fn(() => new Promise(() => {}))
+      const result = withDeploymentPropagationRetry(run, {
+        attempts: 25,
+        deadlineMs: 120_000,
+        retryDelayMs: 5_000,
+      })
+      const rejection = expect(result).rejects.toThrow(/120000ms deadline/i)
 
-    expect(missingTagGatewayPolicySources(complete)).toEqual([])
-    expect(missingTagGatewayPolicySources(stale)).toEqual([
-      'https://www.google-analytics.com',
-      'https://www.googletagmanager.com',
-      "'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU='",
-      "'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='",
-    ])
+      await vi.advanceTimersByTimeAsync(120_000)
+      await rejection
+      expect(run).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([

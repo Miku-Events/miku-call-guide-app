@@ -24,11 +24,13 @@ const harness = vi.hoisted(() => ({
   fetchSubmissionSession: vi.fn(),
   monthLoading: false,
   monthResult: null as MonthResult | null,
+  submissionReadOnly: false,
 }))
 
 vi.mock('../../app/config', () => ({
   getRootManifestUrl: () => 'https://example.test/manifest.json',
   getSubmissionApiBaseUrl: () => 'https://example.test',
+  isSubmissionReadOnlyEnvironment: () => harness.submissionReadOnly,
 }))
 
 vi.mock('../../shared/layout/AppPageShell', () => ({
@@ -113,6 +115,7 @@ function monthResult(): MonthResult {
 beforeEach(() => {
   harness.monthLoading = false
   harness.monthResult = monthResult()
+  harness.submissionReadOnly = false
   harness.fetchEventCalendarIndex.mockResolvedValue({
     data: {
       schemaVersion: 1,
@@ -185,5 +188,15 @@ describe('EventCalendarPage accessibility', () => {
     fireEvent.click(screen.getByRole('button', { name: '성공 알림' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('제보가 접수되었습니다.')
+  })
+
+  it('renders preview hosts as read-only without submission controls', async () => {
+    harness.submissionReadOnly = true
+    render(<EventCalendarPage />)
+
+    expect(await screen.findByText('미리보기 · 읽기 전용')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('로그인, 일정 제보, 수정 요청은 canonical 운영 도메인')
+    expect(screen.queryByRole('button', { name: '일정 추가' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '성공 알림' })).not.toBeInTheDocument()
   })
 })

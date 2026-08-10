@@ -1,8 +1,6 @@
-import { isIP } from 'node:net'
 import { pathToFileURL } from 'node:url'
-import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
+import { PRODUCTION_APP_ORIGIN } from '../functions/_lib/productionHostname.js'
 
-const reservedExampleHosts = ['example.com', 'example.net', 'example.org', 'example.test']
 const PRODUCTION_DATA_MANIFEST_URL = 'https://miku-call-guide-data.pages.dev/manifest.json'
 const officialTurnstileTestSiteKeys = new Set([
   '1x00000000000000000000AA',
@@ -12,86 +10,34 @@ const officialTurnstileTestSiteKeys = new Set([
   '3x00000000000000000000FF',
 ])
 
-function validateUrl(name, rawValue, optional = false) {
-  const value = String(rawValue ?? '').trim()
-  if (!value) {
-    if (optional) {
-      return ''
-    }
+function requiredExact(name, value, expected) {
+  if (value === undefined || value === null || value === '') {
     throw new Error(`${name} is required`)
   }
-
-  if (/YOUR_/i.test(value)) {
-    throw new Error(`${name} cannot contain YOUR_`)
+  if (value !== expected) {
+    throw new Error(`${name} must equal ${expected}`)
   }
-  if (/\r|\n/.test(value)) {
-    throw new Error(`${name} must be a single-line URL`)
-  }
-
-  let url
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error(`${name} must be a valid URL`)
-  }
-
-  if (url.protocol !== 'https:') {
-    throw new Error(`${name} must use HTTPS`)
-  }
-
-  const hostname = url.hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, '')
-    .replace(/\.$/, '')
-  const ipVersion = isIP(hostname)
-  const isLocalHostname = hostname === 'localhost' || hostname.endsWith('.localhost')
-  const isIpv4Loopback = ipVersion === 4 && hostname.split('.')[0] === '127'
-  const isIpv6Loopback = ipVersion === 6 && hostname === '::1'
-  if (isLocalHostname || isIpv4Loopback || isIpv6Loopback || hostname === '0.0.0.0') {
-    throw new Error(`${name} cannot use a local or loopback host`)
-  }
-
-  if (reservedExampleHosts.some((reservedHost) => (
-    hostname === reservedHost || hostname.endsWith(`.${reservedHost}`)
-  ))) {
-    throw new Error(`${name} cannot use an IANA reserved example host`)
-  }
-
   return value
 }
 
 export function validateProductionBuildEnv(environment) {
-  const rawAppOrigin = String(environment.appOrigin ?? '')
-  const appOrigin = validateUrl(
+  const appOrigin = requiredExact(
     'VITE_APP_ORIGIN',
-    rawAppOrigin,
+    environment.appOrigin,
+    PRODUCTION_APP_ORIGIN,
   )
-  if (
-    rawAppOrigin !== appOrigin
-    || canonicalProductionOrigin(appOrigin) !== appOrigin
-  ) {
-    throw new Error('VITE_APP_ORIGIN must be an exact canonical HTTPS origin')
-  }
-  const rawDataManifestUrl = String(environment.dataManifestUrl ?? '')
-  const dataManifestUrl = validateUrl(
+  const dataManifestUrl = requiredExact(
     'VITE_DATA_MANIFEST_URL',
-    rawDataManifestUrl,
+    environment.dataManifestUrl,
+    PRODUCTION_DATA_MANIFEST_URL,
   )
-  if (
-    rawDataManifestUrl !== dataManifestUrl
-    || dataManifestUrl !== PRODUCTION_DATA_MANIFEST_URL
-  ) {
-    throw new Error(`VITE_DATA_MANIFEST_URL must equal ${PRODUCTION_DATA_MANIFEST_URL}`)
-  }
-  const submissionApiUrl = validateUrl(
-    'VITE_SUBMISSION_API_URL',
-    environment.submissionApiUrl,
-    true,
-  )
-  const turnstileSiteKey = String(environment.turnstileSiteKey ?? '')
+  const turnstileSiteKey = environment.turnstileSiteKey
 
-  if (!turnstileSiteKey) {
+  if (turnstileSiteKey === undefined || turnstileSiteKey === null || turnstileSiteKey === '') {
     throw new Error('VITE_CLOUDFLARE_TURNSTILE_SITE_KEY is required')
+  }
+  if (typeof turnstileSiteKey !== 'string') {
+    throw new Error('VITE_CLOUDFLARE_TURNSTILE_SITE_KEY must be a string')
   }
   if (/YOUR_/i.test(turnstileSiteKey)) {
     throw new Error('VITE_CLOUDFLARE_TURNSTILE_SITE_KEY cannot contain YOUR_')
@@ -108,7 +54,7 @@ export function validateProductionBuildEnv(environment) {
     )
   }
 
-  return { appOrigin, dataManifestUrl, submissionApiUrl, turnstileSiteKey }
+  return { appOrigin, dataManifestUrl, turnstileSiteKey }
 }
 
 const isDirectExecution = process.argv[1]
@@ -119,18 +65,14 @@ if (isDirectExecution) {
     const environment = validateProductionBuildEnv({
       appOrigin: process.env.PRODUCTION_APP_ORIGIN,
       dataManifestUrl: process.env.PRODUCTION_DATA_MANIFEST_URL,
-      submissionApiUrl: process.env.PRODUCTION_SUBMISSION_API_URL,
       turnstileSiteKey: process.env.PRODUCTION_TURNSTILE_SITE_KEY,
     })
-    const output = [
+    process.stdout.write([
       `VITE_APP_ORIGIN=${environment.appOrigin}`,
       `VITE_DATA_MANIFEST_URL=${environment.dataManifestUrl}`,
       `VITE_CLOUDFLARE_TURNSTILE_SITE_KEY=${environment.turnstileSiteKey}`,
-    ]
-    if (environment.submissionApiUrl) {
-      output.push(`VITE_SUBMISSION_API_URL=${environment.submissionApiUrl}`)
-    }
-    process.stdout.write(`${output.join('\n')}\n`)
+      '',
+    ].join('\n'))
   } catch (error) {
     const message = error instanceof Error
       ? error.message

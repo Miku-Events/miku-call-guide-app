@@ -1,14 +1,25 @@
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { Send } from 'lucide-react'
+import { LogOut, Send } from 'lucide-react'
 import { TurnstileWidget } from '../../../components/TurnstileWidget'
 import { GitHubMarkIcon } from '../../../shared/icons/GitHubMarkIcon'
-import { fetchSubmissionSession, submitEditRequest, submitEventSubmission, githubLoginUrl, type SubmissionSession } from '../submissionClient'
+import {
+  createIdempotencyKey,
+  fetchSubmissionSession,
+  githubLoginUrl,
+  logoutSubmissionSession,
+  submissionErrorPresentation,
+  submitEditRequest,
+  submitEventSubmission,
+  type SubmissionErrorPresentation,
+  type SubmissionSession,
+} from '../submissionClient'
 import { COMBINED_TIMEZONES, formatIsoWithOffset } from '../utils/timezone'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { TextArea } from '@astryxdesign/core/TextArea'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Button } from '@astryxdesign/core/Button'
+import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { useFocusTrap } from '@astryxdesign/core/hooks'
 import type { EventDialogState } from '../eventDialog'
@@ -30,8 +41,11 @@ export function EventSubmitDialog({
   const { containerRef: dialogRef } = useFocusTrap<HTMLDialogElement>({ isActive: Boolean(dialog) })
   const [session, setSession] = useState<SubmissionSession>({ authenticated: false })
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
-  const [submissionError, setSubmissionError] = useState<string | null>(null)
+  const [submissionError, setSubmissionError] = useState<SubmissionErrorPresentation | null>(null)
   const [turnstileResetNonce, setTurnstileResetNonce] = useState(0)
+  const [attributionConsent, setAttributionConsent] = useState(false)
+  const [logoutPending, setLogoutPending] = useState(false)
+  const idempotencyKeyRef = useRef<string | null>(null)
   const dialogIdentity = dialog
     ? `${dialog.kind}:${dialog.kind === 'edit' ? dialog.event.id : 'new'}`
     : null
@@ -73,6 +87,8 @@ export function EventSubmitDialog({
     setSubmissionError(null)
     setTurnstileResetNonce(0)
     setTurnstileToken(null)
+    setAttributionConsent(false)
+    idempotencyKeyRef.current = null
   }, [dialogIdentity])
 
   const closeDialog = () => {
@@ -80,15 +96,45 @@ export function EventSubmitDialog({
     setSubmissionError(null)
     setTurnstileResetNonce(0)
     setTurnstileToken(null)
+    setAttributionConsent(false)
+    idempotencyKeyRef.current = null
     setDialog(null)
+  }
+
+  const submissionKey = () => {
+    idempotencyKeyRef.current ??= createIdempotencyKey()
+    return idempotencyKeyRef.current
   }
 
   const openLogin = () => {
     if (!submissionApiBaseUrl) {
-      setSubmissionError('Submission API가 설정되지 않았습니다.')
+      setSubmissionError({
+        message: 'Submission API가 설정되지 않았습니다.',
+        retryGuidance: '운영자에게 설정 상태를 문의해 주세요.',
+      })
       return
     }
     window.location.href = githubLoginUrl(submissionApiBaseUrl, window.location.href)
+  }
+
+  const logout = async () => {
+    setLogoutPending(true)
+    setSubmissionError(null)
+    try {
+      await logoutSubmissionSession(submissionApiBaseUrl)
+      setSession({ authenticated: false })
+      setTurnstileToken(null)
+      setAttributionConsent(false)
+      idempotencyKeyRef.current = null
+    } catch (error: unknown) {
+      const presentation = submissionErrorPresentation(error, '로그아웃하지 못했습니다.')
+      setSubmissionError({
+        ...presentation,
+        retryGuidance: '잠시 후 로그아웃을 다시 시도해 주세요.',
+      })
+    } finally {
+      setLogoutPending(false)
+    }
   }
 
   // React 19 Action State for adding event
@@ -97,6 +143,10 @@ export function EventSubmitDialog({
       const submissionGeneration = dialogGenerationRef.current
       setSubmissionError(null)
       try {
+        if (!attributionConsent) {
+          throw new Error('제출자 표시 및 개인정보 처리에 동의해 주세요.')
+        }
+
         const startDate = String(formData.get('startDate') ?? '')
         const startTime = String(formData.get('startTime') ?? '')
         const endDate = String(formData.get('endDate') ?? '')
@@ -132,23 +182,25 @@ export function EventSubmitDialog({
           sourceUrl: String(formData.get('sourceUrl') ?? '') || undefined,
           note: String(formData.get('note') ?? '') || undefined,
           slug: String(formData.get('slug') ?? '') || undefined,
+          attributionConsent: true,
           turnstileToken: turnstileToken || '',
-        })
+        }, submissionKey())
         if (submissionGeneration !== dialogGenerationRef.current) {
           return { success: false, ignored: true }
         }
-        setSubmissionSuccess(result.url ? `PR 생성 요청이 접수되었습니다: ${result.url}` : 'PR 생성 요청이 접수되었습니다.')
+        const replayLabel = result.replayed ? '기존 PR 요청을 확인했습니다' : 'PR 생성 요청이 접수되었습니다'
+        setSubmissionSuccess(result.url ? `${replayLabel}: ${result.url}` : `${replayLabel}.`)
         closeDialog()
         return { success: true }
       } catch (err: unknown) {
         if (submissionGeneration !== dialogGenerationRef.current) {
           return { success: false, ignored: true }
         }
-        const errorMsg = err instanceof Error ? err.message : '일정 추가 요청에 실패했습니다.'
-        setSubmissionError(errorMsg)
+        const errorPresentation = submissionErrorPresentation(err, '일정 추가 요청에 실패했습니다.')
+        setSubmissionError(errorPresentation)
         setTurnstileToken(null)
         setTurnstileResetNonce((current) => current + 1)
-        return { success: false, error: errorMsg }
+        return { success: false, error: errorPresentation.message }
       }
     },
     null
@@ -162,28 +214,34 @@ export function EventSubmitDialog({
       const submissionGeneration = dialogGenerationRef.current
       setSubmissionError(null)
       try {
+        if (!attributionConsent) {
+          throw new Error('제출자 표시 및 개인정보 처리에 동의해 주세요.')
+        }
+
         const result = await submitEditRequest(submissionApiBaseUrl, {
           eventId: dialog.event.id,
           occurrenceId: dialog.occurrence?.id,
           message: String(formData.get('message') ?? ''),
           sourceUrl: String(formData.get('sourceUrl') ?? '') || undefined,
+          attributionConsent: true,
           turnstileToken: turnstileToken || '',
-        })
+        }, submissionKey())
         if (submissionGeneration !== dialogGenerationRef.current) {
           return { success: false, ignored: true }
         }
-        setSubmissionSuccess(result.url ? `수정 요청 이슈가 생성되었습니다: ${result.url}` : '수정 요청 이슈가 생성되었습니다.')
+        const replayLabel = result.replayed ? '기존 수정 요청 이슈를 확인했습니다' : '수정 요청 이슈가 생성되었습니다'
+        setSubmissionSuccess(result.url ? `${replayLabel}: ${result.url}` : `${replayLabel}.`)
         closeDialog()
         return { success: true }
       } catch (err: unknown) {
         if (submissionGeneration !== dialogGenerationRef.current) {
           return { success: false, ignored: true }
         }
-        const errorMsg = err instanceof Error ? err.message : '수정 요청에 실패했습니다.'
-        setSubmissionError(errorMsg)
+        const errorPresentation = submissionErrorPresentation(err, '수정 요청에 실패했습니다.')
+        setSubmissionError(errorPresentation)
         setTurnstileToken(null)
         setTurnstileResetNonce((current) => current + 1)
-        return { success: false, error: errorMsg }
+        return { success: false, error: errorPresentation.message }
       }
     },
     null
@@ -215,8 +273,25 @@ export function EventSubmitDialog({
             {submissionError ? (
               <div className="event-dialog-error" role="alert">
                 <strong>요청을 제출하지 못했습니다.</strong>
-                <p>{submissionError}</p>
-                <p>보안 검증을 다시 완료한 뒤 재시도해 주세요.</p>
+                <p>{submissionError.message}</p>
+                {submissionError.requestId ? (
+                  <p>요청 ID: <code>{submissionError.requestId}</code></p>
+                ) : null}
+                <p>{submissionError.retryGuidance}</p>
+              </div>
+            ) : null}
+            {session.authenticated ? (
+              <div className="event-session-row">
+                <p><strong>@{session.login ?? 'github-user'}</strong> 계정으로 로그인했습니다.</p>
+                <Button
+                  className="event-logout-button"
+                  isDisabled={isSubmitting || logoutPending}
+                  isLoading={logoutPending}
+                  label="로그아웃"
+                  icon={<LogOut size={16} aria-hidden="true" />}
+                  onClick={logout}
+                  variant="secondary"
+                />
               </div>
             ) : null}
             {!session.authenticated ? (
@@ -225,12 +300,15 @@ export function EventSubmitDialog({
                 description="GitHub 로그인 후 요청을 제출할 수 있습니다."
                 icon={<GitHubMarkIcon size={28} />}
                 actions={
-                  <Button
-                    label="GitHub 로그인"
-                    icon={<GitHubMarkIcon size={16} />}
-                    onClick={openLogin}
-                    variant="primary"
-                  />
+                  <div className="event-login-actions">
+                    <Button
+                      label="GitHub 로그인"
+                      icon={<GitHubMarkIcon size={16} />}
+                      onClick={openLogin}
+                      variant="primary"
+                    />
+                    <a href="#/privacy">로그인 전 개인정보 처리 안내 보기</a>
+                  </div>
                 }
               />
             ) : dialog.kind === 'add' ? (
@@ -345,6 +423,17 @@ export function EventSubmitDialog({
                   rows={4}
                 />
                 <div className="mt-4 flex flex-col gap-4">
+                  <div className="event-attribution-consent">
+                    <CheckboxInput
+                      description="GitHub login은 비공개 data 저장소의 PR 또는 Issue에만 기록되며 이벤트 YAML에는 저장되지 않습니다."
+                      htmlName="attributionConsent"
+                      isRequired
+                      label="제출 내용과 GitHub 계정 표시 및 개인정보 처리에 동의합니다."
+                      onChange={setAttributionConsent}
+                      value={attributionConsent}
+                    />
+                    <a href="#/privacy">개인정보 처리 안내 보기</a>
+                  </div>
                   <TurnstileWidget
                     action="event_submit"
                     onVerify={setTurnstileToken}
@@ -355,7 +444,7 @@ export function EventSubmitDialog({
                     icon={<Send size={16} aria-hidden="true" />}
                     type="submit"
                     variant="primary"
-                    isDisabled={isSubmitting || !turnstileToken}
+                    isDisabled={isSubmitting || logoutPending || !turnstileToken || !attributionConsent}
                     isLoading={isSubmitting}
                   />
                 </div>
@@ -390,6 +479,17 @@ export function EventSubmitDialog({
                   isOptional
                 />
                 <div className="mt-4 flex flex-col gap-4">
+                  <div className="event-attribution-consent">
+                    <CheckboxInput
+                      description="GitHub login은 비공개 data 저장소의 PR 또는 Issue에만 기록되며 이벤트 YAML에는 저장되지 않습니다."
+                      htmlName="attributionConsent"
+                      isRequired
+                      label="제출 내용과 GitHub 계정 표시 및 개인정보 처리에 동의합니다."
+                      onChange={setAttributionConsent}
+                      value={attributionConsent}
+                    />
+                    <a href="#/privacy">개인정보 처리 안내 보기</a>
+                  </div>
                   <TurnstileWidget
                     action="event_edit"
                     onVerify={setTurnstileToken}
@@ -400,7 +500,7 @@ export function EventSubmitDialog({
                     icon={<Send size={16} aria-hidden="true" />}
                     type="submit"
                     variant="primary"
-                    isDisabled={isSubmitting || !turnstileToken}
+                    isDisabled={isSubmitting || logoutPending || !turnstileToken || !attributionConsent}
                     isLoading={isSubmitting}
                   />
                 </div>

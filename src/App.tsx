@@ -17,14 +17,19 @@ const CallGuidePage = lazy(() =>
 const EventCalendarPage = lazy(() =>
   import('./features/events/EventCalendarPage').then((m) => ({ default: m.EventCalendarPage }))
 )
+const PrivacyPage = lazy(() =>
+  import('./features/privacy/PrivacyPage').then((m) => ({ default: m.PrivacyPage }))
+)
 
 export default function App() {
   const location = useLocation()
+  const isPrivacyRoute = location.pathname === '/privacy'
   const usesBrowserChromeRootScroll = location.pathname === '/'
     || Boolean(matchPath('/songs/:songId', location.pathname))
+    || isPrivacyRoute
 
-  return (
-    <SpoilerDisclaimerGate>
+  const routedApplication = (
+    <>
       <BrowserChromeRootScrollController
         active={usesBrowserChromeRootScroll}
         resetKey={location.pathname}
@@ -32,13 +37,23 @@ export default function App() {
       <AppErrorBoundary resetKey={location.key}>
         <Suspense fallback={<PageShellSkeleton />}>
           <Routes>
-            <Route path="/" element={<CatalogPage />} />
-            <Route path="/songs/:songId" element={<CallGuidePage />} />
-            <Route path="/events" element={<EventCalendarPage />} />
+            {isPrivacyRoute ? (
+              <Route path="/privacy" element={<PrivacyPage />} />
+            ) : (
+              <>
+                <Route path="/" element={<CatalogPage />} />
+                <Route path="/songs/:songId" element={<CallGuidePage />} />
+                <Route path="/events" element={<EventCalendarPage />} />
+              </>
+            )}
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </AppErrorBoundary>
-    </SpoilerDisclaimerGate>
+    </>
   )
+
+  return isPrivacyRoute
+    ? routedApplication
+    : <SpoilerDisclaimerGate>{routedApplication}</SpoilerDisclaimerGate>
 }

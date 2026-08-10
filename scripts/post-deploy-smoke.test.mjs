@@ -2,16 +2,28 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   assertFunctionSecurityHeaders,
   assertStaticSecurityHeaders,
+  DeploymentPropagationError,
   fetchWithTimeout,
+  requiredReleaseId,
   runPostDeploySmoke,
+  withPropagationRetry,
 } from './post-deploy-smoke.mjs'
 
 const appOrigin = 'https://app.miku-events.dev'
 const deploymentOrigin = 'https://01234567.miku-call-guide-app.pages.dev'
+const productionAliasOrigin = 'https://miku-call-guide-app.pages.dev'
 const manifestUrl = 'https://data.miku-events.dev/manifest.json'
 const releaseId = '0123456789abcdef0123456789abcdef01234567'
+const dataVersion = '20260713T0000'
+const generatedAt = '2026-07-13T00:00:00.000Z'
+const callGuideManifestUrl = 'https://data.miku-events.dev/call-guide-manifest.json'
+const songUrl = `https://data.miku-events.dev/songs/smoke-song.json?_miku_data_version=${dataVersion}`
+const eventIndexUrl = 'https://data.miku-events.dev/event-calendar/index.json'
+const emptyEventMonthUrl = 'https://data.miku-events.dev/event-calendar/months/2026-09.json'
+const eventMonthUrl = 'https://data.miku-events.dev/event-calendar/months/2026-08.json'
+const eventDetailUrl = `https://data.miku-events.dev/event-calendar/events/smoke-event.json?_miku_data_version=${dataVersion}`
 const readinessContractHeader = 'x-miku-readiness-contract'
-const readinessContractVersion = 'runtime-config-v1'
+const readinessContractVersion = 'runtime-config-v2'
 const staticSecurityHeaders = {
   'cache-control': 'no-cache, no-transform',
   'content-security-policy': [
@@ -19,8 +31,8 @@ const staticSecurityHeaders = {
     "base-uri 'self'",
     "object-src 'none'",
     "frame-ancestors 'none'",
-    "connect-src 'self' https://data.miku-events.dev https://challenges.cloudflare.com https://cloudflareinsights.com https://www.google-analytics.com https://www.youtube.com https://www.youtube-nocookie.com https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com",
-    "script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com https://www.googletagmanager.com 'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU=' 'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk=' https://www.youtube.com https://s.ytimg.com https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com",
+    "connect-src 'self' https://data.miku-events.dev https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com",
+    "script-src 'self' https://challenges.cloudflare.com https://www.youtube.com https://s.ytimg.com https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://pbs.twimg.com https://abs.twimg.com",
@@ -44,7 +56,6 @@ const functionSecurityHeaders = {
 const cspContext = {
   appOrigin,
   dataOrigin: new URL(manifestUrl).origin,
-  submissionOrigin: '',
 }
 
 function releaseMarkerUrl(origin) {
@@ -61,6 +72,48 @@ function stylesheetUrl(origin) {
 
 function missingAssetUrl(origin) {
   return `${origin}/assets/__missing-${encodeURIComponent(releaseId)}.js`
+}
+
+function responseHeaders(values = {}, cookies = []) {
+  const headers = new Headers({ ...functionSecurityHeaders, ...values })
+  for (const cookie of cookies) headers.append('set-cookie', cookie)
+  return headers
+}
+
+function aliasSmokeUrl() {
+  return `${productionAliasOrigin}/api/ready?alias-smoke=${encodeURIComponent(releaseId)}`
+}
+
+function oauthStartUrl(origin) {
+  return `${origin}/api/auth/github/start?returnTo=${encodeURIComponent(`${origin}/#/events`)}`
+}
+
+const validOauthCookie = '__Host-miku_call_guide_oauth=signed; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
+const validLogoutCookies = [
+  '__Host-miku_call_guide_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Secure',
+  'miku_call_guide_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0',
+  '__Host-miku_call_guide_oauth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+  'miku_call_guide_oauth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+]
+
+function oauthStartResponse(cookie = validOauthCookie) {
+  const location = new URL('https://github.com/login/oauth/authorize')
+  location.searchParams.set('client_id', 'smoke-client')
+  location.searchParams.set('redirect_uri', `${appOrigin}/api/auth/github/callback`)
+  location.searchParams.set('state', 's'.repeat(43))
+  location.searchParams.set('code_challenge', 'c'.repeat(43))
+  location.searchParams.set('code_challenge_method', 'S256')
+  return new Response(null, {
+    headers: responseHeaders({ location: location.href }, [cookie]),
+    status: 302,
+  })
+}
+
+function logoutResponse(cookies = validLogoutCookies) {
+  return new Response(null, {
+    headers: responseHeaders({}, cookies),
+    status: 204,
+  })
 }
 
 function successfulResponse(url) {
@@ -103,6 +156,29 @@ function successfulResponse(url) {
       status: 200,
     })
   }
+  if (url === aliasSmokeUrl()) {
+    return new Response(null, {
+      headers: {
+        location: `${appOrigin}/api/ready?alias-smoke=${encodeURIComponent(releaseId)}`,
+      },
+      status: 308,
+    })
+  }
+  if (url === oauthStartUrl(appOrigin)) {
+    return oauthStartResponse()
+  }
+  if (url === `${appOrigin}/api/auth/logout`) {
+    return logoutResponse()
+  }
+  if (
+    url === `${deploymentOrigin}/api/auth/github/start`
+    || url === `${deploymentOrigin}/api/auth/logout`
+  ) {
+    return Response.json(
+      { error: 'invalid_request_origin', requestId: 'immutable-request-1' },
+      { headers: responseHeaders(), status: 403 },
+    )
+  }
   if (url === `${appOrigin}/og-image.png`) {
     return new Response(new Uint8Array(12_000), {
       headers: { 'content-type': 'image/png' },
@@ -112,11 +188,103 @@ function successfulResponse(url) {
   if (url === manifestUrl) {
     return Response.json({
       schemaVersion: 1,
-      dataVersion: '20260713T0000',
+      generatedAt,
+      dataVersion,
       manifests: {
         callGuide: 'call-guide-manifest.json',
         eventCalendar: 'event-calendar/index.json',
       },
+    })
+  }
+  if (url === callGuideManifestUrl) {
+    return Response.json({
+      schemaVersion: 1,
+      generatedAt,
+      dataVersion,
+      songs: [{
+        id: 'smoke-song',
+        title: { ko: '스모크 곡' },
+        artist: { ko: '스모크 작곡가' },
+        youtubeVideoId: 'M7lc1UVf-VE',
+        tags: ['smoke'],
+        path: 'songs/smoke-song.json',
+        status: 'published',
+      }],
+    })
+  }
+  if (url === songUrl) {
+    return Response.json({
+      schemaVersion: 1,
+      dataVersion,
+      id: 'smoke-song',
+      status: 'published',
+      metadata: {
+        title: { ko: '스모크 곡' },
+        artist: { ko: '스모크 작곡가' },
+        vocal: ['hatsune-miku'],
+        tags: ['smoke'],
+      },
+      youtube: { videoId: 'M7lc1UVf-VE', startOffsetMs: 0 },
+      display: {
+        defaultLyricsLanguage: 'ja',
+        defaultPronunciationLanguage: 'koPronunciation',
+        defaultCallLanguage: 'ko',
+      },
+      timing: { unit: 'ms', durationMs: 6_000 },
+      lyrics: [{
+        id: 'line-001',
+        time: '00:00:00,000 --> 00:00:06,000',
+        text: { ja: '光るステージへ' },
+        startMs: 0,
+        endMs: 6_000,
+      }],
+      callEvents: [],
+    })
+  }
+  if (url === eventIndexUrl) {
+    return Response.json({
+      schemaVersion: 1,
+      generatedAt,
+      dataVersion,
+      availableMonths: ['2026-08', '2026-09'],
+      types: ['concert'],
+      typePriority: ['concert'],
+    })
+  }
+  if (url === emptyEventMonthUrl) {
+    return Response.json({
+      schemaVersion: 1,
+      generatedAt,
+      dataVersion,
+      month: '2026-09',
+      events: [],
+    })
+  }
+  if (url === eventMonthUrl) {
+    return Response.json({
+      schemaVersion: 1,
+      generatedAt,
+      dataVersion,
+      month: '2026-08',
+      events: [{
+        id: 'smoke-event',
+        title: { ko: '스모크 이벤트' },
+        type: 'concert',
+        occurrences: [{ id: 'main', startsOn: '2026-08-10', timezone: 'Asia/Seoul' }],
+        path: '../events/smoke-event.json',
+      }],
+    })
+  }
+  if (url === eventDetailUrl) {
+    return Response.json({
+      schemaVersion: 1,
+      dataVersion,
+      id: 'smoke-event',
+      status: 'published',
+      title: { ko: '스모크 이벤트' },
+      type: 'concert',
+      occurrences: [{ id: 'main', startsOn: '2026-08-10', timezone: 'Asia/Seoul' }],
+      links: { sns: [{ platform: 'x', url: 'https://x.com/example/status/1' }] },
     })
   }
   throw new Error(`Unexpected URL: ${url}`)
@@ -133,6 +301,14 @@ function smokeOptions(overrides = {}) {
     ...overrides,
   }
 }
+
+describe('release marker input', () => {
+  it('accepts only a full lowercase commit SHA', () => {
+    expect(requiredReleaseId(releaseId)).toBe(releaseId)
+    expect(() => requiredReleaseId('')).toThrow('EXPECTED_RELEASE_ID is required')
+    expect(() => requiredReleaseId('A'.repeat(40))).toThrow('full lowercase commit SHA')
+  })
+})
 
 describe('enforced response security headers', () => {
   it('accepts enforced static and Function CSP with the common headers', () => {
@@ -280,17 +456,45 @@ describe('post-deploy smoke', () => {
       missingAssetUrl(appOrigin),
       releaseMarkerUrl(appOrigin),
       `${appOrigin}/api/ready`,
+      aliasSmokeUrl(),
+      oauthStartUrl(appOrigin),
+      `${appOrigin}/api/auth/logout`,
+      `${deploymentOrigin}/api/auth/github/start`,
+      `${deploymentOrigin}/api/auth/logout`,
       `${appOrigin}/og-image.png`,
       manifestUrl,
+      callGuideManifestUrl,
+      songUrl,
+      eventIndexUrl,
+      emptyEventMonthUrl,
+      eventMonthUrl,
+      eventDetailUrl,
     ]))
     expect(report).toMatchObject({
+      alias: {
+        location: `${appOrigin}/api/ready?alias-smoke=${releaseId}`,
+        origin: productionAliasOrigin,
+        status: 308,
+      },
       app: {
         assets: [{ kind: 'JavaScript' }, { kind: 'CSS' }],
         canonical: `${appOrigin}/`,
         missingAsset: { status: 404 },
         releaseId,
       },
-      data: { dataVersion: '20260713T0000', schemaVersion: 1 },
+      auth: {
+        immutableLogoutStatus: 403,
+        immutableOauthStatus: 403,
+        logoutStatus: 204,
+        oauthStatus: 302,
+      },
+      data: {
+        dataVersion,
+        eventId: 'smoke-event',
+        month: '2026-08',
+        schemaVersion: 1,
+        songId: 'smoke-song',
+      },
       deployment: {
         assets: [{ kind: 'JavaScript' }, { kind: 'CSS' }],
         missingAsset: { status: 404 },
@@ -305,10 +509,18 @@ describe('post-deploy smoke', () => {
     for (const [, init] of readinessCalls) {
       expect(new Headers(init?.headers).has('x-miku-expected-app-origin')).toBe(false)
     }
-    const surfaceCalls = fetchMock.mock.calls.filter(([url]) => String(url) !== manifestUrl)
+    const surfaceCalls = fetchMock.mock.calls.filter(([url]) => (
+      new URL(String(url)).origin !== new URL(manifestUrl).origin
+    ))
     expect(surfaceCalls).not.toHaveLength(0)
     for (const [, init] of surfaceCalls) {
       expect(init?.redirect).toBe('manual')
+    }
+    const logoutCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/auth/logout'))
+    expect(logoutCalls).toHaveLength(2)
+    for (const [, init] of logoutCalls) {
+      expect(init?.method).toBe('POST')
+      expect(new Headers(init?.headers).get('origin')).toBe(appOrigin)
     }
   })
 
@@ -326,6 +538,100 @@ describe('post-deploy smoke', () => {
       .rejects.toThrow(/Configured app root.*308/i)
     const appCall = fetchMock.mock.calls.find(([url]) => String(url) === `${appOrigin}/`)
     expect(appCall?.[1]?.redirect).toBe('manual')
+  })
+
+  it('requires the production pages.dev alias to preserve path and query', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === aliasSmokeUrl()
+        ? new Response(null, {
+          headers: { location: `${appOrigin}/` },
+          status: 308,
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/alias must redirect/i)
+  })
+
+  it('requires immutable deployment auth and logout to fail closed', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === `${deploymentOrigin}/api/auth/github/start`
+        ? Response.json({ authenticated: false }, {
+          headers: responseHeaders(),
+          status: 200,
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/Immutable OAuth rejection.*200/i)
+  })
+
+  it.each([
+    ['Secure', validOauthCookie.replace('; Secure', '')],
+    ['HttpOnly', validOauthCookie.replace('; HttpOnly', '')],
+    ['Path=/', validOauthCookie.replace('; Path=/', '')],
+    ['host-only scope', `${validOauthCookie}; Domain=miku.sekai.today`],
+  ])('requires the live OAuth cookie to preserve %s', async (_attribute, invalidCookie) => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === oauthStartUrl(appOrigin)
+        ? oauthStartResponse(invalidCookie)
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/secure transaction cookie/i)
+  })
+
+  it('requires every live logout cookie to use Path=/ and host-only scope', async () => {
+    const invalidCookies = validLogoutCookies.map((cookie, index) => (
+      index === 0 ? cookie.replace('; Path=/', '; Domain=miku.sekai.today') : cookie
+    ))
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === `${appOrigin}/api/auth/logout`
+        ? logoutResponse(invalidCookies)
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/did not clear __Host-miku_call_guide_session/i)
+  })
+
+  it('rejects a mismatched representative data leaf', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === eventDetailUrl
+        ? Response.json({
+          schemaVersion: 1,
+          dataVersion: 'stale',
+          id: 'smoke-event',
+          status: 'published',
+          title: { ko: '스모크 이벤트' },
+          type: 'concert',
+          occurrences: [{ id: 'main', startsOn: '2026-08-10', timezone: 'Asia/Seoul' }],
+          links: { sns: [{ platform: 'x', url: 'https://x.com/example/status/1' }] },
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/event detail dataVersion/i)
+  })
+
+  it('rejects a representative child that violates the vendored data contract', async () => {
+    const fetchMock = vi.fn(async (url) => (
+      String(url) === callGuideManifestUrl
+        ? Response.json({
+          schemaVersion: 1,
+          generatedAt,
+          dataVersion,
+          songs: [{ id: 'smoke-song', path: 'songs/smoke-song.json' }],
+        })
+        : successfulResponse(String(url))
+    ))
+
+    await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock })))
+      .rejects.toThrow(/Call-guide manifest failed data contract validation/i)
   })
 
   it.each([
@@ -458,7 +764,7 @@ describe('post-deploy smoke', () => {
     await expect(runPostDeploySmoke(smokeOptions({ fetchImpl: fetchMock }))).rejects.toThrow(expected)
   })
 
-  it('retries transient HTTP failures', async () => {
+  it('fails immediately on a Pages 5xx instead of classifying it as propagation', async () => {
     let rootAttempts = 0
     const fetchMock = vi.fn(async (url) => {
       if (String(url) === `${deploymentOrigin}/` && rootAttempts++ === 0) {
@@ -467,11 +773,27 @@ describe('post-deploy smoke', () => {
       return successfulResponse(String(url))
     })
 
-    await runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock }))
-    expect(rootAttempts).toBe(2)
+    await expect(runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock })))
+      .rejects.toThrow(/Deployment root.*503/i)
+    expect(rootAttempts).toBe(1)
   })
 
-  it('retries a successful canonical response before security headers propagate', async () => {
+  it('fails immediately on a network error instead of classifying it as propagation', async () => {
+    let rootAttempts = 0
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url) === `${deploymentOrigin}/`) {
+        rootAttempts += 1
+        throw new Error('connection reset')
+      }
+      return successfulResponse(String(url))
+    })
+
+    await expect(runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock })))
+      .rejects.toThrow(/connection reset/i)
+    expect(rootAttempts).toBe(1)
+  })
+
+  it('fails immediately when security headers do not match', async () => {
     let rootAttempts = 0
     const fetchMock = vi.fn(async (url) => {
       if (String(url) === `${appOrigin}/` && rootAttempts++ === 0) {
@@ -480,8 +802,9 @@ describe('post-deploy smoke', () => {
       return successfulResponse(String(url))
     })
 
-    await runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock }))
-    expect(rootAttempts).toBe(2)
+    await expect(runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock })))
+      .rejects.toThrow(/content-security-policy/i)
+    expect(rootAttempts).toBe(1)
   })
 
   it('retries an immutable deployment readiness 404 during Functions propagation', async () => {
@@ -495,6 +818,50 @@ describe('post-deploy smoke', () => {
 
     await runPostDeploySmoke(smokeOptions({ attempts: 2, fetchImpl: fetchMock }))
     expect(readinessAttempts).toBe(2)
+  })
+
+  it('enforces a real propagation wall-clock deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const run = vi.fn(() => new Promise(() => {}))
+      const result = withPropagationRetry(run, {
+        attempts: 25,
+        deadlineMs: 120_000,
+        retryDelayMs: 5_000,
+      })
+      const rejection = expect(result).rejects.toThrow(/120000ms deadline/i)
+
+      await vi.advanceTimersByTimeAsync(120_000)
+      await rejection
+      expect(run).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry non-propagation failures in the retry helper', async () => {
+    const failure = new Error('content mismatch')
+    const run = vi.fn().mockRejectedValue(failure)
+
+    await expect(withPropagationRetry(run, {
+      attempts: 25,
+      deadlineMs: 120_000,
+      retryDelayMs: 0,
+    })).rejects.toBe(failure)
+    expect(run).toHaveBeenCalledOnce()
+  })
+
+  it('retries an identified release propagation failure', async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new DeploymentPropagationError('release marker mismatch'))
+      .mockResolvedValue('ok')
+
+    await expect(withPropagationRetry(run, {
+      attempts: 2,
+      deadlineMs: 120_000,
+      retryDelayMs: 0,
+    })).resolves.toBe('ok')
+    expect(run).toHaveBeenCalledTimes(2)
   })
 
   it('aborts a timed-out request at the single fetch boundary', async () => {

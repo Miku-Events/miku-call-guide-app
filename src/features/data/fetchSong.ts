@@ -1,6 +1,10 @@
 import { validateRuntimeSong } from '../../../data-contracts/validators.mjs'
 import { assertContract } from './contractValidation'
-import { loadVersionedResource, type VersionedLoadOptions } from './manifestShared'
+import {
+  JSON_BYTE_LIMITS,
+  loadVersionedResource,
+  type VersionedLoadOptions,
+} from './manifestShared'
 import type { LoadResult, SongGuide } from './types'
 
 function assertSong(value: unknown): asserts value is SongGuide {
@@ -27,10 +31,12 @@ export async function fetchSong(
     checkValue: (song) => assertSongIdentity(song, songId, options.expectedDataVersion),
     label: '곡 데이터',
     manifestUrl,
+    maxBytes: JSON_BYTE_LIMITS.song,
     options,
     requestCache: 'force-cache',
     requestLabel: 'Song request',
     resourcePath: songPath,
+    timeoutKind: 'song',
     versionedLeaf: true,
   })
   return {

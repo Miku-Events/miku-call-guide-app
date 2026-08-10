@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: app-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality:
@@ -38,10 +38,9 @@ jobs:
         shell: bash
         env:
           PRODUCTION_RELEASE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
-          PRODUCTION_APP_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
-          PRODUCTION_DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
-          PRODUCTION_SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
-          PRODUCTION_TURNSTILE_SITE_KEY: ${{ vars.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY || secrets.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
+          PRODUCTION_APP_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}
+          PRODUCTION_DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL }}
+          PRODUCTION_TURNSTILE_SITE_KEY: ${{ vars.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
         run: |
           echo "VITE_RELEASE_ID=$GITHUB_SHA" >> "$GITHUB_ENV"
           if [[ "$PRODUCTION_RELEASE" != "true" ]]; then
@@ -64,6 +63,9 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --audit-level=high
+
+      - name: Verify registry signatures
+        run: npm audit signatures
 
       - name: Upload built app
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -159,6 +161,9 @@ jobs:
       - e2e
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment:
+      name: preview
+      url: ${{ steps.preview.outputs.deployment-url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -192,8 +197,8 @@ jobs:
         id: preview
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: 4.118.0
           command: pages deploy dist --project-name=miku-call-guide-app --branch=release-preview-${{ github.sha }}
 
@@ -202,11 +207,10 @@ jobs:
 
       - name: Browser-smoke enforced-CSP preview
         env:
-          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
-          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
+          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}
+          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL }}
           EXPECTED_RELEASE_ID: ${{ github.sha }}
           PREVIEW_SMOKE_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
-          SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
         run: npm run smoke:preview
 
   deploy:
@@ -215,6 +219,9 @@ jobs:
     needs: preview
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ vars.VITE_APP_ORIGIN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -247,18 +254,17 @@ jobs:
         id: deploy
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CLOUDFLARE_PRODUCTION_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: 4.118.0
           command: pages deploy dist --project-name=miku-call-guide-app --branch=main
 
       - name: Smoke deployed app and data
         env:
-          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
-          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
+          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}
+          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL }}
           DEPLOYMENT_SMOKE_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}
           EXPECTED_RELEASE_ID: ${{ github.sha }}
-          SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
         run: npm run smoke:deploy
 
       - name: Install production-smoke Chromium
@@ -266,9 +272,8 @@ jobs:
 
       - name: Browser-smoke custom production origin
         env:
-          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
-          BROWSER_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}
-          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL || secrets.VITE_DATA_MANIFEST_URL }}
+          APP_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}
+          BROWSER_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}
+          DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL }}
           EXPECTED_RELEASE_ID: ${{ github.sha }}
-          SUBMISSION_API_URL: ${{ vars.VITE_SUBMISSION_API_URL || secrets.VITE_SUBMISSION_API_URL }}
         run: npm run smoke:browser
