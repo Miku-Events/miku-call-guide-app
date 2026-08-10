@@ -2,23 +2,16 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium } from '@playwright/test'
 import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
-import { assertStaticSecurityHeaders } from './post-deploy-smoke.mjs'
 import {
-  GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
-  GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
-  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
-} from './static-csp-sources.mjs'
+  assertStaticSecurityHeaders,
+  requiredReleaseId,
+} from './post-deploy-smoke.mjs'
 
-const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
-const DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS = 8
+const DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS = 25
 const DEFAULT_DEPLOYMENT_PROPAGATION_RETRY_DELAY_MS = 5_000
-export const BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE = 'BROWSER_DEPLOYMENT_PROPAGATION'
+const DEFAULT_BROWSER_PROPAGATION_DEADLINE_MS = 120_000
+const BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE = 'BROWSER_DEPLOYMENT_PROPAGATION'
 export const BROWSER_SMOKE_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
-export const PREVIEW_ROUTES = BROWSER_SMOKE_ROUTES
-
-export function mainLandmarkLocator(page) {
-  return page.getByRole('main')
-}
 
 export async function acknowledgeInitialSpoilerDisclaimer(page) {
   const dialog = page.getByRole('alertdialog', { name: '스포일러 안내' })
@@ -29,13 +22,79 @@ export async function acknowledgeInitialSpoilerDisclaimer(page) {
 }
 
 export async function waitForRouteReady(page) {
-  await mainLandmarkLocator(page).waitFor({ state: 'visible' })
+  await page.getByRole('main').waitFor({ state: 'visible' })
   await page.waitForFunction(() => {
     const main = document.querySelector('[role="main"], main')
     return Boolean(main)
       && !main.querySelector('[aria-busy="true"]')
       && !main.querySelector('.app-loading')
   })
+}
+
+const ROUTE_DATA_SELECTORS = Object.freeze({
+  '/': 'a.catalog-song-card',
+  '/#/events': '.event-calendar-grid',
+  '/#/songs/39-music': '.lyric-line[data-line-id]',
+})
+
+export async function assertRouteDataHealthy(page, route) {
+  const selector = ROUTE_DATA_SELECTORS[route]
+  if (!selector) throw new Error(`No data-health selector is configured for ${route}`)
+  await page.waitForFunction((expectedSelector) => {
+    const main = document.querySelector('[role="main"], main')
+    return Boolean(main?.querySelector('[role="alert"]'))
+      || Boolean(main?.querySelector(expectedSelector))
+  }, selector)
+  const state = await page.evaluate((expectedSelector) => {
+    const main = document.querySelector('[role="main"], main')
+    const visibleAlert = Array.from(main?.querySelectorAll('[role="alert"]') ?? [])
+      .find((element) => {
+        const style = globalThis.getComputedStyle(element)
+        return style.display !== 'none' && style.visibility !== 'hidden'
+      })
+    return {
+      alertText: (visibleAlert?.textContent || '').trim().slice(0, 500),
+      hasExpectedContent: Boolean(main?.querySelector(expectedSelector)),
+    }
+  }, selector)
+  if (state.alertText) {
+    throw new Error(`${route} rendered a handled data error: ${state.alertText}`)
+  }
+  if (!state.hasExpectedContent) {
+    throw new Error(`${route} did not render its representative data content`)
+  }
+}
+
+export async function assertPreviewReadOnly(page) {
+  const state = await page.evaluate(() => {
+    const text = document.body.textContent || ''
+    const submissionButton = Array.from(document.querySelectorAll('button'))
+      .some((button) => /^(?:일정 추가|일정 제보하기|수정 요청)$/.test((button.textContent || '').trim()))
+    const oauthControl = Array.from(document.querySelectorAll('a, button'))
+      .some((element) => (
+        /\/api\/auth\/github\/start(?:[?#]|$)/.test(element.getAttribute('href') || '')
+        || /GitHub\s*로그인/i.test((element.textContent || '').trim())
+      ))
+    return {
+      hasReadOnlyLabel: text.includes('미리보기 · 읽기 전용')
+        && text.includes('로그인, 일정 제보, 수정 요청'),
+      hasSubmissionButton: submissionButton,
+      hasOauthControl: oauthControl,
+      hasTurnstile: Boolean(document.querySelector([
+        'iframe[src*="challenges.cloudflare.com"]',
+        '.cf-turnstile',
+        '[data-sitekey]',
+      ].join(','))),
+    }
+  })
+  if (
+    !state.hasReadOnlyLabel
+    || state.hasOauthControl
+    || state.hasSubmissionButton
+    || state.hasTurnstile
+  ) {
+    throw new Error(`Pages preview is not read-only: ${detail(state)}`)
+  }
 }
 
 function requiredOrigin(value, name, { requirePagesDev = false } = {}) {
@@ -68,8 +127,7 @@ function requiredOrigin(value, name, { requirePagesDev = false } = {}) {
   return value
 }
 
-function requiredUrl(value, name, { optional = false } = {}) {
-  if (optional && !value) return ''
+function requiredUrl(value, name) {
   if (typeof value !== 'string' || value !== value.trim()) {
     throw new Error(`${name} must be an absolute HTTPS URL`)
   }
@@ -83,13 +141,6 @@ function requiredUrl(value, name, { optional = false } = {}) {
     throw new Error(`${name} must be an absolute HTTPS URL`)
   }
   return parsed.href
-}
-
-function requiredReleaseSha(value) {
-  if (!FULL_SHA_PATTERN.test(value || '')) {
-    throw new Error('EXPECTED_RELEASE_ID must be a full lowercase commit SHA')
-  }
-  return value
 }
 
 function detail(value) {
@@ -115,6 +166,7 @@ export class BrowserDeploymentPropagationError extends Error {
 
 export async function withDeploymentPropagationRetry(check, {
   attempts = DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS,
+  deadlineMs = DEFAULT_BROWSER_PROPAGATION_DEADLINE_MS,
   retryDelayMs = DEFAULT_DEPLOYMENT_PROPAGATION_RETRY_DELAY_MS,
   waitImpl = wait,
 } = {}) {
@@ -122,22 +174,47 @@ export async function withDeploymentPropagationRetry(check, {
     throw new Error('attempts must be at least 1')
   }
 
+  if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
+    throw new Error('deadlineMs must be greater than 0')
+  }
+  const deadlineAt = Date.now() + deadlineMs
+  const controller = new AbortController()
+  const deadlineError = new Error(`Browser deployment propagation exceeded the ${deadlineMs}ms deadline`)
+  const deadline = new Promise((_, reject) => {
+    controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true })
+  })
+  const deadlineTimer = setTimeout(() => controller.abort(deadlineError), deadlineMs)
   let lastError
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await check()
-    } catch (error) {
-      lastError = error
-      if (
-        error?.code !== BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE
-        || attempt === attempts
-      ) {
-        throw error
+  try {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await Promise.race([
+          Promise.resolve().then(() => check({ deadlineAt, signal: controller.signal })),
+          deadline,
+        ])
+      } catch (error) {
+        if (controller.signal.aborted) throw controller.signal.reason
+        lastError = error
+        if (
+          error?.code !== BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE
+          || attempt === attempts
+        ) {
+          throw error
+        }
+      }
+      if (retryDelayMs > 0) {
+        const remainingMs = deadlineAt - Date.now()
+        if (remainingMs <= 0) throw deadlineError
+        await Promise.race([
+          waitImpl(Math.min(retryDelayMs, remainingMs)),
+          deadline,
+        ])
       }
     }
-    if (retryDelayMs > 0) await waitImpl(retryDelayMs)
+    throw lastError
+  } finally {
+    clearTimeout(deadlineTimer)
   }
-  throw lastError
 }
 
 export function appAssetFailure(response, surfaceOrigin) {
@@ -171,21 +248,8 @@ export function initialDocumentDeliveryFailure(response, label) {
 }
 
 export function deploymentHttpStatusFailure(status, label) {
-  if (status !== 404 && status < 500) return ''
+  if (status !== 404) return ''
   return `${label} returned HTTP ${status} while the Pages deployment is propagating`
-}
-
-export function missingTagGatewayPolicySources(headers) {
-  const sources = new Set(
-    String(headers.get('content-security-policy') || '')
-      .split(/[;\s]+/)
-      .filter(Boolean),
-  )
-  return [
-    GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
-    GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
-    ...GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
-  ].filter((source) => !sources.has(source))
 }
 
 async function browserFailureState(page) {
@@ -283,15 +347,15 @@ async function assertReleaseMarker(request, surfaceOrigin, expectedReleaseId, la
   }
 }
 
-export async function runBrowserSmoke({
+async function runBrowserSmoke({
   appOrigin,
   browserType = chromium,
   dataManifestUrl,
   expectedReleaseId,
   requirePagesDev = false,
+  signal,
   surfaceLabel = 'Browser surface',
   surfaceOrigin,
-  submissionApiUrl = '',
 } = {}) {
   const normalizedAppOrigin = requiredOrigin(appOrigin, 'APP_SMOKE_ORIGIN')
   const normalizedSurfaceOrigin = requiredOrigin(
@@ -300,13 +364,17 @@ export async function runBrowserSmoke({
     { requirePagesDev },
   )
   const normalizedManifestUrl = requiredUrl(dataManifestUrl, 'DATA_MANIFEST_URL')
-  const normalizedSubmissionUrl = requiredUrl(
-    submissionApiUrl,
-    'SUBMISSION_API_URL',
-    { optional: true },
-  )
-  const normalizedReleaseId = requiredReleaseSha(expectedReleaseId)
+  const normalizedReleaseId = requiredReleaseId(expectedReleaseId)
+  if (signal?.aborted) throw signal.reason
   const browser = await browserType.launch({ headless: true })
+  if (signal?.aborted) {
+    await browser.close()
+    throw signal.reason
+  }
+  const abortBrowser = () => {
+    void browser.close()
+  }
+  signal?.addEventListener('abort', abortBrowser, { once: true })
   try {
     const context = await browser.newContext()
     const page = await context.newPage()
@@ -314,21 +382,28 @@ export async function runBrowserSmoke({
     const cspViolations = []
     const pageErrors = []
     const assetFailures = []
+    let firstAssetFailureState = null
     let resolveFirstAssetFailure
     const firstAssetFailure = new Promise((resolve) => {
       resolveFirstAssetFailure = resolve
     })
-    const recordAssetFailure = (failure) => {
+    const recordAssetFailure = (failure, retryNotFound = false) => {
       if (!failure || assetFailures.includes(failure)) return
       assetFailures.push(failure)
-      if (assetFailures.length === 1) resolveFirstAssetFailure(failure)
+      if (assetFailures.length === 1) {
+        firstAssetFailureState = { message: failure, retryNotFound }
+        resolveFirstAssetFailure(firstAssetFailureState)
+      }
     }
     page.on('console', (message) => {
       consoleDiagnostics.push({ type: message.type(), text: message.text() })
     })
     page.on('pageerror', (error) => pageErrors.push(error.message))
     page.on('response', (response) => {
-      recordAssetFailure(appAssetFailure(response, normalizedSurfaceOrigin))
+      recordAssetFailure(
+        appAssetFailure(response, normalizedSurfaceOrigin),
+        response.status() === 404,
+      )
     })
     page.on('requestfailed', (request) => {
       let url
@@ -390,31 +465,34 @@ export async function runBrowserSmoke({
         )
         if (index === 0) {
           const rootHeaders = await responseHeaders(response)
-          const missingTagGatewaySources = missingTagGatewayPolicySources(rootHeaders)
-          if (missingTagGatewaySources.length > 0) {
-            throw new BrowserDeploymentPropagationError(
-              `${surfaceLabel} root is missing deployed Google Tag Gateway CSP sources: ${missingTagGatewaySources.join(', ')}`,
-            )
-          }
           assertStaticSecurityHeaders(rootHeaders, {
             appOrigin: normalizedAppOrigin,
             dataOrigin: new URL(normalizedManifestUrl).origin,
-            submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
           }, `${surfaceLabel} root`)
           const acknowledgementFailure = await Promise.race([
-            acknowledgeInitialSpoilerDisclaimer(page).then(() => ''),
+            acknowledgeInitialSpoilerDisclaimer(page).then(() => null),
             firstAssetFailure,
           ])
           if (acknowledgementFailure) {
-            throw new BrowserDeploymentPropagationError(acknowledgementFailure)
+            const Failure = acknowledgementFailure.retryNotFound
+              ? BrowserDeploymentPropagationError
+              : Error
+            throw new Failure(acknowledgementFailure.message)
           }
         }
         const readinessFailure = await Promise.race([
-          waitForRouteReady(page).then(() => ''),
+          waitForRouteReady(page).then(() => null),
           firstAssetFailure,
         ])
         if (readinessFailure) {
-          throw new BrowserDeploymentPropagationError(readinessFailure)
+          const Failure = readinessFailure.retryNotFound
+            ? BrowserDeploymentPropagationError
+            : Error
+          throw new Failure(readinessFailure.message)
+        }
+        await assertRouteDataHealthy(page, route)
+        if (requirePagesDev && route === '/#/events') {
+          await assertPreviewReadOnly(page)
         }
         assertSurfaceNavigation(
           response,
@@ -447,9 +525,10 @@ export async function runBrowserSmoke({
       throw wrappedError
     }
     if (assetFailures.length > 0) {
-      throw new BrowserDeploymentPropagationError(
-        `Browser smoke asset failures:\n${assetFailures.join('\n')}`,
-      )
+      const Failure = firstAssetFailureState?.retryNotFound
+        ? BrowserDeploymentPropagationError
+        : Error
+      throw new Failure(`Browser smoke asset failures:\n${assetFailures.join('\n')}`)
     }
     assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
     await assertReleaseMarker(
@@ -468,17 +547,9 @@ export async function runBrowserSmoke({
       surfaceOrigin: normalizedSurfaceOrigin,
     }
   } finally {
+    signal?.removeEventListener('abort', abortBrowser)
     await browser.close()
   }
-}
-
-export function runPreviewBrowserSmoke({ previewOrigin, ...options } = {}) {
-  return runBrowserSmoke({
-    ...options,
-    requirePagesDev: true,
-    surfaceLabel: 'Preview',
-    surfaceOrigin: previewOrigin,
-  })
 }
 
 function formatConsoleDiagnostic(diagnostic) {
@@ -506,14 +577,14 @@ async function runCli() {
     throw new Error('BROWSER_SMOKE_ORIGIN and PREVIEW_SMOKE_ORIGIN must not conflict')
   }
   const isPreview = !browserOrigin
-  const report = await withDeploymentPropagationRetry(() => runBrowserSmoke({
+  const report = await withDeploymentPropagationRetry(({ signal }) => runBrowserSmoke({
     appOrigin: process.env.APP_SMOKE_ORIGIN,
     dataManifestUrl: process.env.DATA_MANIFEST_URL,
     expectedReleaseId: process.env.EXPECTED_RELEASE_ID,
     requirePagesDev: isPreview,
+    signal,
     surfaceLabel: isPreview ? 'Preview' : 'Production',
     surfaceOrigin: browserOrigin || previewOrigin,
-    submissionApiUrl: process.env.SUBMISSION_API_URL,
   }))
   process.stdout.write(`${formatPreviewSmokeReport(report)}\n`)
 }

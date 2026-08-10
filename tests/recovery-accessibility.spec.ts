@@ -116,12 +116,14 @@ test('[A11-D-01] traverses the dialog with Tab and Shift+Tab, closes on Escape, 
 })
 
 test('[A11-D-02] keeps submission errors inside the dialog and announces only success on the page', { tag: '@desktop' }, async ({ page }) => {
-  setMockedSession(page, { authenticated: true, login: 'miku-e2e' })
+  setMockedSession(page, { authenticated: true, id: '6793499', login: 'miku-e2e' })
   await installTurnstileHarness(page)
 
   let submissionAttempts = 0
+  const idempotencyKeys: string[] = []
   await page.route('**/api/events/submissions', async (route) => {
     submissionAttempts += 1
+    idempotencyKeys.push(route.request().headers()['idempotency-key'] ?? '')
     if (submissionAttempts === 1) {
       await route.fulfill({ json: { error: 'upstream unavailable', requestId: 'e2e-1' }, status: 503 })
       return
@@ -137,6 +139,7 @@ test('[A11-D-02] keeps submission errors inside the dialog and announces only su
   await page.getByLabel('이벤트 제목').fill('접근성 테스트 이벤트')
   await page.getByLabel('시작일').fill('2026-07-01')
   await page.getByLabel('SNS 링크').fill('https://x.com/example/status/456')
+  await page.getByRole('checkbox', { name: /제출 내용과 GitHub 계정 표시/ }).check()
   await page.evaluate(() => {
     ;(window as TurnstileHarnessWindow).__completeTurnstile('first-token')
   })
@@ -162,6 +165,8 @@ test('[A11-D-02] keeps submission errors inside the dialog and announces only su
   await expect(dialog).not.toBeVisible()
   await expect(pageSuccessStatus).toContainText('PR 생성 요청이 접수되었습니다')
   expect(submissionAttempts).toBe(2)
+  expect(idempotencyKeys[0]).toMatch(/^[0-9a-f-]{36}$/)
+  expect(idempotencyKeys[1]).toBe(idempotencyKeys[0])
 })
 
 test('[A11-D-03] announces delayed month and detail loading with aria-busy', { tag: '@desktop' }, async ({ page }) => {
@@ -315,6 +320,31 @@ test('[A11-D-07] recovers from a YouTube script error and keeps the external fal
 
   await expectLocatorContained(videoFrame, iframe)
   expect(scriptAttempts).toBe(2)
+})
+
+test('[A11-D-08] exposes logout as a keyboard-operable 44px focus target', { tag: '@desktop' }, async ({ page }) => {
+  setMockedSession(page, { authenticated: true, id: '6793499', login: 'miku-e2e' })
+  let logoutRequests = 0
+  await page.route('**/api/auth/logout', async (route) => {
+    logoutRequests += 1
+    expect(route.request().method()).toBe('POST')
+    await route.fulfill({ status: 204 })
+  })
+
+  await page.goto('/?mockPlayer=1#/events')
+  const addButton = page.getByRole('button', { name: '일정 추가' })
+  await addButton.focus()
+  await addButton.press('Enter')
+
+  const logoutButton = page.getByRole('button', { name: '로그아웃' })
+  await expect(logoutButton).toBeVisible()
+  await expectLocatorMinTouchTarget(logoutButton)
+  await logoutButton.focus()
+  await expect(logoutButton).toBeFocused()
+  await logoutButton.press('Enter')
+
+  await expect(page.getByRole('heading', { name: 'GitHub 로그인 필요' })).toBeVisible()
+  expect(logoutRequests).toBe(1)
 })
 
 test('[A11-M-02] reflows event controls at a 200 percent zoom-equivalent width and text size', { tag: '@mobile' }, async ({ page }) => {

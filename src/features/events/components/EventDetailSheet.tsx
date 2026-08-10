@@ -49,6 +49,7 @@ interface EventDetailSheetProps {
   setDetailExpanded: React.Dispatch<React.SetStateAction<boolean>>
   onDismiss: () => void
   setDialog: React.Dispatch<React.SetStateAction<EventDialogState>>
+  submissionReadOnly?: boolean
 }
 
 export function EventDetailSheet({
@@ -60,6 +61,7 @@ export function EventDetailSheet({
   setDetailExpanded,
   onDismiss,
   setDialog,
+  submissionReadOnly = false,
 }: EventDetailSheetProps) {
   const {
     canDrag: detailCanDrag,
@@ -203,12 +205,14 @@ export function EventDetailSheet({
                   {detail?.links.official ? <a href={detail.links.official} rel="noreferrer" target="_blank">Official</a> : null}
                   {detail?.links.ticket ? <a href={detail.links.ticket} rel="noreferrer" target="_blank">Ticket</a> : null}
                 </div>
-                <Button
-                  label="수정 요청"
-                  variant="secondary"
-                  onClick={() => setDialog({ kind: 'edit', event, occurrence: matchingOccurrence })}
-                  className="event-edit-button mt-3"
-                />
+                {!submissionReadOnly ? (
+                  <Button
+                    label="수정 요청"
+                    variant="secondary"
+                    onClick={() => setDialog({ kind: 'edit', event, occurrence: matchingOccurrence })}
+                    className="event-edit-button mt-3"
+                  />
+                ) : null}
               </article>
             )
           })
@@ -217,13 +221,13 @@ export function EventDetailSheet({
             title="예정된 이벤트가 없습니다"
             description={`선택하신 날짜(${formatDateLabel(selectedDate)})에 예정된 이벤트가 없습니다.`}
             icon={<CalendarDays size={28} />}
-            actions={
+            actions={!submissionReadOnly ? (
               <Button
                 label="일정 제보하기"
                 variant="secondary"
                 onClick={() => setDialog({ kind: 'add' })}
               />
-            }
+            ) : undefined}
           />
         )}
       </div>

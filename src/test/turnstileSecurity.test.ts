@@ -349,7 +349,7 @@ describe('event handlers bind Turnstile actions', () => {
       SESSION_SECRET,
     }
     const headers = new Headers()
-    setSessionCookie(headers, { login: 'miku-contributor', ts: Date.now() }, env)
+    setSessionCookie(headers, { id: 39, login: 'miku-contributor', ts: Date.now() }, env)
     const cookie = headers.get('set-cookie')?.split(';', 1)[0] ?? ''
 
     return createRequest({
@@ -383,7 +383,22 @@ describe('event handlers bind Turnstile actions', () => {
     const handler = asLegacyHandler(factory({ verifyTurnstileToken: verifyToken }))
     const response = createResponse()
 
-    await handler(authenticatedRequest({ turnstileToken: 'valid-token' }, query), response)
+    const body = expectedAction === 'event_submit'
+      ? {
+          attributionConsent: true,
+          snsUrl: 'https://x.com/miku',
+          startsOn: '2026-08-10',
+          timezone: 'Asia/Seoul',
+          title: 'Miku event',
+          turnstileToken: 'valid-token',
+          type: 'concert',
+        }
+      : {
+          attributionConsent: true,
+          message: 'Please update this event',
+          turnstileToken: 'valid-token',
+        }
+    await handler(authenticatedRequest(body, query), response)
 
     expect(verifyToken).toHaveBeenCalledOnce()
     expect(verifyToken.mock.calls[0]?.[3]).toBe(expectedAction)

@@ -4,7 +4,24 @@ compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
 
 [vars]
+APP_ENV = "local"
+APP_ORIGIN = "http://127.0.0.1:8788"
+SUBMISSION_WRITES_ENABLED = "false"
+GITHUB_DATA_OWNER = "Miku-Events"
+GITHUB_DATA_REPO = "miku-call-guide-data"
+GITHUB_DATA_BASE_BRANCH = "main"
+
+[env.preview.vars]
+APP_ENV = "preview"
+SUBMISSION_WRITES_ENABLED = "false"
+GITHUB_DATA_OWNER = "Miku-Events"
+GITHUB_DATA_REPO = "miku-call-guide-data"
+GITHUB_DATA_BASE_BRANCH = "main"
+
+[env.production.vars]
 APP_ENV = "production"
+APP_ORIGIN = "https://miku.sekai.today"
+SUBMISSION_WRITES_ENABLED = "true"
 GITHUB_DATA_OWNER = "Miku-Events"
 GITHUB_DATA_REPO = "miku-call-guide-data"
 GITHUB_DATA_BASE_BRANCH = "main"

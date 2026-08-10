@@ -134,3 +134,15 @@ test('[SPO-D-04] continues for the current visit but asks again after a storage 
   await expect(page.getByRole('alertdialog')).toBeVisible()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toHaveCount(0)
 })
+
+test('[SPO-D-05] keeps the privacy route available without recording spoiler consent', { tag: '@desktop' }, async ({ page }) => {
+  await page.goto('/?mockPlayer=1#/privacy')
+
+  await expect(page).toHaveURL(/#\/privacy$/)
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '개인정보 처리 안내' })).toBeVisible()
+  expect(await page.evaluate(
+    (storageKey) => window.localStorage.getItem(storageKey),
+    SPOILER_DISCLAIMER_STORAGE_KEY,
+  )).toBeNull()
+})

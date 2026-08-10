@@ -2,35 +2,37 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { canonicalProductionOrigin } from '../functions/_lib/productionHostname.js'
 import {
-  CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
-  CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
-  GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
-  GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
-  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
+  validateCallGuideManifest,
+  validateEventCalendarIndex,
+  validateEventCalendarMonth,
+  validateRootManifest,
+  validateRuntimeEvent,
+  validateRuntimeSong,
+} from '../data-contracts/validators.mjs'
+import {
   TURNSTILE_ORIGIN,
   X_ORIGINS,
   YOUTUBE_FRAME_ORIGINS,
   YOUTUBE_SCRIPT_ORIGINS,
 } from './static-csp-sources.mjs'
 
-const DEFAULT_SMOKE_ATTEMPTS = 8
+const DEFAULT_SMOKE_ATTEMPTS = 25
 const DEFAULT_SMOKE_RETRY_DELAY_MS = 5_000
 const DEFAULT_TIMEOUT_MS = 8_000
+const DEFAULT_PROPAGATION_DEADLINE_MS = 120_000
 const MINIMUM_HSTS_MAX_AGE_SECONDS = 31_536_000
 const MINIMUM_OG_IMAGE_BYTES = 10_000
 const EXPECTED_PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=()'
 const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin'
-export const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
-export const READINESS_CONTRACT_VERSION = 'runtime-config-v1'
+const DEPLOYMENT_PROPAGATION_ERROR_CODE = 'DEPLOYMENT_PROPAGATION'
+const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
+const READINESS_CONTRACT_VERSION = 'runtime-config-v2'
 const IMMUTABLE_DEPLOYMENT_ORIGIN_PATTERN = (
   /^https:\/\/[0-9a-f]{8}\.miku-call-guide-app\.pages\.dev$/
 )
 const STATIC_SCRIPT_ALLOWLIST = new Set([
   "'self'",
   TURNSTILE_ORIGIN,
-  CLOUDFLARE_WEB_ANALYTICS_SCRIPT_ORIGIN,
-  GOOGLE_TAG_GATEWAY_SCRIPT_ORIGIN,
-  ...GOOGLE_TAG_GATEWAY_SCRIPT_HASHES,
   ...YOUTUBE_SCRIPT_ORIGINS,
   ...X_ORIGINS,
 ])
@@ -65,15 +67,10 @@ function requiredUrl(value, name, { originOnly = false } = {}) {
   return originOnly ? parsed.origin : parsed.href
 }
 
-function requiredReleaseId(value) {
-  if (
-    typeof value !== 'string'
-    || value.length === 0
-    || value.length > 128
-    || value !== value.trim()
-    || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
-  ) {
-    throw new Error('EXPECTED_RELEASE_ID is required and must be a public release identifier')
+export function requiredReleaseId(value) {
+  if (!value) throw new Error('EXPECTED_RELEASE_ID is required')
+  if (!/^[0-9a-f]{40}$/.test(value)) {
+    throw new Error('EXPECTED_RELEASE_ID must be a full lowercase commit SHA')
   }
   return value
 }
@@ -101,54 +98,117 @@ function requiredDeploymentOrigin(value, appOrigin) {
 }
 
 export async function fetchWithTimeout(url, {
+  deadlineAt,
   fetchImpl = globalThis.fetch,
   headers,
+  method = 'GET',
   redirect = 'follow',
+  signal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required')
+  if (signal?.aborted) throw signal.reason
   const controller = new AbortController()
+  const forwardAbort = () => controller.abort(signal?.reason)
+  signal?.addEventListener('abort', forwardAbort, { once: true })
   const requestHeaders = new Headers(headers)
   requestHeaders.set('accept', '*/*')
   requestHeaders.set('cache-control', 'no-cache')
+  const remainingMs = deadlineAt === undefined ? Number.POSITIVE_INFINITY : deadlineAt - Date.now()
+  if (remainingMs <= 0) {
+    signal?.removeEventListener('abort', forwardAbort)
+    throw new Error('Deployment propagation deadline exceeded')
+  }
+  const effectiveTimeoutMs = Math.min(timeoutMs, remainingMs)
   const timeout = setTimeout(() => {
-    controller.abort(new Error(`Request timed out after ${timeoutMs}ms`))
-  }, timeoutMs)
+    controller.abort(new Error(`Request timed out after ${effectiveTimeoutMs}ms`))
+  }, effectiveTimeoutMs)
   try {
     return await fetchImpl(url, {
       headers: requestHeaders,
+      method,
       redirect,
       signal: controller.signal,
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(`Request to ${url} failed: ${detail}`)
+    const message = `Request to ${url} failed: ${detail}`
+    throw new Error(message, { cause: error })
   } finally {
     clearTimeout(timeout)
+    signal?.removeEventListener('abort', forwardAbort)
   }
 }
 
-async function withPropagationRetry(check, { attempts, retryDelayMs }) {
+export class DeploymentPropagationError extends Error {
+  constructor(message, options) {
+    super(message, options)
+    this.name = 'DeploymentPropagationError'
+    this.code = DEPLOYMENT_PROPAGATION_ERROR_CODE
+  }
+}
+
+export async function withPropagationRetry(check, {
+  attempts,
+  deadlineAt: configuredDeadlineAt,
+  deadlineMs = DEFAULT_PROPAGATION_DEADLINE_MS,
+  retryDelayMs,
+  waitImpl = wait,
+}) {
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
     throw new Error('attempts must be at least 1')
   }
-  let lastError
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await check()
-    } catch (error) {
-      lastError = error
-    }
-    if (attempt < attempts && retryDelayMs > 0) {
-      await wait(retryDelayMs)
-    }
+  if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
+    throw new Error('deadlineMs must be greater than 0')
   }
-  throw lastError
+  const deadlineAt = configuredDeadlineAt ?? Date.now() + deadlineMs
+  const initialRemainingMs = deadlineAt - Date.now()
+  if (initialRemainingMs <= 0) {
+    throw new Error(`Deployment propagation exceeded the ${deadlineMs}ms deadline`)
+  }
+  const controller = new AbortController()
+  const deadlineError = new Error(`Deployment propagation exceeded the ${deadlineMs}ms deadline`)
+  const deadline = new Promise((_, reject) => {
+    controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true })
+  })
+  const deadlineTimer = setTimeout(() => controller.abort(deadlineError), initialRemainingMs)
+  let lastError
+  try {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await Promise.race([
+          Promise.resolve().then(() => check({ deadlineAt, signal: controller.signal })),
+          deadline,
+        ])
+      } catch (error) {
+        if (controller.signal.aborted) throw controller.signal.reason
+        lastError = error
+        if (error?.code !== DEPLOYMENT_PROPAGATION_ERROR_CODE) {
+          throw error
+        }
+      }
+      if (attempt < attempts && retryDelayMs > 0) {
+        const remainingMs = deadlineAt - Date.now()
+        if (remainingMs <= 0) throw deadlineError
+        await Promise.race([
+          waitImpl(Math.min(retryDelayMs, remainingMs)),
+          deadline,
+        ])
+      }
+    }
+    throw lastError
+  } finally {
+    clearTimeout(deadlineTimer)
+  }
 }
 
-function assertStatus(response, expected, label) {
+function assertStatus(response, expected, label, { retryNotFound = false } = {}) {
   if (!expected.includes(response.status)) {
-    throw new Error(`${label} returned HTTP ${response.status}; expected ${expected.join(' or ')}`)
+    const message = `${label} returned HTTP ${response.status}; expected ${expected.join(' or ')}`
+    if (retryNotFound && response.status === 404) {
+      throw new DeploymentPropagationError(message)
+    }
+    throw new Error(message)
   }
 }
 
@@ -200,7 +260,7 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))]
 }
 
-function assertStaticCsp(csp, label, { appOrigin, dataOrigin, submissionOrigin }) {
+function assertStaticCsp(csp, label, { appOrigin, dataOrigin }) {
   const expectedDirectives = new Map([
     ['default-src', ["'self'"]],
     ['base-uri', ["'self'"]],
@@ -209,10 +269,7 @@ function assertStaticCsp(csp, label, { appOrigin, dataOrigin, submissionOrigin }
     ['connect-src', unique([
       "'self'",
       dataOrigin,
-      submissionOrigin,
       TURNSTILE_ORIGIN,
-      CLOUDFLARE_WEB_ANALYTICS_COLLECTOR_ORIGIN,
-      GOOGLE_TAG_GATEWAY_COLLECTOR_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,
     ])],
@@ -369,7 +426,7 @@ function assertHtmlCacheControl(headers, label) {
 async function checkStaticAssets(assets, label, requestOptions) {
   for (const asset of assets) {
     const response = await fetchWithTimeout(asset.url, requestOptions)
-    assertStatus(response, [200], `${label} ${asset.kind} asset`)
+    assertStatus(response, [200], `${label} ${asset.kind} asset`, { retryNotFound: true })
     assertAssetMediaType(response, asset, label)
   }
   return assets.map(({ kind, url }) => ({ kind, url }))
@@ -404,39 +461,380 @@ async function readJsonObject(response, label) {
   return value
 }
 
-function validateManifest(value) {
-  if (value.schemaVersion !== 1) {
-    throw new Error('Data manifest schemaVersion must be 1')
-  }
-  if (typeof value.dataVersion !== 'string' || value.dataVersion.trim() === '') {
-    throw new Error('Data manifest dataVersion must be a non-empty string')
-  }
-  if (
-    !value.manifests
-    || typeof value.manifests !== 'object'
-    || typeof value.manifests.callGuide !== 'string'
-    || value.manifests.callGuide.trim() === ''
-    || typeof value.manifests.eventCalendar !== 'string'
-    || value.manifests.eventCalendar.trim() === ''
-  ) {
-    throw new Error('Data manifest manifests must include callGuide and eventCalendar paths')
+function assertDataContract(value, validator, label) {
+  if (!validator(value)) {
+    const errors = (validator.errors ?? [])
+      .slice(0, 3)
+      .map((error) => `${error.instancePath || '/'} ${error.message || 'is invalid'}`)
+      .join('; ')
+    throw new Error(`${label} failed data contract validation${errors ? `: ${errors}` : ''}`)
   }
   return value
+}
+
+function sameOriginDataUrl(baseUrl, reference, label) {
+  if (typeof reference !== 'string' || reference.trim() === '') {
+    throw new Error(`${label} path must be a non-empty string`)
+  }
+  let resolved
+  try {
+    resolved = new URL(reference, baseUrl)
+  } catch {
+    throw new Error(`${label} path must be a valid URL reference`)
+  }
+  const base = new URL(baseUrl)
+  if (
+    resolved.protocol !== 'https:'
+    || resolved.username
+    || resolved.password
+    || resolved.origin !== base.origin
+  ) {
+    throw new Error(`${label} must remain on the data manifest origin`)
+  }
+  return resolved.href
+}
+
+function assertDataVersion(value, expectedDataVersion, label) {
+  if (value.dataVersion !== expectedDataVersion) {
+    throw new Error(`${label} dataVersion must equal ${expectedDataVersion}`)
+  }
+}
+
+async function fetchDataObject(url, label, requestOptions) {
+  const response = await fetchWithTimeout(url, requestOptions)
+  assertStatus(response, [200], label)
+  return readJsonObject(response, label)
+}
+
+function versionedLeafUrl(baseUrl, path, dataVersion, label) {
+  const url = new URL(sameOriginDataUrl(baseUrl, path, label))
+  url.searchParams.set('_miku_data_version', dataVersion)
+  return url.href
+}
+
+async function checkDataGraph(manifestUrl, requestOptions) {
+  const manifest = assertDataContract(
+    await fetchDataObject(manifestUrl, 'Data root manifest', requestOptions),
+    validateRootManifest,
+    'Data root manifest',
+  )
+  const dataVersion = manifest.dataVersion
+
+  const callGuideUrl = sameOriginDataUrl(
+    manifestUrl,
+    manifest.manifests.callGuide,
+    'Call-guide manifest',
+  )
+  const callGuide = assertDataContract(
+    await fetchDataObject(callGuideUrl, 'Call-guide manifest', requestOptions),
+    validateCallGuideManifest,
+    'Call-guide manifest',
+  )
+  assertDataVersion(callGuide, dataVersion, 'Call-guide manifest')
+  if (!Array.isArray(callGuide.songs) || callGuide.songs.length === 0) {
+    throw new Error('Call-guide manifest must include a representative song')
+  }
+  const songEntry = callGuide.songs.find((entry) => entry?.id === '39-music') ?? callGuide.songs[0]
+  const songUrl = versionedLeafUrl(
+    callGuideUrl,
+    songEntry.path,
+    dataVersion,
+    'Representative song',
+  )
+  const song = assertDataContract(
+    await fetchDataObject(songUrl, 'Representative song', requestOptions),
+    validateRuntimeSong,
+    'Representative song',
+  )
+  assertDataVersion(song, dataVersion, 'Representative song')
+  if (song.id !== songEntry.id) {
+    throw new Error('Representative song id must match its manifest entry')
+  }
+
+  const eventIndexUrl = sameOriginDataUrl(
+    manifestUrl,
+    manifest.manifests.eventCalendar,
+    'Event-calendar index',
+  )
+  const eventIndex = assertDataContract(
+    await fetchDataObject(eventIndexUrl, 'Event-calendar index', requestOptions),
+    validateEventCalendarIndex,
+    'Event-calendar index',
+  )
+  assertDataVersion(eventIndex, dataVersion, 'Event-calendar index')
+  if (eventIndex.availableMonths.length === 0) {
+    throw new Error('Event-calendar index must include availableMonths')
+  }
+  let representativeMonth = null
+  for (const monthCandidate of [...eventIndex.availableMonths].reverse()) {
+    const monthUrl = sameOriginDataUrl(
+      eventIndexUrl,
+      `months/${monthCandidate}.json`,
+      'Representative event month',
+    )
+    const monthValue = assertDataContract(
+      await fetchDataObject(
+        monthUrl,
+        'Representative event month',
+        requestOptions,
+      ),
+      validateEventCalendarMonth,
+      'Representative event month',
+    )
+    assertDataVersion(monthValue, dataVersion, 'Representative event month')
+    if (monthValue.month !== monthCandidate) {
+      throw new Error('Representative event month must match the index')
+    }
+    representativeMonth ??= { month: monthCandidate, url: monthUrl, value: monthValue }
+    if (monthValue.events.length > 0) {
+      representativeMonth = { month: monthCandidate, url: monthUrl, value: monthValue }
+      break
+    }
+  }
+  if (!representativeMonth) {
+    throw new Error('Event-calendar index did not resolve a representative month')
+  }
+  const {
+    month,
+    url: eventMonthUrl,
+    value: eventMonth,
+  } = representativeMonth
+
+  let event = null
+  let eventDetailUrl = null
+  const eventEntry = eventMonth.events[0]
+  if (eventEntry !== undefined) {
+    eventDetailUrl = versionedLeafUrl(
+      eventMonthUrl,
+      eventEntry.path,
+      dataVersion,
+      'Representative event detail',
+    )
+    event = assertDataContract(
+      await fetchDataObject(eventDetailUrl, 'Representative event detail', requestOptions),
+      validateRuntimeEvent,
+      'Representative event detail',
+    )
+    assertDataVersion(event, dataVersion, 'Representative event detail')
+    if (event.id !== eventEntry.id) {
+      throw new Error('Representative event detail id must match its month entry')
+    }
+  }
+
+  return {
+    callGuideUrl,
+    dataVersion,
+    eventDetailUrl,
+    eventId: event?.id ?? null,
+    eventIndexUrl,
+    eventMonthUrl,
+    month,
+    schemaVersion: manifest.schemaVersion,
+    songId: song.id,
+    songUrl,
+  }
+}
+
+function productionAliasOrigin(deploymentOrigin) {
+  const deployment = new URL(deploymentOrigin)
+  deployment.hostname = deployment.hostname.replace(/^[^.]+\./, '')
+  return deployment.origin
+}
+
+async function checkProductionAliasRedirect(
+  deploymentOrigin,
+  appOrigin,
+  expectedReleaseId,
+  requestOptions,
+) {
+  const aliasOrigin = productionAliasOrigin(deploymentOrigin)
+  const pathAndQuery = `/api/ready?alias-smoke=${encodeURIComponent(expectedReleaseId)}`
+  const response = await fetchWithTimeout(`${aliasOrigin}${pathAndQuery}`, requestOptions)
+  assertStatus(response, [308], 'Production pages.dev alias redirect', { retryNotFound: true })
+  const expectedLocation = `${appOrigin}${pathAndQuery}`
+  if (response.headers.get('location') !== expectedLocation) {
+    throw new Error(`Production pages.dev alias must redirect to ${expectedLocation}`)
+  }
+  return { location: expectedLocation, origin: aliasOrigin, status: response.status }
+}
+
+function assertFunctionResponseSecurity(response, label) {
+  assertFunctionSecurityHeaders(response.headers, label)
+}
+
+function responseSetCookies(response) {
+  if (typeof response.headers.getSetCookie === 'function') {
+    return response.headers.getSetCookie()
+  }
+  const combined = response.headers.get('set-cookie')
+  return combined ? [combined] : []
+}
+
+function parseSetCookie(cookie) {
+  const [nameValue, ...attributeParts] = cookie.split(';')
+  const separator = nameValue.indexOf('=')
+  if (separator <= 0) return null
+  const attributes = new Map()
+  for (const part of attributeParts) {
+    const trimmed = part.trim()
+    const attributeSeparator = trimmed.indexOf('=')
+    const name = (attributeSeparator < 0 ? trimmed : trimmed.slice(0, attributeSeparator)).toLowerCase()
+    const value = attributeSeparator < 0 ? true : trimmed.slice(attributeSeparator + 1)
+    attributes.set(name, value)
+  }
+  return {
+    attributes,
+    name: nameValue.slice(0, separator),
+    value: nameValue.slice(separator + 1),
+  }
+}
+
+function isSecureHostCookie(cookie, { maxAge, sameSite }) {
+  if (!cookie) return false
+  const { attributes } = cookie
+  return (
+    attributes.get('path') === '/'
+    && attributes.has('httponly')
+    && attributes.has('secure')
+    && String(attributes.get('samesite')).toLowerCase() === sameSite.toLowerCase()
+    && String(attributes.get('max-age')) === String(maxAge)
+    && !attributes.has('domain')
+  )
+}
+
+async function readExpectedApiError(response, label, expectedError) {
+  const body = await readJsonObject(response, label)
+  if (
+    body.error !== expectedError
+    || typeof body.requestId !== 'string'
+    || body.requestId.trim() === ''
+  ) {
+    throw new Error(`${label} returned an invalid API error contract`)
+  }
+  return body
+}
+
+async function checkAuthAndLogout(appOrigin, deploymentOrigin, requestOptions) {
+  const returnTo = `${appOrigin}/#/events`
+  const oauthUrl = `${appOrigin}/api/auth/github/start?returnTo=${encodeURIComponent(returnTo)}`
+  const oauthResponse = await fetchWithTimeout(oauthUrl, requestOptions)
+  assertStatus(oauthResponse, [302], 'Production OAuth start', { retryNotFound: true })
+  assertFunctionResponseSecurity(oauthResponse, 'Production OAuth start')
+  let authorizationUrl
+  try {
+    authorizationUrl = new URL(oauthResponse.headers.get('location') || '')
+  } catch {
+    throw new Error('Production OAuth start did not return an absolute authorization redirect')
+  }
+  if (
+    authorizationUrl.origin !== 'https://github.com'
+    || authorizationUrl.pathname !== '/login/oauth/authorize'
+    || !authorizationUrl.searchParams.get('client_id')
+    || authorizationUrl.searchParams.get('redirect_uri') !== `${appOrigin}/api/auth/github/callback`
+    || !authorizationUrl.searchParams.get('state')
+    || !/^[A-Za-z0-9_-]{43}$/.test(authorizationUrl.searchParams.get('code_challenge') || '')
+    || authorizationUrl.searchParams.get('code_challenge_method') !== 'S256'
+    || authorizationUrl.searchParams.has('scope')
+  ) {
+    throw new Error('Production OAuth start returned an invalid GitHub authorization redirect')
+  }
+  const oauthCookies = responseSetCookies(oauthResponse)
+  const oauthCookie = oauthCookies.length === 1 ? parseSetCookie(oauthCookies[0]) : null
+  if (
+    oauthCookie?.name !== '__Host-miku_call_guide_oauth'
+    || !oauthCookie.value
+    || !isSecureHostCookie(oauthCookie, { maxAge: 600, sameSite: 'Lax' })
+  ) {
+    throw new Error('Production OAuth start did not set the secure transaction cookie')
+  }
+
+  const logoutResponse = await fetchWithTimeout(`${appOrigin}/api/auth/logout`, {
+    ...requestOptions,
+    headers: { origin: appOrigin },
+    method: 'POST',
+  })
+  assertStatus(logoutResponse, [204], 'Production logout', { retryNotFound: true })
+  assertFunctionResponseSecurity(logoutResponse, 'Production logout')
+  const logoutCookies = responseSetCookies(logoutResponse)
+  const parsedLogoutCookies = logoutCookies.map(parseSetCookie).filter(Boolean)
+  for (const [cookieName, sameSite] of [
+    ['__Host-miku_call_guide_session', 'Strict'],
+    ['miku_call_guide_session', 'Strict'],
+    ['__Host-miku_call_guide_oauth', 'Lax'],
+    ['miku_call_guide_oauth', 'Lax'],
+  ]) {
+    const cookie = parsedLogoutCookies.find((candidate) => candidate.name === cookieName)
+    const attributes = cookie?.attributes
+    const valid = (
+      cookie?.value === ''
+      && attributes?.get('path') === '/'
+      && attributes.has('httponly')
+      && String(attributes.get('samesite')).toLowerCase() === sameSite.toLowerCase()
+      && String(attributes.get('max-age')) === '0'
+      && !attributes.has('domain')
+      && (!cookieName.startsWith('__Host-') || attributes.has('secure'))
+    )
+    if (!valid) {
+      throw new Error(`Production logout did not clear ${cookieName}`)
+    }
+  }
+
+  const immutableOauthResponse = await fetchWithTimeout(
+    `${deploymentOrigin}/api/auth/github/start`,
+    requestOptions,
+  )
+  assertStatus(immutableOauthResponse, [403], 'Immutable OAuth rejection', { retryNotFound: true })
+  assertFunctionResponseSecurity(immutableOauthResponse, 'Immutable OAuth rejection')
+  await readExpectedApiError(
+    immutableOauthResponse,
+    'Immutable OAuth rejection',
+    'invalid_request_origin',
+  )
+  if (responseSetCookies(immutableOauthResponse).length > 0) {
+    throw new Error('Immutable OAuth rejection must not set a transaction cookie')
+  }
+
+  const immutableLogoutResponse = await fetchWithTimeout(
+    `${deploymentOrigin}/api/auth/logout`,
+    {
+      ...requestOptions,
+      headers: { origin: appOrigin },
+      method: 'POST',
+    },
+  )
+  assertStatus(immutableLogoutResponse, [403], 'Immutable logout rejection', { retryNotFound: true })
+  assertFunctionResponseSecurity(immutableLogoutResponse, 'Immutable logout rejection')
+  await readExpectedApiError(
+    immutableLogoutResponse,
+    'Immutable logout rejection',
+    'invalid_request_origin',
+  )
+  if (responseSetCookies(immutableLogoutResponse).length > 0) {
+    throw new Error('Immutable logout rejection must not clear or set cookies')
+  }
+
+  return {
+    authorizationOrigin: authorizationUrl.origin,
+    immutableLogoutStatus: immutableLogoutResponse.status,
+    immutableOauthStatus: immutableOauthResponse.status,
+    logoutStatus: logoutResponse.status,
+    oauthStatus: oauthResponse.status,
+  }
 }
 
 async function checkReleaseMarker(origin, label, expectedReleaseId, requestOptions) {
   const url = `${origin}/release.json?release=${encodeURIComponent(expectedReleaseId)}`
   const response = await fetchWithTimeout(url, requestOptions)
-  assertStatus(response, [200], `${label} release marker`)
+  assertStatus(response, [200], `${label} release marker`, { retryNotFound: true })
   const marker = await readJsonObject(response, `${label} release marker`)
   if (Object.keys(marker).length !== 1 || marker.releaseId !== expectedReleaseId) {
-    throw new Error(`${label} release mismatch; expected ${expectedReleaseId}`)
+    throw new DeploymentPropagationError(`${label} release mismatch; expected ${expectedReleaseId}`)
   }
   return marker.releaseId
 }
 
 async function assertReadyResponse(response, label) {
-  assertStatus(response, [200], `${label} readiness Function`)
+  assertStatus(response, [200], `${label} readiness Function`, { retryNotFound: true })
   assertSecurityHeaders(response.headers, `${label} readiness Function`, 'function')
   if (response.headers.get(READINESS_CONTRACT_HEADER) !== READINESS_CONTRACT_VERSION) {
     throw new Error(`${label} readiness Function is missing the runtime configuration contract`)
@@ -462,7 +860,7 @@ async function checkAppSurface(
   requestOptions,
 ) {
   const rootResponse = await fetchWithTimeout(`${origin}/`, requestOptions)
-  assertStatus(rootResponse, [200], `${label} root`)
+  assertStatus(rootResponse, [200], `${label} root`, { retryNotFound: true })
   assertSecurityHeaders(rootResponse.headers, `${label} root`, 'static', cspContext)
   assertHtmlCacheControl(rootResponse.headers, `${label} root`)
   const html = await rootResponse.text()
@@ -510,9 +908,9 @@ export async function runPostDeploySmoke({
   dataManifestUrl,
   deploymentOrigin,
   expectedReleaseId,
-  submissionApiUrl,
   fetchImpl = globalThis.fetch,
   attempts = DEFAULT_SMOKE_ATTEMPTS,
+  propagationDeadlineMs = DEFAULT_PROPAGATION_DEADLINE_MS,
   retryDelayMs = DEFAULT_SMOKE_RETRY_DELAY_MS,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
@@ -522,43 +920,67 @@ export async function runPostDeploySmoke({
     normalizedOrigin,
   )
   const normalizedManifestUrl = requiredUrl(dataManifestUrl, 'DATA_MANIFEST_URL')
-  const normalizedSubmissionUrl = submissionApiUrl
-    ? requiredUrl(submissionApiUrl, 'SUBMISSION_API_URL')
-    : ''
   const normalizedReleaseId = requiredReleaseId(expectedReleaseId)
   const canonicalUrl = `${normalizedOrigin}/`
   const requestOptions = { fetchImpl, timeoutMs }
-  const surfaceRequestOptions = { ...requestOptions, redirect: 'manual' }
-  const retryOptions = { attempts, retryDelayMs }
+  const propagationDeadlineAt = Date.now() + propagationDeadlineMs
+  const retryOptions = {
+    attempts,
+    deadlineAt: propagationDeadlineAt,
+    deadlineMs: propagationDeadlineMs,
+    retryDelayMs,
+  }
+  const withPagesRetry = (check) => withPropagationRetry(
+    ({ deadlineAt, signal }) => check({
+      deadlineAt,
+      fetchImpl,
+      redirect: 'manual',
+      signal,
+      timeoutMs,
+    }),
+    retryOptions,
+  )
   const cspContext = {
     appOrigin: normalizedOrigin,
     dataOrigin: new URL(normalizedManifestUrl).origin,
-    submissionOrigin: normalizedSubmissionUrl ? new URL(normalizedSubmissionUrl).origin : '',
   }
 
-  const deployment = await withPropagationRetry(() => checkAppSurface(
+  const deployment = await withPagesRetry((surfaceRequestOptions) => checkAppSurface(
     normalizedDeploymentOrigin,
     'Deployment',
     canonicalUrl,
     normalizedReleaseId,
     cspContext,
     surfaceRequestOptions,
-  ), retryOptions)
-  const app = await withPropagationRetry(() => checkAppSurface(
+  ))
+  const app = await withPagesRetry((surfaceRequestOptions) => checkAppSurface(
     normalizedOrigin,
     'Configured app',
     canonicalUrl,
     normalizedReleaseId,
     cspContext,
     surfaceRequestOptions,
-  ), retryOptions)
+  ))
 
-  const ogImage = await withPropagationRetry(async () => {
+  const alias = await withPagesRetry((surfaceRequestOptions) => checkProductionAliasRedirect(
+    normalizedDeploymentOrigin,
+    normalizedOrigin,
+    normalizedReleaseId,
+    surfaceRequestOptions,
+  ))
+
+  const auth = await withPagesRetry((surfaceRequestOptions) => checkAuthAndLogout(
+    normalizedOrigin,
+    normalizedDeploymentOrigin,
+    surfaceRequestOptions,
+  ))
+
+  const ogImage = await withPagesRetry(async (surfaceRequestOptions) => {
     const response = await fetchWithTimeout(
       `${normalizedOrigin}/og-image.png`,
       surfaceRequestOptions,
     )
-    assertStatus(response, [200], 'OG image')
+    assertStatus(response, [200], 'OG image', { retryNotFound: true })
     const imageType = (response.headers.get('content-type') || '').toLowerCase()
     if (!imageType.startsWith('image/')) throw new Error('OG image must return an image content-type')
     const bytes = (await response.arrayBuffer()).byteLength
@@ -566,16 +988,15 @@ export async function runPostDeploySmoke({
       throw new Error(`OG image is too small (${bytes} bytes; expected at least ${MINIMUM_OG_IMAGE_BYTES})`)
     }
     return { bytes, status: response.status }
-  }, retryOptions)
+  })
 
-  const data = await withPropagationRetry(async () => {
-    const response = await fetchWithTimeout(normalizedManifestUrl, requestOptions)
-    assertStatus(response, [200], 'Data manifest')
-    const manifest = validateManifest(await readJsonObject(response, 'Data manifest'))
-    return { manifest, status: response.status }
-  }, retryOptions)
+  const data = await checkDataGraph(normalizedManifestUrl, {
+    ...requestOptions,
+    redirect: 'manual',
+  })
 
   return {
+    alias,
     app: {
       assets: app.assets,
       canonical: app.canonical,
@@ -583,11 +1004,8 @@ export async function runPostDeploySmoke({
       releaseId: app.releaseId,
       status: app.status,
     },
-    data: {
-      dataVersion: data.manifest.dataVersion,
-      schemaVersion: data.manifest.schemaVersion,
-      status: data.status,
-    },
+    auth,
+    data,
     deployment: {
       assets: deployment.assets,
       origin: normalizedDeploymentOrigin,
@@ -608,11 +1026,13 @@ export function formatSmokeReport(report) {
     'Post-deploy smoke: PASS',
     `- deployment: HTTP ${report.deployment.status}, release ${report.deployment.releaseId}, ${report.deployment.origin}`,
     `- configured app: HTTP ${report.app.status}, release ${report.app.releaseId}, ${report.app.canonical}`,
+    `- production alias: HTTP ${report.alias.status}, ${report.alias.origin} -> ${report.alias.location}`,
+    `- auth: OAuth HTTP ${report.auth.oauthStatus}, logout HTTP ${report.auth.logoutStatus}, immutable rejects ${report.auth.immutableOauthStatus}/${report.auth.immutableLogoutStatus}`,
     `- static assets: deployment ${report.deployment.assets.length}, configured app ${report.app.assets.length}`,
     `- missing asset guards: deployment HTTP ${report.deployment.missingAsset.status}, configured app HTTP ${report.app.missingAsset.status}`,
     `- readiness: deployment HTTP ${report.readiness.deployment}, configured app HTTP ${report.readiness.app}`,
     `- OG image: HTTP ${report.ogImage.status}, ${report.ogImage.bytes} bytes`,
-    `- data manifest: HTTP ${report.data.status}, schema ${report.data.schemaVersion}, version ${report.data.dataVersion}`,
+    `- data graph: schema ${report.data.schemaVersion}, version ${report.data.dataVersion}, song ${report.data.songId}, month ${report.data.month}, event ${report.data.eventId ?? '(empty month)'}`,
   ].join('\n')
 }
 
@@ -622,7 +1042,6 @@ async function runCli() {
     dataManifestUrl: process.env.DATA_MANIFEST_URL,
     deploymentOrigin: process.env.DEPLOYMENT_SMOKE_ORIGIN,
     expectedReleaseId: process.env.EXPECTED_RELEASE_ID,
-    submissionApiUrl: process.env.SUBMISSION_API_URL,
   })
   process.stdout.write(`${formatSmokeReport(report)}\n`)
 }

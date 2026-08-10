@@ -69,12 +69,12 @@ describe('complete manifest family snapshots', () => {
 
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v2')))
-      .mockResolvedValueOnce(response(child('v1', 'wrong'))))
-    const fallback = await fetchCallGuideManifest(rootUrl)
+      .mockResolvedValueOnce(response(child('v1', 'wrong-speculation')))
+      .mockResolvedValueOnce(response(child('v1', 'wrong-retry'))))
 
-    expect(fallback.source).toBe('cache')
-    expect(fallback.data.dataVersion).toBe('v1')
-    expect(fallback.data.songs[0].id).toBe('song-v1')
+    await expect(fetchCallGuideManifest(rootUrl)).rejects.toThrow(
+      'call-guide manifest dataVersion v1 did not match expected v2',
+    )
   })
 
   it('keeps an independent complete event-calendar root and index family', async () => {
@@ -86,9 +86,10 @@ describe('complete manifest family snapshots', () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v2')))
       .mockResolvedValueOnce(response(calendar('v1'))))
-    const fallback = await fetchEventCalendarIndex(rootUrl)
 
-    expect(fallback).toMatchObject({ source: 'cache', data: { dataVersion: 'v1' } })
+    await expect(fetchEventCalendarIndex(rootUrl)).rejects.toThrow(
+      'event calendar index dataVersion v1 did not match expected v2',
+    )
     expect(window.localStorage.getItem(cacheStorageKey(familyPointerCacheKey(rootUrl, 'event-calendar')))).not.toBeNull()
     expect(window.localStorage.getItem(cacheStorageKey(familyPointerCacheKey(rootUrl, 'call-guide')))).toBeNull()
   })
@@ -367,7 +368,7 @@ describe('complete manifest family snapshots', () => {
     })
   })
 
-  it('keeps the prior complete pointer when a partial refresh fails', async () => {
+  it('keeps but does not serve a prior-version pointer when a partial refresh fails', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v1')))
       .mockResolvedValueOnce(response(child('v1'))))
@@ -378,11 +379,24 @@ describe('complete manifest family snapshots', () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(response(root('v2')))
       .mockRejectedValueOnce(new Error('child offline')))
-    const fallback = await fetchCallGuideManifest(rootUrl)
-
-    expect(fallback.source).toBe('cache')
-    expect(fallback.data.dataVersion).toBe('v1')
+    await expect(fetchCallGuideManifest(rootUrl)).rejects.toThrow('child offline')
     expect(window.localStorage.getItem(pointerKey)).toBe(pointerBefore)
+  })
+
+  it('falls back only to a complete cache matching the fetched root dataVersion', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response(root('v1')))
+      .mockResolvedValueOnce(response(child('v1'))))
+    await fetchCallGuideManifest(rootUrl)
+
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response(root('v1')))
+      .mockRejectedValueOnce(new Error('same-version child offline')))
+
+    await expect(fetchCallGuideManifest(rootUrl)).resolves.toMatchObject({
+      data: { dataVersion: 'v1' },
+      source: 'cache',
+    })
   })
 
   it.each(['rootKey', 'childKey'] as const)('rejects a family pointer with a forged %s', async (field) => {

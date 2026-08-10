@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement to the public application
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What user need would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful outcome, including accessibility or privacy needs.
+    validations:
+      required: true

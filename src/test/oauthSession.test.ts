@@ -43,7 +43,7 @@ const STRONG_SECRET = 'miku-call-guide-test-secret-32-bytes-minimum'
 const GLOBAL_SECRET = 'global-test-secret-that-is-also-long-enough'
 const CODE_VERIFIER = 'v'.repeat(43)
 const TEST_ORIGIN = 'https://app.example.test'
-const CUSTOM_ORIGIN = 'https://miku.example.test'
+const CUSTOM_ORIGIN = 'https://miku.sekai.today'
 const CALLBACK_URI = `${TEST_ORIGIN}/api/auth/github/callback`
 
 const testEnv: ApiEnvironment = {
@@ -56,6 +56,8 @@ const testEnv: ApiEnvironment = {
 const productionEnv: ApiEnvironment = {
   ...testEnv,
   APP_ENV: 'production',
+  APP_ORIGIN: CUSTOM_ORIGIN,
+  SUBMISSION_WRITES_ENABLED: 'true',
 }
 
 const originalEnvironment = {
@@ -185,7 +187,7 @@ describe('signed state and sessions', () => {
 
     expect(getSetCookies(response)).toEqual([
       expect.stringMatching(
-        /^__Host-miku_call_guide_session=.*; Path=\/; HttpOnly; SameSite=Lax; Max-Age=604800; Secure$/,
+        /^__Host-miku_call_guide_session=.*; Path=\/; HttpOnly; SameSite=Strict; Max-Age=604800; Secure$/,
       ),
     ])
   })
@@ -207,11 +209,55 @@ describe('signed state and sessions', () => {
     const response = createResponse()
     await sessionHandler(request, response)
     expect(response.statusCode).toBe(200)
-    expect(response.body).toEqual({ authenticated: false, login: undefined })
+    expect(response.body).toEqual({ authenticated: false, id: undefined, login: undefined })
+  })
+
+  it('does not authenticate a legacy non-Host session cookie in production', () => {
+    const legacyValue = signState({
+      id: 39,
+      login: 'miku-user',
+      ts: NOW.getTime(),
+    }, productionEnv)
+    const request = createRequest({
+      env: productionEnv,
+      headers: { cookie: `miku_call_guide_session=${legacyValue}` },
+      url: `${CUSTOM_ORIGIN}/api/auth/session`,
+    })
+    expect(readSession(request, productionEnv)).toBeNull()
   })
 })
 
 describe('OAuth start', () => {
+  it('fails closed in preview before reading OAuth secrets', async () => {
+    const response = createResponse()
+    await startHandler(createRequest({
+      env: { APP_ENV: 'preview', SUBMISSION_WRITES_ENABLED: 'false' },
+      url: 'https://preview.miku-call-guide-app.pages.dev/api/auth/github/start',
+    }), response)
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toEqual({
+      error: 'submissions_disabled',
+      requestId: expect.any(String),
+    })
+  })
+
+  it('rejects pages.dev production OAuth before reading OAuth secrets', async () => {
+    const response = createResponse()
+    await startHandler(createRequest({
+      env: {
+        APP_ENV: 'production',
+        APP_ORIGIN: CUSTOM_ORIGIN,
+        SUBMISSION_WRITES_ENABLED: 'true',
+      },
+      url: 'https://miku-call-guide-app.pages.dev/api/auth/github/start',
+    }), response)
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toEqual({
+      error: 'invalid_request_origin',
+      requestId: expect.any(String),
+    })
+  })
+
   it('uses explicit request environment and binds a secure transaction cookie', async () => {
     const request = createRequest({
       env: productionEnv,
@@ -255,6 +301,7 @@ describe('OAuth start', () => {
 
   it('uses the request origin when sanitizing return destinations', () => {
     expect(safeReturnTo(`${CUSTOM_ORIGIN}/events`, CUSTOM_ORIGIN)).toBe('/events')
+    expect(safeReturnTo(`${CUSTOM_ORIGIN}//evil.example/path`, CUSTOM_ORIGIN)).toBe('/')
     expect(safeReturnTo('https://global.example.test/events', CUSTOM_ORIGIN)).toBe('/')
   })
 })
@@ -388,12 +435,12 @@ describe('OAuth callback', () => {
 
     await startHandler(createRequest({
       env: productionEnv,
-      url: 'http://miku.example.test/api/auth/github/start',
+      url: 'http://miku.sekai.today/api/auth/github/start',
     }), response)
 
-    expect(response.statusCode).toBe(503)
+    expect(response.statusCode).toBe(403)
     expect(response.body).toEqual({
-      error: 'github_oauth_not_configured',
+      error: 'invalid_request_origin',
       requestId: expect.any(String),
     })
   })
@@ -434,10 +481,21 @@ describe('logout', () => {
     expect(getResponse.statusCode).toBe(405)
     expect(getResponse.getHeader('allow')).toBe('POST')
 
-    const postResponse = createResponse()
+    const missingOriginResponse = createResponse()
     await logoutHandler(createRequest({
       env: productionEnv,
       method: 'POST',
+      url: `${CUSTOM_ORIGIN}/api/auth/logout`,
+    }), missingOriginResponse)
+    expect(missingOriginResponse.statusCode).toBe(403)
+    expect(getSetCookies(missingOriginResponse)).toEqual([])
+
+    const postResponse = createResponse()
+    await logoutHandler(createRequest({
+      env: productionEnv,
+      headers: { origin: CUSTOM_ORIGIN },
+      method: 'POST',
+      url: `${CUSTOM_ORIGIN}/api/auth/logout`,
     }), postResponse)
     expect(postResponse.statusCode).toBe(204)
     expect(getSetCookies(postResponse)).toEqual(expect.arrayContaining([
@@ -446,5 +504,15 @@ describe('logout', () => {
       expect.stringMatching(/^__Host-miku_call_guide_oauth=; .*Max-Age=0.*Secure/),
       expect.stringMatching(/^miku_call_guide_oauth=; .*Max-Age=0/),
     ]))
+
+    const disabledResponse = createResponse()
+    await logoutHandler(createRequest({
+      env: { ...productionEnv, SUBMISSION_WRITES_ENABLED: 'false' },
+      headers: { origin: CUSTOM_ORIGIN },
+      method: 'POST',
+      url: `${CUSTOM_ORIGIN}/api/auth/logout`,
+    }), disabledResponse)
+    expect(disabledResponse.statusCode).toBe(204)
+    expect(getSetCookies(disabledResponse)).toHaveLength(4)
   })
 })

@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
   latestResetNonce: 0,
+  createIdempotencyKey: vi.fn(),
   fetchSubmissionSession: vi.fn(),
+  logoutSubmissionSession: vi.fn(),
   submitEventSubmission: vi.fn(),
   submitEditRequest: vi.fn(),
 }))
@@ -27,8 +29,14 @@ vi.mock('../../../components/TurnstileWidget', () => ({
 }))
 
 vi.mock('../submissionClient', () => ({
+  createIdempotencyKey: harness.createIdempotencyKey,
   fetchSubmissionSession: harness.fetchSubmissionSession,
   githubLoginUrl: () => 'https://example.test/login',
+  logoutSubmissionSession: harness.logoutSubmissionSession,
+  submissionErrorPresentation: (error: unknown, fallback: string) => ({
+    message: error instanceof Error ? error.message : fallback,
+    retryGuidance: '보안 검증을 다시 완료한 뒤 재시도해 주세요.',
+  }),
   submitEventSubmission: harness.submitEventSubmission,
   submitEditRequest: harness.submitEditRequest,
 }))
@@ -66,16 +74,42 @@ vi.mock('@astryxdesign/core/Selector', () => ({
 
 vi.mock('@astryxdesign/core/Button', () => ({
   Button: ({
+    className,
     isDisabled,
     label,
     onClick,
     type = 'button',
   }: {
+    className?: string
     isDisabled?: boolean
     label: string
     onClick?: () => void
     type?: 'button' | 'submit'
-  }) => <button disabled={isDisabled} onClick={onClick} type={type}>{label}</button>,
+  }) => <button className={className} disabled={isDisabled} onClick={onClick} type={type}>{label}</button>,
+}))
+
+vi.mock('@astryxdesign/core/CheckboxInput', () => ({
+  CheckboxInput: ({
+    htmlName,
+    label,
+    onChange,
+    value,
+  }: {
+    htmlName: string
+    label: string
+    onChange: (checked: boolean) => void
+    value: boolean
+  }) => (
+    <label>
+      {label}
+      <input
+        checked={value}
+        name={htmlName}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+        type="checkbox"
+      />
+    </label>
+  ),
 }))
 
 vi.mock('@astryxdesign/core/EmptyState', () => ({
@@ -96,6 +130,7 @@ async function renderDialog(overrides: Partial<React.ComponentProps<typeof Event
   }
   const view = render(<EventSubmitDialog {...props} />)
   await screen.findByRole('form', { name: '일정 추가 요청' })
+  fireEvent.click(screen.getByRole('checkbox', { name: /제출 내용과 GitHub 계정 표시/ }))
   fireEvent.click(screen.getByRole('button', { name: '보안 검증 완료' }))
   return { ...view, props }
 }
@@ -104,7 +139,11 @@ beforeEach(() => {
   harness.latestResetNonce = 0
   harness.submitEventSubmission.mockReset()
   harness.submitEditRequest.mockReset()
+  harness.createIdempotencyKey.mockReset()
+  harness.createIdempotencyKey.mockReturnValue('123e4567-e89b-42d3-a456-426614174000')
   harness.fetchSubmissionSession.mockReset()
+  harness.logoutSubmissionSession.mockReset()
+  harness.logoutSubmissionSession.mockResolvedValue(undefined)
   harness.fetchSubmissionSession.mockResolvedValue({ authenticated: true, login: 'miku-user' })
 })
 
@@ -140,7 +179,7 @@ describe('EventSubmitDialog recovery', () => {
   })
 
   it('publishes only successful submissions to the page status region', async () => {
-    harness.submitEventSubmission.mockResolvedValue({ url: 'https://github.test/pull/42' })
+    harness.submitEventSubmission.mockResolvedValue({ replayed: false, url: 'https://github.test/pull/42' })
     const { props } = await renderDialog()
 
     fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
@@ -152,6 +191,38 @@ describe('EventSubmitDialog recovery', () => {
     })
     expect(props.setDialog).toHaveBeenCalledWith(null)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('requires attribution consent and sends one idempotency key across a retry', async () => {
+    harness.submitEventSubmission
+      .mockRejectedValueOnce(new Error('일시적인 실패'))
+      .mockResolvedValueOnce({ replayed: false, url: 'https://github.test/pull/43' })
+    await renderDialog()
+
+    fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: '보안 검증 완료' }))
+    fireEvent.submit(screen.getByRole('form', { name: '일정 추가 요청' }))
+
+    await waitFor(() => expect(harness.submitEventSubmission).toHaveBeenCalledTimes(2))
+    const [firstPayload, firstKey] = harness.submitEventSubmission.mock.calls[0].slice(1)
+    const [secondPayload, secondKey] = harness.submitEventSubmission.mock.calls[1].slice(1)
+    expect(firstPayload).toMatchObject({ attributionConsent: true })
+    expect(secondPayload).toMatchObject({ attributionConsent: true })
+    expect(firstKey).toBe('123e4567-e89b-42d3-a456-426614174000')
+    expect(secondKey).toBe(firstKey)
+    expect(harness.createIdempotencyKey).toHaveBeenCalledOnce()
+  })
+
+  it('logs out from a touch-sized account action', async () => {
+    await renderDialog()
+
+    const logout = screen.getByRole('button', { name: '로그아웃' })
+    expect(logout).toHaveClass('event-logout-button')
+    fireEvent.click(logout)
+
+    await waitFor(() => expect(harness.logoutSubmissionSession).toHaveBeenCalledWith('https://example.test'))
+    expect(await screen.findByText('GitHub 로그인 필요')).toBeInTheDocument()
   })
 
   it('ignores a late failure from a dialog that was closed and reopened', async () => {

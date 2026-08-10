@@ -9,6 +9,7 @@ import { useEventDetails } from './useEventDetails'
 
 afterEach(() => {
   fetchEventDetail.mockReset()
+  vi.useRealTimers()
 })
 
 const event = {
@@ -32,6 +33,39 @@ const monthResult = {
 }
 
 describe('useEventDetails', () => {
+  it('limits concurrent event-detail requests to six', async () => {
+    let active = 0
+    let peak = 0
+    const releases: Array<() => void> = []
+    fetchEventDetail.mockImplementation((_url, _path, id) => new Promise((resolve) => {
+      active += 1
+      peak = Math.max(peak, active)
+      releases.push(() => {
+        active -= 1
+        resolve({ data: { id }, source: 'network', url: `https://example.test/events/${id}.json` })
+      })
+    }))
+    const events = Array.from({ length: 14 }, (_, index) => ({
+      ...event,
+      id: `event-${index}`,
+      path: `../events/event-${index}.json`,
+    }))
+
+    const { result } = renderHook(() => useEventDetails(monthResult as never, events as never))
+    await waitFor(() => expect(fetchEventDetail).toHaveBeenCalledTimes(6))
+    expect(peak).toBe(6)
+
+    while (releases.length > 0 || fetchEventDetail.mock.calls.length < events.length) {
+      const batch = releases.splice(0)
+      await act(async () => batch.forEach((release) => release()))
+      if (fetchEventDetail.mock.calls.length < events.length) {
+        await waitFor(() => expect(releases.length).toBeGreaterThan(0))
+      }
+    }
+    await waitFor(() => expect(Object.keys(result.current.details)).toHaveLength(events.length))
+    expect(peak).toBe(6)
+  })
+
   it('loads missing event details with the month version and exposes them by event id', async () => {
     fetchEventDetail.mockResolvedValue({
       data: { id: 'event-1', title: { ko: '이벤트' } },
@@ -39,7 +73,8 @@ describe('useEventDetails', () => {
       url: 'https://example.test/event-calendar/events/event-1.json',
     })
 
-    const { result } = renderHook(() => useEventDetails(monthResult as never, [event] as never))
+    const selectedEvents = [event] as never
+    const { result } = renderHook(() => useEventDetails(monthResult as never, selectedEvents))
 
     expect(result.current.isLoading).toBe(true)
     await waitFor(() => expect(result.current.details['event-1']?.data.id).toBe('event-1'))
@@ -69,6 +104,52 @@ describe('useEventDetails', () => {
       rejectLoad?.(new DOMException('Aborted', 'AbortError'))
     })
     expect(result.current.error).toBeNull()
+  })
+
+  it('aborts the complete detail batch at the fifteen-second deadline', async () => {
+    vi.useFakeTimers()
+    fetchEventDetail.mockImplementation((_url, _path, _id, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+    }))
+
+    const selectedEvents = [event] as never
+    const { result } = renderHook(() => useEventDetails(monthResult as never, selectedEvents))
+    expect(fetchEventDetail).toHaveBeenCalledOnce()
+    const signal = fetchEventDetail.mock.calls[0][3].signal as AbortSignal
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    vi.useRealTimers()
+
+    expect(signal.aborted).toBe(true)
+    expect(signal.reason).toMatchObject({ code: 'DATA_REQUEST_TIMEOUT', timeoutMs: 15_000 })
+    await waitFor(() => expect(result.current.error).toContain('timed out after 15 seconds'))
+  })
+
+  it('aborts sibling requests when one event detail fails', async () => {
+    const signals: AbortSignal[] = []
+    fetchEventDetail.mockImplementation((_url, _path, id, options) => {
+      signals.push(options.signal)
+      if (id === 'event-0') return Promise.reject(new Error('detail failed'))
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+      })
+    })
+    const events = Array.from({ length: 7 }, (_, index) => ({
+      ...event,
+      id: `event-${index}`,
+      path: `../events/event-${index}.json`,
+    }))
+
+    const { result } = renderHook(() => useEventDetails(monthResult as never, events as never))
+    await waitFor(() => expect(result.current.error).toBe('detail failed'))
+
+    expect(fetchEventDetail).toHaveBeenCalledTimes(6)
+    expect(signals).toHaveLength(6)
+    expect(signals.every((signal) => signal.aborted)).toBe(true)
   })
 
   it('does not expose a cached detail after the month manifest origin changes', async () => {

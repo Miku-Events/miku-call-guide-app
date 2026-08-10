@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -10,6 +11,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     build: {
+      license: { fileName: 'THIRD_PARTY_LICENSES.md' },
       manifest: true,
     },
     plugins: [
@@ -26,6 +28,17 @@ export default defineConfig(({ mode }) => {
           this.emitFile({
             fileName: '_headers',
             source: generateStaticHeaders(environment),
+            type: 'asset',
+          })
+        },
+      },
+      {
+        name: 'third-party-notices',
+        apply: 'build',
+        generateBundle() {
+          this.emitFile({
+            fileName: 'THIRD_PARTY_NOTICES.md',
+            source: readFileSync(new URL('./THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8'),
             type: 'asset',
           })
         },

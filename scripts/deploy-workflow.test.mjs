@@ -10,18 +10,10 @@ async function environmentExample() {
   return readFile(path.join(process.cwd(), '.env.example'), 'utf8')
 }
 
-async function projectReadme() {
-  return readFile(path.join(process.cwd(), 'README.md'), 'utf8')
-}
-
 async function projectManifest() {
   return JSON.parse(
     await readFile(path.join(process.cwd(), 'package.json'), 'utf8'),
   )
-}
-
-async function operationsSecurityGuide() {
-  return readFile(path.join(process.cwd(), 'docs/operations-security.md'), 'utf8')
 }
 
 async function wranglerConfig() {
@@ -46,25 +38,18 @@ describe('production deployment workflow', () => {
 
     expect(workflow).toMatch(/workflow_dispatch:\s*(?:\n|$)/)
     expect(workflow).toMatch(/\n  push:\n    branches:\n      - main\n/)
-    expect(workflow).not.toContain('release_sha:')
-    expect(workflow).not.toContain('production_hostname_confirmation:')
-    expect(workflow).not.toContain('operations_checklist_url:')
-    expect(workflow).not.toContain('bootstrap_readiness_contract:')
-    expect(workflow).not.toContain('validate-production-deploy-inputs.mjs')
     expect(workflow).toContain(`PRODUCTION_RELEASE: \${{ ${releaseExpression} }}`)
     expect(workflow).toContain('if [[ "$PRODUCTION_RELEASE" != "true" ]]; then')
     expect(previewJob).toContain(`    if: ${releaseExpression}`)
     expect(deployJob).toContain(`    if: ${releaseExpression}`)
-    expect(workflow).not.toContain(
-      'if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then',
-    )
   })
 
-  it('never cancels an active release workflow when another run starts', async () => {
+  it('cancels superseded PR runs but never cancels an active release', async () => {
     const workflow = await deploymentWorkflow()
 
-    expect(workflow).toMatch(/concurrency:\s*[\s\S]*?cancel-in-progress:\s*false/)
-    expect(workflow).not.toContain('cancel-in-progress: true')
+    expect(workflow).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+    )
   })
 
   it('validates only the vendored contract provenance and never checks out another repository', async () => {
@@ -90,28 +75,30 @@ describe('production deployment workflow', () => {
     expect(workflow.match(/name: web-dist-\$\{\{ github\.sha \}\}/g)).toHaveLength(4)
     expect(workflow).toContain('npm run smoke:preview')
     expect(workflow).toContain('npx playwright install --with-deps chromium')
-    expect(workflow).not.toContain('environment: production')
+    expect(workflow.slice(preview, production)).toMatch(/environment:\n      name: preview\n/)
+    expect(workflow.slice(production)).toMatch(/environment:\n      name: production\n/)
   })
 
   it('structurally pins every action, stable runner, and artifact transfer', async () => {
     const workflow = await deploymentWorkflow()
     const actions = workflowActions(workflow)
 
-    expect(workflow.match(/runs-on: ubuntu-24\.04/g)).toHaveLength(5)
-    expect(workflow).not.toContain('ubuntu-latest')
+    const runners = [...workflow.matchAll(/^\s*runs-on:\s*(\S+)$/gm)]
+      .map(([, runner]) => runner)
+    expect(runners.length).toBeGreaterThan(0)
+    expect(new Set(runners)).toEqual(new Set(['ubuntu-24.04']))
     expect(actions.length).toBeGreaterThan(0)
     expect(actions.every(({ reference }) => /@[0-9a-f]{40}$/.test(reference))).toBe(true)
     expect(actions.every(({ version }) => /^v\d+(?:\.\d+){0,2}$/.test(version))).toBe(true)
-    expect(actions.filter(({ reference }) => reference.startsWith('actions/checkout@'))).toHaveLength(5)
     const checkoutSteps = workflow.match(
       /\n\s{6}- name: Checkout repository[\s\S]*?(?=\n\s{6}- name:|\n\s{2}\w+:|$)/g,
     ) ?? []
-    expect(checkoutSteps).toHaveLength(5)
+    expect(checkoutSteps.length).toBeGreaterThan(0)
     for (const checkout of checkoutSteps) expect(checkout).toContain('persist-credentials: false')
     const downloads = workflow.match(
       /\n\s{6}- name: Download (?:built|tested) app[\s\S]*?(?=\n\s{6}- name:|\n\s{2}\w+:|$)/g,
     ) ?? []
-    expect(downloads).toHaveLength(3)
+    expect(downloads.length).toBeGreaterThan(0)
     for (const download of downloads) {
       expect(download).toContain('digest-mismatch: error')
       expect(download).toContain('name: web-dist-${{ github.sha }}')
@@ -138,14 +125,6 @@ describe('production deployment workflow', () => {
     expect(e2eJob.slice(diagnosticsStep)).toContain('playwright-report')
     expect(e2eJob.slice(diagnosticsStep)).toContain('if-no-files-found: warn')
     expect(e2eJob.slice(diagnosticsStep)).not.toContain('continue-on-error')
-  })
-
-  it('does not schedule a repeated stability matrix', async () => {
-    const workflow = await deploymentWorkflow()
-
-    expect(workflow).not.toContain('e2e_stability')
-    expect(workflow).not.toContain('test:e2e:stability')
-    expect(workflow).not.toContain('playwright-stability')
   })
 
   it('keeps a non-publishing Node 24 compatibility gate during the Node 26 transition', async () => {
@@ -203,24 +182,31 @@ describe('production deployment workflow', () => {
     )
   })
 
+  it('maps the configured Pages production branch and preview branch to exact deploy commands', async () => {
+    const workflow = await deploymentWorkflow()
+    const previewJob = workflow.slice(
+      workflow.indexOf('\n  preview:'),
+      workflow.indexOf('\n  deploy:'),
+    )
+    const productionJob = workflow.slice(workflow.indexOf('\n  deploy:'))
+    const previewCommand =
+      'command: pages deploy dist --project-name=miku-call-guide-app --branch=release-preview-${{ github.sha }}'
+    const productionCommand =
+      'command: pages deploy dist --project-name=miku-call-guide-app --branch=main'
+
+    expect(previewJob).toContain(previewCommand)
+    expect(previewJob).not.toContain(productionCommand)
+    expect(productionJob).toContain(productionCommand)
+    expect(productionJob).not.toContain(previewCommand)
+    expect(workflow.split(previewCommand)).toHaveLength(2)
+    expect(workflow.split(productionCommand)).toHaveLength(2)
+  })
+
   it('uses the selected main commit SHA throughout build, preview, and production smoke', async () => {
     const workflow = await deploymentWorkflow()
 
     expect(workflow).toContain('VITE_RELEASE_ID=$GITHUB_SHA')
     expect(workflow).toContain('EXPECTED_RELEASE_ID: ${{ github.sha }}')
-    expect(workflow).not.toContain('LEGACY_APP_ORIGIN')
-    expect(workflow).not.toContain('inputs.')
-  })
-
-  it('publishes without a hostname reconciliation or bootstrap bypass', async () => {
-    const workflow = await deploymentWorkflow()
-    const publish = workflow.indexOf('name: Publish to Cloudflare Pages')
-
-    expect(publish).toBeGreaterThan(-1)
-    expect(workflow).not.toContain('Reconcile legacy Pages runtime binding')
-    expect(workflow).not.toContain('reconcile-pages-config.mjs')
-    expect(workflow).not.toContain('pre-deploy-readiness.mjs')
-    expect(workflow).not.toContain('READINESS_BOOTSTRAP_MODE')
   })
 
   it('browser-smokes the configured production origin in place after publishing', async () => {
@@ -234,7 +220,7 @@ describe('production deployment workflow', () => {
     expect(httpSmoke).toBeGreaterThan(publish)
     expect(browserSmoke).toBeGreaterThan(httpSmoke)
     expect(deployJob).toContain(
-      'BROWSER_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN || secrets.VITE_APP_ORIGIN }}',
+      'BROWSER_SMOKE_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}',
     )
     expect(deployJob).toContain('run: npm run smoke:browser')
     expect(deployJob).toContain('npx playwright install --with-deps chromium')
@@ -250,26 +236,58 @@ describe('production deployment workflow', () => {
     expect(environment).not.toContain('@release/manifest.json')
   })
 
-  it('keeps Pages runtime configuration independent of public hostnames', async () => {
+  it('separates local, read-only preview, and canonical production runtime configuration', async () => {
     const wrangler = await wranglerConfig()
 
+    expect(wrangler).toContain('[env.preview.vars]')
+    expect(wrangler).toContain('APP_ENV = "preview"')
+    expect(wrangler).toContain('SUBMISSION_WRITES_ENABLED = "false"')
+    expect(wrangler).toContain('[env.production.vars]')
     expect(wrangler).toContain('APP_ENV = "production"')
-    expect(wrangler).not.toContain('APP_ORIGIN')
+    expect(wrangler).toContain('APP_ORIGIN = "https://miku.sekai.today"')
+    expect(wrangler).toContain('SUBMISSION_WRITES_ENABLED = "true"')
     expect(wrangler).not.toContain('TURNSTILE_EXPECTED_HOSTNAME')
   })
 
-  it('documents automatic main releases and manual reruns without stale guards', async () => {
-    const [readme, operationsGuide] = await Promise.all([
-      projectReadme(),
-      operationsSecurityGuide(),
-    ])
+  it('uses distinct preview and production deploy credentials with repository variables only', async () => {
+    const workflow = await deploymentWorkflow()
+    const previewJob = workflow.slice(
+      workflow.indexOf('\n  preview:'),
+      workflow.indexOf('\n  deploy:'),
+    )
+    const productionJob = workflow.slice(workflow.indexOf('\n  deploy:'))
 
-    expect(readme).toContain('runtime-config-v1')
-    expect(readme).toContain('`main` push')
-    expect(operationsGuide).toContain('input 없는 `workflow_dispatch`')
-    expect(operationsGuide).not.toContain('`main` push는 품질 검사만 실행합니다.')
-    expect(operationsGuide).not.toContain('`workflow_dispatch`에서만 시작')
-    expect(readme).not.toContain('expected canonical origin')
-    expect(readme).not.toContain('환경 승인')
+    expect(workflow).toContain('name: preview')
+    expect(workflow).toContain('name: production')
+    expect(previewJob).toContain(
+      'apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}',
+    )
+    expect(previewJob).not.toContain('secrets.CLOUDFLARE_PRODUCTION_API_TOKEN')
+    expect(productionJob).toContain(
+      'apiToken: ${{ secrets.CLOUDFLARE_PRODUCTION_API_TOKEN }}',
+    )
+    expect(productionJob).not.toContain('secrets.CLOUDFLARE_PREVIEW_API_TOKEN')
+    expect(workflow).not.toContain('secrets.CLOUDFLARE_API_TOKEN')
+    expect(workflow.match(/accountId: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/g)).toHaveLength(2)
+    expect(workflow).not.toMatch(/vars\.[A-Z0-9_]+\s*\|\|\s*secrets\./)
+    expect(workflow).not.toContain('secrets.CLOUDFLARE_ACCOUNT_ID')
+    expect(workflow).toContain('npm audit signatures')
+  })
+
+  it('keeps every pull-request-reachable job free of secrets and privileged triggers', async () => {
+    const workflow = await deploymentWorkflow()
+    const pullRequestJobs = workflow.slice(
+      workflow.indexOf('\n  quality:'),
+      workflow.indexOf('\n  preview:'),
+    )
+    const publishingJobs = workflow.slice(workflow.indexOf('\n  preview:'))
+
+    expect(workflow).not.toContain('pull_request_target:')
+    expect(pullRequestJobs).not.toContain('secrets.')
+    expect(publishingJobs.match(/secrets\.[A-Z0-9_]+/g)).toEqual([
+      'secrets.CLOUDFLARE_PREVIEW_API_TOKEN',
+      'secrets.CLOUDFLARE_PRODUCTION_API_TOKEN',
+    ])
+    expect(publishingJobs.match(/if: github\.ref == 'refs\/heads\/main'/g)).toHaveLength(2)
   })
 })

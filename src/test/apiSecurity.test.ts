@@ -19,6 +19,7 @@ describe('API Security Tests', () => {
       expect(safeReturnTo('/\\\\evil.com', requestOrigin)).toBe('/')
       expect(safeReturnTo('/\\evil.com', requestOrigin)).toBe('/')
       expect(safeReturnTo('\\\\evil.com', requestOrigin)).toBe('/')
+      expect(safeReturnTo(`${requestOrigin}//evil.example/path`, requestOrigin)).toBe('/')
     })
 
     it('allows valid relative paths on the request origin', () => {
@@ -59,6 +60,7 @@ describe('API Security Tests', () => {
 
   describe('validateBody (Submissions)', () => {
     const validBase = {
+      attributionConsent: true,
       title: 'Hatsune Miku Concert',
       type: 'concert',
       timezone: 'Asia/Seoul',

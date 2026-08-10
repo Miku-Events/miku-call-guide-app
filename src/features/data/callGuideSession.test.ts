@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  CALL_GUIDE_LOAD_DEADLINE_MS,
   callGuideSessionSnapshotForTests,
   DataRequestTimeoutError,
   loadCallGuideManifest,
@@ -9,6 +8,7 @@ import {
   prefetchCallGuideSong,
   resetCallGuideSessionForTests,
 } from './callGuideSession'
+import { DATA_REQUEST_TIMEOUT_MS } from './dataRequestTimeout'
 import type { CallGuideManifest, RootManifest, SongGuide } from './types'
 
 const rootUrl = 'https://data.example.test/manifest.json'
@@ -258,7 +258,7 @@ describe('callGuideSession', () => {
     expect(refreshFetch).toHaveBeenCalledTimes(2)
   })
 
-  it('bounds a manifest shared task to 15 seconds and permits a fresh forced retry', async () => {
+  it('bounds each manifest request to 10 seconds and permits a fresh forced retry', async () => {
     vi.useFakeTimers()
     const signals: AbortSignal[] = []
     const hangingFetch = vi.fn((_url: string, options: RequestInit) => {
@@ -274,18 +274,19 @@ describe('callGuideSession', () => {
     const rejected = expect(request).rejects.toMatchObject({
       code: 'DATA_REQUEST_TIMEOUT',
       kind: 'manifest',
-      message: 'Call-guide manifest request timed out after 15 seconds.',
+      message: 'Call-guide manifest request timed out after 10 seconds.',
       name: 'TimeoutError',
-      timeoutMs: CALL_GUIDE_LOAD_DEADLINE_MS,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
     })
     await Promise.resolve()
-    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS - 1)
+    await vi.advanceTimersByTimeAsync(DATA_REQUEST_TIMEOUT_MS - 1)
     expect(signals).toHaveLength(2)
     expect(signals.every((signal) => !signal.aborted)).toBe(true)
 
     await vi.advanceTimersByTimeAsync(1)
     await rejected
-    expect(signals.every((signal) => signal.reason instanceof DataRequestTimeoutError)).toBe(true)
+    expect(signals.every((signal) => signal.aborted)).toBe(true)
+    expect(signals.some((signal) => signal.reason instanceof DataRequestTimeoutError)).toBe(true)
     expect(callGuideSessionSnapshotForTests().pendingManifests).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
 
@@ -318,7 +319,7 @@ describe('callGuideSession', () => {
     }))
     const request = loadCallGuideManifest(rootUrl)
     await Promise.resolve()
-    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS)
+    await vi.advanceTimersByTimeAsync(DATA_REQUEST_TIMEOUT_MS)
 
     await expect(request).resolves.toMatchObject({
       data: { songs: [{ id: 'cached' }] },
@@ -471,7 +472,7 @@ describe('callGuideSession', () => {
     await expect(route).rejects.toMatchObject({ name: 'AbortError' })
     expect(leafSignals).toHaveLength(1)
     expect(leafSignals[0].aborted).toBe(false)
-    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS)
+    await vi.advanceTimersByTimeAsync(DATA_REQUEST_TIMEOUT_MS)
     await prefetchRejected
     expect(leafSignals[0].reason).toBeInstanceOf(DataRequestTimeoutError)
     expect(callGuideSessionSnapshotForTests().pendingSongs).toBe(0)
@@ -504,7 +505,7 @@ describe('callGuideSession', () => {
     }))
     const refresh = loadCallGuideSong(loadedManifest, entry, { force: true })
     await Promise.resolve()
-    await vi.advanceTimersByTimeAsync(CALL_GUIDE_LOAD_DEADLINE_MS)
+    await vi.advanceTimersByTimeAsync(DATA_REQUEST_TIMEOUT_MS)
 
     await expect(refresh).resolves.toMatchObject({
       data: { id: 'a' },

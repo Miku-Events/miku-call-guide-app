@@ -1,4 +1,5 @@
 import { importGitHubAppPrivateKey } from './github-private-key.js'
+import { canonicalProductionOrigin } from './productionHostname.js'
 
 const SESSION_SECRET_MINIMUM_BYTES = 32
 const OFFICIAL_TURNSTILE_TEST_SECRETS = new Set([
@@ -8,7 +9,7 @@ const OFFICIAL_TURNSTILE_TEST_SECRETS = new Set([
 ])
 
 export const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
-export const READINESS_CONTRACT_VERSION = 'runtime-config-v1'
+export const READINESS_CONTRACT_VERSION = 'runtime-config-v2'
 
 function isPlaceholder(value) {
   const normalized = value.trim().toLowerCase()
@@ -76,13 +77,19 @@ async function validateGitHub(environment) {
   await validateGitHubPrivateKey(environment)
 }
 
-export async function parseRuntimeConfig(environment, mode = 'service') {
+async function parseRuntimeConfig(environment, mode = 'service') {
   if (!environment || typeof environment !== 'object') {
     throw new Error('invalid_runtime_configuration')
   }
 
   if (mode !== 'readiness') return environment
   if (environment.APP_ENV !== 'production') {
+    throw new Error('invalid_runtime_configuration')
+  }
+  if (
+    canonicalProductionOrigin(environment.APP_ORIGIN) !== environment.APP_ORIGIN
+    || environment.SUBMISSION_WRITES_ENABLED !== 'true'
+  ) {
     throw new Error('invalid_runtime_configuration')
   }
 

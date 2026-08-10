@@ -60,23 +60,23 @@ describe('Pages API handler contract', () => {
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
   })
 
-  it('derives secure-environment CORS from each request origin', async () => {
-    for (const origin of [
-      'https://miku-call-guide-app.pages.dev',
-      'https://next-custom-domain.dev',
-    ]) {
-      const request = new Request(`${origin}/api/test`, {
-        body: '{}',
-        headers: { 'content-type': 'application/json', origin },
-        method: 'POST',
-      })
-      const response = await handler(context(
-        request,
-        { APP_ENV: 'production', APP_ORIGIN: 'https://stale-domain.invalid' },
-      ))
-      expect(response.headers.get('access-control-allow-origin')).toBe(origin)
-      expect(response.headers.get('access-control-allow-credentials')).toBe('true')
-    }
+  it('allows production CORS only on the exact canonical request origin', async () => {
+    const canonicalOrigin = 'https://miku.sekai.today'
+    const allowed = await handler(context(new Request(`${canonicalOrigin}/api/test`, {
+      body: '{}',
+      headers: { 'content-type': 'application/json', origin: canonicalOrigin },
+      method: 'POST',
+    }), { APP_ENV: 'production', APP_ORIGIN: canonicalOrigin }))
+    expect(allowed.headers.get('access-control-allow-origin')).toBe(canonicalOrigin)
+    expect(allowed.headers.get('access-control-allow-credentials')).toBe('true')
+
+    const pagesOrigin = 'https://miku-call-guide-app.pages.dev'
+    const denied = await handler(context(new Request(`${pagesOrigin}/api/test`, {
+      body: '{}',
+      headers: { 'content-type': 'application/json', origin: pagesOrigin },
+      method: 'POST',
+    }), { APP_ENV: 'production', APP_ORIGIN: canonicalOrigin }))
+    expect(denied.headers.get('access-control-allow-origin')).toBeNull()
   })
 
   it('does not enable credentialed CORS for insecure production request URLs', async () => {
@@ -94,6 +94,9 @@ describe('Pages API handler contract', () => {
   it('ignores an inbound request ID and applies all security headers', async () => {
     const response = await handler(context(jsonRequest('/api/test', {}, { 'x-request-id': 'attacker' })))
     expect(response.headers.get('x-request-id')).not.toBe('attacker')
+    expect(response.headers.get('access-control-expose-headers')).toBe(
+      'idempotency-replayed, retry-after, x-request-id',
+    )
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'")
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
@@ -136,18 +139,28 @@ describe('Pages API handler contract', () => {
       expect(JSON.stringify(body)).not.toContain('private')
     }
     expect(consoleError).toHaveBeenCalledTimes(2)
+    for (const [entry] of consoleError.mock.calls) {
+      expect(JSON.parse(String(entry))).toEqual({
+        endpoint: '/api/test',
+        requestId: expect.any(String),
+        resultCode: expect.any(String),
+        rollback: null,
+        replay: null,
+      })
+      expect(String(entry)).not.toContain('githubUser')
+    }
   })
 })
 
 describe('event write handlers', () => {
   const submissionBody = {
-    title: 'Miku concert', type: 'concert', timezone: 'Asia/Seoul',
+    attributionConsent: true, title: 'Miku concert', type: 'concert', timezone: 'Asia/Seoul',
     snsUrl: 'https://x.com/miku', startsOn: '2026-08-05', turnstileToken: 'token',
   }
 
   it('passes the exact Request env and action through a submission', async () => {
     const createEventPullRequest = vi.fn(async () => ({ html_url: 'https://github.test/pull/1' }))
-    const readSession = vi.fn(() => ({ login: 'miku-user' }))
+    const readSession = vi.fn(() => ({ id: '39', login: 'miku-user' }))
     const verifyTurnstileToken = vi.fn(async () => true)
     const handler = createSubmissionHandler({ createEventPullRequest, readSession, verifyTurnstileToken })
     const request = jsonRequest('/api/events/submissions', submissionBody)
@@ -164,11 +177,11 @@ describe('event write handlers', () => {
     const verifyTurnstileToken = vi.fn(async () => true)
     const handler = createEditRequestHandler({
       createEditRequestIssue,
-      readSession: () => ({ login: 'miku-user' }),
+      readSession: () => ({ id: '39', login: 'miku-user' }),
       verifyTurnstileToken,
     })
     const request = jsonRequest('/api/events/miku-event/edit-requests', {
-      message: 'Please correct the date', turnstileToken: 'token',
+      attributionConsent: true, message: 'Please correct the date', turnstileToken: 'token',
     })
     const response = await handler(context(request, testEnv, { eventId: 'miku-event' }))
     expect(response.status).toBe(200)
@@ -182,7 +195,7 @@ describe('event write handlers', () => {
       createEventPullRequest, readSession: () => null, verifyTurnstileToken: vi.fn(),
     })
     const invalidToken = createSubmissionHandler({
-      createEventPullRequest, readSession: () => ({ login: 'miku' }), verifyTurnstileToken: async () => false,
+      createEventPullRequest, readSession: () => ({ id: '39', login: 'miku' }), verifyTurnstileToken: async () => false,
     })
     expect((await unauthenticated(context(jsonRequest('/api/events/submissions', submissionBody)))).status).toBe(401)
     expect((await invalidToken(context(jsonRequest('/api/events/submissions', submissionBody)))).status).toBe(400)

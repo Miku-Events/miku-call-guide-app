@@ -3,12 +3,17 @@ import {
   CircleCheck,
   ChevronLeft,
   ChevronRight,
+  LockKeyhole,
   Plus,
   RefreshCw,
 } from 'lucide-react'
 import './events.css'
 import { useEffect, useMemo, useState } from 'react'
-import { getRootManifestUrl, getSubmissionApiBaseUrl } from '../../app/config'
+import {
+  getRootManifestUrl,
+  getSubmissionApiBaseUrl,
+  isSubmissionReadOnlyEnvironment,
+} from '../../app/config'
 import { AppPageShell, StatusBanner } from '../../shared/layout/AppPageShell'
 import {
   buildCalendarBarSegments,
@@ -33,6 +38,7 @@ import { eventTypePresentation, normalizeEventTypePriority } from './eventTypes'
 export function EventCalendarPage() {
   const rootManifestUrl = getRootManifestUrl()
   const submissionApiBaseUrl = getSubmissionApiBaseUrl()
+  const submissionReadOnly = isSubmissionReadOnlyEnvironment()
   
   // State
   const [dialog, setDialog] = useState<EventDialogState>(null)
@@ -185,17 +191,27 @@ export function EventCalendarPage() {
                 </button>
               ))}
             </div>
-            <Button
-              label="일정 추가"
-              onClick={() => setDialog({ kind: 'add' })}
-              icon={<Plus size={14} aria-hidden="true" />}
-              variant="primary"
-              className="event-add-compact-button"
-            />
+            {submissionReadOnly ? (
+              <span className="event-read-only-label">미리보기 · 읽기 전용</span>
+            ) : (
+              <Button
+                label="일정 추가"
+                onClick={() => setDialog({ kind: 'add' })}
+                icon={<Plus size={14} aria-hidden="true" />}
+                variant="primary"
+                className="event-add-compact-button"
+              />
+            )}
           </div>
         </div>
       }
     >
+      {submissionReadOnly ? (
+        <StatusBanner icon={<LockKeyhole size={18} aria-hidden="true" />} role="status" variant="info">
+          이 미리보기 환경은 읽기 전용입니다. 로그인, 일정 제보, 수정 요청은 canonical 운영 도메인에서만 사용할 수 있습니다.
+        </StatusBanner>
+      ) : null}
+
       {warning ? (
         <StatusBanner icon={<AlertTriangle size={18} aria-hidden="true" />} variant="warning">
           {warning}
@@ -264,15 +280,18 @@ export function EventCalendarPage() {
           onDismiss={closeEventDetail}
           setDetailExpanded={setDetailExpanded}
           setDialog={setDialog}
+          submissionReadOnly={submissionReadOnly}
         />
       </div>
 
-      <EventSubmitDialog
-        dialog={dialog}
-        setDialog={setDialog}
-        setSubmissionSuccess={setSubmissionSuccess}
-        submissionApiBaseUrl={submissionApiBaseUrl}
-      />
+      {!submissionReadOnly ? (
+        <EventSubmitDialog
+          dialog={dialog}
+          setDialog={setDialog}
+          setSubmissionSuccess={setSubmissionSuccess}
+          submissionApiBaseUrl={submissionApiBaseUrl}
+        />
+      ) : null}
     </AppPageShell>
   )
 }

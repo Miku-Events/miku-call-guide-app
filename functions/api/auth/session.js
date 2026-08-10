@@ -7,7 +7,8 @@ export const onRequest = createApiHandler({
 }, ({ request, env, headers }) => {
   const session = readSession(request, env)
   return jsonResponse({
-    authenticated: Boolean(session?.login),
+    authenticated: Boolean(session?.id && session?.login),
+    id: session?.id,
     login: session?.login,
   }, 200, headers)
 })

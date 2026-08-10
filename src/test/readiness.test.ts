@@ -1,10 +1,14 @@
 import { createPrivateKey, webcrypto } from 'node:crypto'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  cachedProductionReadiness,
+  resetReadinessCacheForTests,
+} from '../../functions/api/ready.js'
 
 const SECRET = 'readiness-session-secret-that-is-long-enough'
 const REQUEST_ORIGIN = 'https://miku-call-guide-app.pages.dev'
 const READINESS_CONTRACT_HEADER = 'x-miku-readiness-contract'
-const READINESS_CONTRACT_VERSION = 'runtime-config-v1'
+const READINESS_CONTRACT_VERSION = 'runtime-config-v2'
 let pkcs1PrivateKeyPem = ''
 let pkcs8PrivateKeyPem = ''
 
@@ -16,6 +20,7 @@ function toPem(buffer: ArrayBuffer) {
 async function productionEnvironment(privateKey = pkcs8PrivateKeyPem) {
   return {
     APP_ENV: 'production',
+    APP_ORIGIN: 'https://miku.sekai.today',
     CLOUDFLARE_TURNSTILE_SECRET_KEY: '0x4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     GITHUB_APP_ID: '123456',
     GITHUB_APP_INSTALLATION_ID: '987654',
@@ -25,6 +30,7 @@ async function productionEnvironment(privateKey = pkcs8PrivateKeyPem) {
     GITHUB_OAUTH_CLIENT_ID: 'oauth-client-id',
     GITHUB_OAUTH_CLIENT_SECRET: 'oauth-client-secret',
     SESSION_SECRET: SECRET,
+    SUBMISSION_WRITES_ENABLED: 'true',
   }
 }
 
@@ -61,8 +67,10 @@ beforeAll(async () => {
 })
 
 afterEach(() => {
+  resetReadinessCacheForTests()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  vi.useRealTimers()
 })
 
 describe('production readiness endpoint', () => {
@@ -100,6 +108,42 @@ describe('production readiness endpoint', () => {
     expect(await response.json()).toEqual({ ready: true })
   })
 
+  it('caches success for 60 seconds and failure for 5 seconds by configuration identity', async () => {
+    const environment = await productionEnvironment()
+    const validateSuccess = vi.fn(async () => undefined)
+    expect(await cachedProductionReadiness(environment, {
+      now: 0,
+      validate: validateSuccess,
+    })).toBe(true)
+    expect(await cachedProductionReadiness({ ...environment }, {
+      now: 59_999,
+      validate: validateSuccess,
+    })).toBe(true)
+    expect(validateSuccess).toHaveBeenCalledOnce()
+    expect(await cachedProductionReadiness({ ...environment }, {
+      now: 60_000,
+      validate: validateSuccess,
+    })).toBe(true)
+    expect(validateSuccess).toHaveBeenCalledTimes(2)
+
+    resetReadinessCacheForTests()
+    const validateFailure = vi.fn(async () => { throw new Error('not ready') })
+    expect(await cachedProductionReadiness(environment, {
+      now: 0,
+      validate: validateFailure,
+    })).toBe(false)
+    expect(await cachedProductionReadiness({ ...environment }, {
+      now: 4_999,
+      validate: validateFailure,
+    })).toBe(false)
+    expect(validateFailure).toHaveBeenCalledOnce()
+    expect(await cachedProductionReadiness({ ...environment }, {
+      now: 5_000,
+      validate: validateFailure,
+    })).toBe(false)
+    expect(validateFailure).toHaveBeenCalledTimes(2)
+  })
+
   it.each([
     'https://miku-call-guide-app.pages.dev',
     'https://miku.sekai.today',
@@ -112,6 +156,7 @@ describe('production readiness endpoint', () => {
   })
 
   it.each([
+    'APP_ORIGIN',
     'CLOUDFLARE_TURNSTILE_SECRET_KEY',
     'GITHUB_APP_ID',
     'GITHUB_APP_INSTALLATION_ID',
@@ -121,6 +166,7 @@ describe('production readiness endpoint', () => {
     'GITHUB_OAUTH_CLIENT_ID',
     'GITHUB_OAUTH_CLIENT_SECRET',
     'SESSION_SECRET',
+    'SUBMISSION_WRITES_ENABLED',
   ])('returns a standard non-leaking 503 when %s is missing', async (name) => {
     const environment = await productionEnvironment()
     delete environment[name as keyof typeof environment]

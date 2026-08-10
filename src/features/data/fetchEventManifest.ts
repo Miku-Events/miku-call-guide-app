@@ -13,6 +13,7 @@ import {
 import {
   assertVersion,
   fetchVersionedResource,
+  JSON_BYTE_LIMITS,
   type ResolvedLoadResult,
   type VersionedLoadOptions,
 } from './manifestShared'
@@ -77,6 +78,7 @@ export function fetchEventCalendarMonth(
     },
     label: `${month} event calendar`,
     manifestUrl: eventCalendarIndexUrl,
+    maxBytes: JSON_BYTE_LIMITS.aggregate,
     options,
     resourcePath: `months/${month}.json`,
   })
@@ -99,6 +101,7 @@ export function fetchEventDetail(
     label: 'event detail',
     dedupeKeySuffix: eventId,
     manifestUrl: monthManifestUrl,
+    maxBytes: JSON_BYTE_LIMITS.eventDetail,
     options,
     resourcePath: eventPath,
     versionedLeaf: true,

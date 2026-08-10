@@ -28,11 +28,19 @@ describe('local and release scripts', () => {
   })
 
   it('provides the reserved-port-safe local dev command and preview browser smoke', async () => {
-    const manifest = await readJson('package.json')
+    const [manifest, viteConfig] = await Promise.all([
+      readJson('package.json'),
+      readFile('vite.config.ts', 'utf8'),
+    ])
 
     expect(manifest.scripts['dev:local']).toBe('vite --host 127.0.0.1 --port 4173')
     expect(manifest.scripts['smoke:preview']).toBe('node scripts/preview-browser-smoke.mjs')
     expect(manifest.scripts.build).toBe('tsc -b && vite build')
+    expect(manifest.scripts['bundle:check']).toBe(
+      'node scripts/check-built-third-party-licenses.mjs && node scripts/bundle-budget.mjs',
+    )
+    expect(viteConfig).toContain("license: { fileName: 'THIRD_PARTY_LICENSES.md' }")
+    expect(viteConfig).toContain("fileName: 'THIRD_PARTY_NOTICES.md'")
     expect(manifest.scripts.check).not.toContain('npm run typecheck')
   })
 
@@ -68,23 +76,24 @@ describe('local and release scripts', () => {
       readJson('package-lock.json'),
     ])
 
-    const reviewedInstallScripts = Object.fromEntries(
-      Object.keys(manifest.allowScripts).map((entry) => {
-        const separator = entry.lastIndexOf('@')
-        return [entry.slice(0, separator), entry.slice(separator + 1)]
-      }),
-    )
-
-    expect(reviewedInstallScripts).toEqual({
-      '@astryxdesign/cli': '0.2.0',
-      '@astryxdesign/core': '0.2.0',
-      esbuild: '0.28.1',
-      workerd: '1.20260730.1',
+    expect(manifest.allowScripts).toEqual({
+      '@astryxdesign/cli@0.2.0': true,
+      '@astryxdesign/core@0.2.0': true,
+      'esbuild@0.28.1': true,
+      'fsevents@2.3.2': false,
+      'fsevents@2.3.3': false,
+      'workerd@1.20260730.1': true,
     })
 
-    for (const [packageName, version] of Object.entries(reviewedInstallScripts)) {
-      expect(manifest.allowScripts[`${packageName}@${version}`]).toBe(true)
-      expect(lockfile.packages[`node_modules/${packageName}`].version).toBe(version)
+    for (const entry of Object.keys(manifest.allowScripts)) {
+      const separator = entry.lastIndexOf('@')
+      const packageName = entry.slice(0, separator)
+      const version = entry.slice(separator + 1)
+      const packagePathSuffix = `node_modules/${packageName}`
+      expect(Object.entries(lockfile.packages).some(([packagePath, metadata]) => (
+        (packagePath === packagePathSuffix || packagePath.endsWith(`/${packagePathSuffix}`))
+        && metadata.version === version
+      ))).toBe(true)
     }
   })
 
@@ -113,5 +122,7 @@ describe('local and release scripts', () => {
     expect(manifest.scripts['test:e2e:guard']).toBe('node scripts/check-e2e-source.mjs')
     expect(manifest.scripts['test:e2e:stability']).toBeUndefined()
     expect(manifest.scripts.check).toContain('npm run test:e2e:guard')
+    expect(manifest.scripts.check).toContain('npm run notices:check')
+    expect(manifest.scripts['notices:check']).toBe('node scripts/check-third-party-notices.mjs')
   })
 })

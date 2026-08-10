@@ -19,9 +19,9 @@ export const E2E_SCENARIOS: readonly E2EScenario[] = Object.freeze([
   ...numbered('EVT-M', 2, 'mobile'),
   ...numbered('PLY-D', 9, 'desktop'),
   ...numbered('PLY-M', 5, 'mobile'),
-  ...numbered('A11-D', 7, 'desktop'),
+  ...numbered('A11-D', 8, 'desktop'),
   ...numbered('A11-M', 2, 'mobile'),
   { id: 'A11-B-01', audience: 'both' },
-  ...numbered('SPO-D', 4, 'desktop'),
+  ...numbered('SPO-D', 5, 'desktop'),
   ...numbered('SPO-M', 1, 'mobile'),
 ])
