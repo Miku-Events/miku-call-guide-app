@@ -20,6 +20,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      # Repository squash merge messages are configured without PR bodies.
+      - name: Reject workflow skip instructions in pull request title
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PULL_REQUEST_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s\n' "$PULL_REQUEST_TITLE" | grep -Fqi \
+            -e '[skip ci]' \
+            -e '[ci skip]' \
+            -e '[no ci]' \
+            -e '[skip actions]' \
+            -e '[actions skip]'; then
+            echo '::error::Pull request titles must not contain GitHub Actions skip instructions.'
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

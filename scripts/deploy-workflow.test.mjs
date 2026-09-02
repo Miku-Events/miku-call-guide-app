@@ -52,6 +52,49 @@ describe('production deployment workflow', () => {
     )
   })
 
+  it('rejects GitHub Actions skip instructions from pull request titles', async () => {
+    const workflow = await deploymentWorkflow()
+    const qualityJob = workflow.slice(
+      workflow.indexOf('\n  quality:'),
+      workflow.indexOf('\n  compatibility:'),
+    )
+    const guardStart = qualityJob.indexOf(
+      'name: Reject workflow skip instructions in pull request title',
+    )
+    const guardEnd = qualityJob.indexOf('\n      - name: Checkout repository')
+    const guard = qualityJob.slice(guardStart, guardEnd)
+    const guardRun = guard.slice(guard.indexOf('\n        run: |'))
+    const skipKeywords = [...guard.matchAll(/-e '(\[[^']+\])'/g)]
+      .map(([, keyword]) => keyword)
+    const titleIsBlocked = (title) => skipKeywords.some(
+      (keyword) => title.toLowerCase().includes(keyword),
+    )
+
+    expect(guardStart).toBeGreaterThan(-1)
+    expect(guardEnd).toBeGreaterThan(guardStart)
+    expect(guard).toContain("if: github.event_name == 'pull_request'")
+    expect(guard).toContain('PULL_REQUEST_TITLE: ${{ github.event.pull_request.title }}')
+    expect(guard).toContain('grep -Fqi')
+    expect(guardRun).toContain('"$PULL_REQUEST_TITLE"')
+    expect(guardRun).not.toContain('${{')
+    expect(skipKeywords).toEqual([
+      '[skip ci]',
+      '[ci skip]',
+      '[no ci]',
+      '[skip actions]',
+      '[actions skip]',
+    ])
+    for (const keyword of skipKeywords) {
+      expect(titleIsBlocked(`Release ${keyword.toUpperCase()} guard`)).toBe(true)
+    }
+    expect(titleIsBlocked('Document how to skip CI locally')).toBe(false)
+    expect(titleIsBlocked('Fix [skip cider] parsing')).toBe(false)
+    expect(workflow).not.toContain('github.event.pull_request.body')
+    expect(workflow).toContain(
+      '# Repository squash merge messages are configured without PR bodies.',
+    )
+  })
+
   it('validates only the vendored contract provenance and never checks out another repository', async () => {
     const workflow = await deploymentWorkflow()
 
