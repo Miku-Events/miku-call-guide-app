@@ -44,11 +44,19 @@ describe('static Cloudflare Pages headers', () => {
     expect(headers).toContain('https://fonts.gstatic.com')
   })
 
-  it('does not allow analytics or tag-manager endpoints', () => {
+  it('allows only the Google Tag Gateway scripts and health endpoint', () => {
     const headers = generateStaticHeaders(environment)
+    const scripts = directive(headers, 'script-src')
+    const connections = directive(headers, 'connect-src')
 
-    expect(headers).not.toMatch(/cloudflareinsights|google-analytics|googletagmanager/i)
-    expect(directive(headers, 'script-src')).not.toContain("'unsafe-inline'")
+    expect(scripts).toContain("'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU='")
+    expect(scripts).toContain("'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='")
+    expect(scripts).toContain('https://www.googletagmanager.com/gtag/js')
+    expect(connections).toContain('https://www.google-analytics.com/g/s/collect')
+    expect(headers).not.toContain('https://www.googletagmanager.com ')
+    expect(headers).not.toContain('https://www.google-analytics.com ')
+    expect(headers).not.toMatch(/cloudflareinsights/i)
+    expect(scripts).not.toContain("'unsafe-inline'")
   })
 
   it('emits the required static response security headers', () => {

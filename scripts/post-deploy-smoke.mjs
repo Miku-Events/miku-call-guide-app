@@ -10,6 +10,9 @@ import {
   validateRuntimeSong,
 } from '../data-contracts/validators.mjs'
 import {
+  GOOGLE_TAG_GATEWAY_HEALTH_COLLECT_URL,
+  GOOGLE_TAG_GATEWAY_HEALTH_SCRIPT_URL,
+  GOOGLE_TAG_GATEWAY_INLINE_SCRIPT_HASHES,
   TURNSTILE_ORIGIN,
   X_ORIGINS,
   YOUTUBE_FRAME_ORIGINS,
@@ -32,6 +35,8 @@ const IMMUTABLE_DEPLOYMENT_ORIGIN_PATTERN = (
 )
 const STATIC_SCRIPT_ALLOWLIST = new Set([
   "'self'",
+  ...GOOGLE_TAG_GATEWAY_INLINE_SCRIPT_HASHES,
+  GOOGLE_TAG_GATEWAY_HEALTH_SCRIPT_URL,
   TURNSTILE_ORIGIN,
   ...YOUTUBE_SCRIPT_ORIGINS,
   ...X_ORIGINS,
@@ -269,6 +274,7 @@ function assertStaticCsp(csp, label, { appOrigin, dataOrigin }) {
     ['connect-src', unique([
       "'self'",
       dataOrigin,
+      GOOGLE_TAG_GATEWAY_HEALTH_COLLECT_URL,
       TURNSTILE_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,

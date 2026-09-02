@@ -6,6 +6,10 @@ import {
   assertStaticSecurityHeaders,
   requiredReleaseId,
 } from './post-deploy-smoke.mjs'
+import {
+  GOOGLE_TAG_GATEWAY_MEASUREMENT_ID,
+  GOOGLE_TAG_GATEWAY_PATH,
+} from './static-csp-sources.mjs'
 
 const DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS = 25
 const DEFAULT_DEPLOYMENT_PROPAGATION_RETRY_DELAY_MS = 5_000
@@ -242,6 +246,36 @@ export function appAssetFailure(response, surfaceOrigin) {
   return `${url.href} returned HTTP ${status} with content-type ${contentType || '(missing)'}`
 }
 
+export function isGoogleTagGatewayMeasurementResponse({
+  method,
+  postData = '',
+  status,
+  url: rawUrl,
+}, surfaceOrigin) {
+  let url
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return false
+  }
+  if (
+    url.origin !== surfaceOrigin
+    || !url.pathname.startsWith(GOOGLE_TAG_GATEWAY_PATH)
+    || method !== 'POST'
+    || status < 200
+    || status >= 300
+  ) {
+    return false
+  }
+  const urlHasMeasurementId = url.searchParams.getAll('tid')
+    .includes(GOOGLE_TAG_GATEWAY_MEASUREMENT_ID)
+  const bodyHasMeasurementId = postData
+    .split(/\r?\n/)
+    .some((line) => new URLSearchParams(line).getAll('tid')
+      .includes(GOOGLE_TAG_GATEWAY_MEASUREMENT_ID))
+  return urlHasMeasurementId || bodyHasMeasurementId
+}
+
 export function initialDocumentDeliveryFailure(response, label) {
   if (!response) return ''
   return deploymentHttpStatusFailure(response.status(), label)
@@ -382,6 +416,7 @@ async function runBrowserSmoke({
     const cspViolations = []
     const pageErrors = []
     const assetFailures = []
+    let tagGatewayMeasurementSeen = false
     let firstAssetFailureState = null
     let resolveFirstAssetFailure
     const firstAssetFailure = new Promise((resolve) => {
@@ -400,6 +435,15 @@ async function runBrowserSmoke({
     })
     page.on('pageerror', (error) => pageErrors.push(error.message))
     page.on('response', (response) => {
+      const request = response.request()
+      if (isGoogleTagGatewayMeasurementResponse({
+        method: request.method(),
+        postData: request.postData() || '',
+        status: response.status(),
+        url: response.url(),
+      }, normalizedSurfaceOrigin)) {
+        tagGatewayMeasurementSeen = true
+      }
       recordAssetFailure(
         appAssetFailure(response, normalizedSurfaceOrigin),
         response.status() === 404,
@@ -531,6 +575,11 @@ async function runBrowserSmoke({
       throw new Failure(`Browser smoke asset failures:\n${assetFailures.join('\n')}`)
     }
     assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
+    if (!requirePagesDev && !tagGatewayMeasurementSeen) {
+      throw new Error(
+        `Google Tag Gateway did not send a successful first-party measurement through ${GOOGLE_TAG_GATEWAY_PATH}`,
+      )
+    }
     await assertReleaseMarker(
       context.request,
       normalizedSurfaceOrigin,

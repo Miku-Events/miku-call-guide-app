@@ -1,4 +1,7 @@
 import {
+  GOOGLE_TAG_GATEWAY_HEALTH_COLLECT_URL,
+  GOOGLE_TAG_GATEWAY_HEALTH_SCRIPT_URL,
+  GOOGLE_TAG_GATEWAY_INLINE_SCRIPT_HASHES,
   TURNSTILE_ORIGIN,
   X_ORIGINS,
   YOUTUBE_FRAME_ORIGINS,
@@ -52,12 +55,15 @@ export function generateStaticHeaders(environment) {
       "'self'",
       dataOrigin,
       submissionOrigin,
+      GOOGLE_TAG_GATEWAY_HEALTH_COLLECT_URL,
       TURNSTILE_ORIGIN,
       ...YOUTUBE_FRAME_ORIGINS,
       ...X_ORIGINS,
     ]),
     joinDirective('script-src', [
       "'self'",
+      ...GOOGLE_TAG_GATEWAY_INLINE_SCRIPT_HASHES,
+      GOOGLE_TAG_GATEWAY_HEALTH_SCRIPT_URL,
       TURNSTILE_ORIGIN,
       ...YOUTUBE_SCRIPT_ORIGINS,
       ...X_ORIGINS,

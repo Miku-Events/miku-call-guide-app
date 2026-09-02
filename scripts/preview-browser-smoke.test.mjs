@@ -11,6 +11,7 @@ import {
   deploymentHttpStatusFailure,
   formatPreviewSmokeReport,
   initialDocumentDeliveryFailure,
+  isGoogleTagGatewayMeasurementResponse,
   withDeploymentPropagationRetry,
   waitForRouteReady,
 } from './preview-browser-smoke.mjs'
@@ -188,6 +189,40 @@ describe('preview browser smoke diagnostics', () => {
       200,
       'application/javascript',
     ), 'https://miku.sekai.today')).toBe('')
+  })
+
+  it('recognizes a successful first-party Google Tag Gateway measurement', () => {
+    const response = {
+      method: 'POST',
+      postData: '',
+      status: 204,
+      url: 'https://miku.sekai.today/825i/ga/g/c?tid=G-M2VJDBEYN0',
+    }
+
+    expect(isGoogleTagGatewayMeasurementResponse(
+      response,
+      'https://miku.sekai.today',
+    )).toBe(true)
+    expect(isGoogleTagGatewayMeasurementResponse(
+      { ...response, url: 'https://miku.sekai.today/825i/ga/g/c', postData: 'tid=G-M2VJDBEYN0' },
+      'https://miku.sekai.today',
+    )).toBe(true)
+  })
+
+  it.each([
+    ['another origin', { url: 'https://www.google-analytics.com/g/s/collect?tid=G-M2VJDBEYN0' }],
+    ['a non-POST request', { method: 'GET' }],
+    ['a failed response', { status: 400 }],
+    ['a request without the configured measurement id', { url: 'https://miku.sekai.today/825i/ga/g/c' }],
+    ['an unrelated query value', { url: 'https://miku.sekai.today/825i/ga/g/c?note=G-M2VJDBEYN0' }],
+  ])('rejects Google Tag Gateway activity from %s', (_label, override) => {
+    expect(isGoogleTagGatewayMeasurementResponse({
+      method: 'POST',
+      postData: '',
+      status: 204,
+      url: 'https://miku.sekai.today/825i/ga/g/c?tid=G-M2VJDBEYN0',
+      ...override,
+    }, 'https://miku.sekai.today')).toBe(false)
   })
 
   it('classifies only an initial HTTP 404 as Pages deployment propagation', () => {

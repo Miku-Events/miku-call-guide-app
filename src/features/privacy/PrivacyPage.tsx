@@ -2,8 +2,6 @@ import { useEffect } from 'react'
 import { AppPageShell } from '../../shared/layout/AppPageShell'
 import './privacy.css'
 
-const PRIVACY_CONTACT = '***REMOVED***'
-
 export function PrivacyPage() {
   useEffect(() => {
     document.title = '개인정보 처리 안내 - 하츠네 미쿠 콜 가이드'
@@ -20,8 +18,8 @@ export function PrivacyPage() {
     >
       <article className="privacy-content">
         <p className="privacy-lead">
-          카탈로그와 이벤트 일정 조회에는 로그인이 필요하지 않습니다. 아래 정보는 일정 제보나
-          수정 요청 기능을 이용할 때만 처리됩니다.
+          카탈로그와 이벤트 일정 조회에는 로그인이 필요하지 않습니다. 공식 사이트에서는 모든 페이지의
+          방문 통계를 처리하며, GitHub 계정 정보는 일정 제보나 수정 요청 기능을 이용할 때만 처리됩니다.
         </p>
 
         <section aria-labelledby="privacy-session">
@@ -46,15 +44,14 @@ export function PrivacyPage() {
           <h2 id="privacy-processors">외부 처리 서비스</h2>
           <p>
             Cloudflare는 앱 호스팅, 네트워크 보안과 요청 처리를 제공하고, Turnstile은 제출 시 자동화된
-            남용을 확인합니다. 이 앱은 사용자 행동 분석 도구를 사용하지 않습니다.
+            남용을 확인합니다.
           </p>
-        </section>
-
-        <section aria-labelledby="privacy-contact">
-          <h2 id="privacy-contact">삭제·개인정보·보안 문의</h2>
           <p>
-            저장된 제출 정보의 확인 또는 삭제와 개인정보·보안 문의는{' '}
-            <a href={`mailto:${PRIVACY_CONTACT}`}>{PRIVACY_CONTACT}</a>로 보내 주세요.
+            방문·이용 통계를 위해 Google Analytics를 사용합니다. Google Analytics는 방문 페이지,
+            유입 경로, 브라우저·기기 정보와 IP 기반의 대략적인 지역을 처리하며, <code>_ga</code> 계열
+            쿠키를 <code>.sekai.today</code> 범위에 설정할 수 있습니다. 주요 측정 요청은 Cloudflare
+            Google Tag Gateway를 거쳐 Google로 전달되며, 태그 상태 확인 요청은 Google로 직접 전송될
+            수 있습니다.
           </p>
         </section>
       </article>
