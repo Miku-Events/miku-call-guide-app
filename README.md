@@ -45,7 +45,6 @@ Functions나 사용자 흐름을 변경할 때 필요한 추가 검증은 [CONTR
 ## 관련 문서
 
 - [기여 안내](CONTRIBUTING.md)
-- [보안 정책](SECURITY.md)
 - [행동강령](CODE_OF_CONDUCT.md)
 - [운영 보안 설정](docs/operations-security.md)
 

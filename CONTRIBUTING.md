@@ -36,5 +36,4 @@ right to submit it. Contributors retain copyright in their contributions.
 The repository itself has no outbound reuse license. A contribution does not license unrelated
 contributions or third-party assets.
 
-Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report suspected vulnerabilities through
-[SECURITY.md](SECURITY.md), not a public issue.
+Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

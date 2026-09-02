@@ -18,12 +18,13 @@
 
 - [ ] production Turnstile hostname과 GitHub OAuth callback을 `miku.sekai.today`로 제한합니다.
 - [ ] GitHub App은 private data 저장소 하나에 Contents/PR/Issues write와 Metadata read만 가집니다.
-- [ ] Web Analytics, Tag Gateway, Zaraz, 자동 JavaScript 삽입과 HTML 변환/cache rule은 끕니다.
+- [ ] Google Tag Gateway는 `G-M2VJDBEYN0`, `/825i`, `hideOriginalIp=true`, `setUpTag=true`로 유지합니다.
+- [ ] Web Analytics, Zaraz와 그 밖의 자동 JavaScript 삽입·HTML 변환 rule은 끕니다.
 
 ## 남용 대응
 
 - [ ] `ops/cloudflare/waf-rate-limit-rule.json`을 custom zone에 적용하고, 동일 IP의 1–10번째 요청은
-  허용, 11번째는 JSON 429, 10초 뒤 복구되는지 확인합니다.
+  허용, 11번째는 Cloudflare 기본 429, 10초 뒤 복구되는지 확인합니다.
 - [ ] `pages.dev`에는 WAF가 적용된다고 가정하지 않고 앱의 origin/preview 차단을 별도로 확인합니다.
 - [ ] 24시간 내 유효 제출 20건 초과, 1시간 내 rollback 실패 5건 초과, 또는 GitHub quota 20% 미만이면
   WAF와 `SUBMISSION_WRITES_ENABLED=false`로 쓰기를 중단합니다. D1/DO 도입 전에는 재개하지 않습니다.
@@ -37,8 +38,8 @@
   `Quality and build`, `Node 24 compatibility`, `Built-artifact E2E` required checks를 적용합니다.
 - [ ] GitHub-owned Actions와 `cloudflare/wrangler-action`만 허용하고 full SHA, read-only token,
   외부 contributor 실행 승인을 강제합니다.
-- [ ] dependency graph, Dependabot, Secret Scanning/Push Protection, private vulnerability reporting과
-  CodeQL을 켭니다. CodeQL 첫 성공 뒤 required check에 추가합니다.
+- [ ] dependency graph, Dependabot, Secret Scanning/Push Protection과 CodeQL을 켭니다.
+  CodeQL 첫 성공 뒤 required check에 추가합니다.
 - [ ] squash merge와 merge 후 branch 삭제를 켭니다.
 
 ## 확인
@@ -47,4 +48,3 @@
 - [ ] 자동 smoke에서 alias redirect, custom/immutable auth 정책, readiness, 대표 데이터 leaf,
   preview read-only UI, 보안 헤더와 release marker가 모두 통과해야 합니다.
 - [ ] 제출자 login은 private PR/Issue에만 있고 YAML에는 없는지 표본 확인합니다.
-- [ ] 개인정보·보안 연락처가 `***REMOVED***`인지 확인합니다.

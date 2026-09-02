@@ -4,10 +4,6 @@ title: "[Bug]: "
 labels:
   - bug
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Do not report security vulnerabilities, credentials, or private personal information here. Follow SECURITY.md instead.
   - type: textarea
     id: behavior
     attributes:
