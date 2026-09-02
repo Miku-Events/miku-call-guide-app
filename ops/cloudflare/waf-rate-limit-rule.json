@@ -1,12 +1,5 @@
 {
   "action": "block",
-  "action_parameters": {
-    "response": {
-      "content": "{\"error\":\"rate_limited\"}",
-      "content_type": "application/json",
-      "status_code": 429
-    }
-  },
   "description": "Miku Call Guide auth, submission, and readiness burst guard",
   "enabled": true,
   "expression": "(starts_with(http.request.uri.path, \"/api/auth/\") or starts_with(http.request.uri.path, \"/api/events/\") or http.request.uri.path eq \"/api/ready\")",

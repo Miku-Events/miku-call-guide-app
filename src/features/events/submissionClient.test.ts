@@ -102,9 +102,9 @@ describe('submission client HTTP contract', () => {
 
   it('distinguishes a request-ID-less WAF rate limit response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
-      JSON.stringify({ error: 'rate_limited' }),
+      'Too many requests',
       {
-        headers: { 'content-type': 'application/json', 'retry-after': '10' },
+        headers: { 'content-type': 'text/plain; charset=UTF-8', 'retry-after': '10' },
         status: 429,
       },
     )))

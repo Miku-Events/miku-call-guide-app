@@ -11,13 +11,6 @@ describe('Cloudflare public-release WAF contract', () => {
 
     expect(value).toMatchObject({
       action: 'block',
-      action_parameters: {
-        response: {
-          content: '{"error":"rate_limited"}',
-          content_type: 'application/json',
-          status_code: 429,
-        },
-      },
       enabled: true,
       ratelimit: {
         characteristics: ['cf.colo.id', 'ip.src'],
@@ -27,6 +20,7 @@ describe('Cloudflare public-release WAF contract', () => {
       },
       ref: 'miku-call-guide-api-burst-v1',
     })
+    expect(value).not.toHaveProperty('action_parameters')
     expect(value.expression).toContain('/api/auth/')
     expect(value.expression).toContain('/api/events/')
     expect(value.expression).toContain('/api/ready')
