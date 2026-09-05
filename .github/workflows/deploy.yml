@@ -58,6 +58,7 @@ jobs:
           PRODUCTION_APP_ORIGIN: ${{ vars.VITE_APP_ORIGIN }}
           PRODUCTION_DATA_MANIFEST_URL: ${{ vars.VITE_DATA_MANIFEST_URL }}
           PRODUCTION_TURNSTILE_SITE_KEY: ${{ vars.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY }}
+          PRODUCTION_WEB_ANALYTICS_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN || '' }}
         run: |
           echo "VITE_RELEASE_ID=$GITHUB_SHA" >> "$GITHUB_ENV"
           if [[ "$PRODUCTION_RELEASE" != "true" ]]; then
@@ -73,6 +74,8 @@ jobs:
           node scripts/validate-production-build-env.mjs >> "$GITHUB_ENV"
 
       - name: Run quality checks and build
+        env:
+          VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN || '' }}
         run: npm run check
 
       - name: Build Pages Functions

@@ -18,8 +18,15 @@
 
 - [ ] production Turnstile hostname과 GitHub OAuth callback을 `miku.sekai.today`로 제한합니다.
 - [ ] GitHub App은 private data 저장소 하나에 Contents/PR/Issues write와 Metadata read만 가집니다.
-- [ ] Google Tag Gateway는 `G-M2VJDBEYN0`, `/825i`, `hideOriginalIp=true`, `setUpTag=true`로 유지합니다.
-- [ ] Web Analytics, Zaraz와 그 밖의 자동 JavaScript 삽입·HTML 변환 rule은 끕니다.
+- [ ] 분석 수집 수동 전환 전에 정식 사이트의 공개 토큰을 발급받거나 확인합니다.
+- [ ] 이 앱의 기존 Google·게이트웨이 주입을 끕니다.
+- [ ] Pages one-click 및 겹치는 자동 주입을 끕니다.
+- [ ] `miku.sekai.today`만 대상으로 Cloudflare Web Analytics 수동 설정을 등록합니다.
+- [ ] production release에만 연결되는 공개 repository variable `VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN`에 정식 사이트의 공개 토큰을 설정합니다.
+- [ ] 배포한 뒤 preview에는 beacon이 생성되지 않고 production에는 정확히 1개의 manual beacon script와 성공한 RUM POST가 최소 1회 발생하는지 확인합니다.
+
+위 순서는 외부 사전 조건과 검증 절차이며, 저장소 변경은 Cloudflare Dashboard 설정을 변경하지 않습니다.
+`miku.sekai.today` 외 다른 subdomain은 범위 밖입니다.
 
 ## 남용 대응
 
@@ -47,4 +54,3 @@
 - [ ] quality/functions/E2E/high audit/signature gate가 모두 통과해야 합니다.
 - [ ] 자동 smoke에서 alias redirect, custom/immutable auth 정책, readiness, 대표 데이터 leaf,
   preview read-only UI, 보안 헤더와 release marker가 모두 통과해야 합니다.
-- [ ] 제출자 login은 private PR/Issue에만 있고 YAML에는 없는지 표본 확인합니다.

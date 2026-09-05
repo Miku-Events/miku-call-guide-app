@@ -1,17 +1,11 @@
 export const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
 
-export const GOOGLE_TAG_GATEWAY_MEASUREMENT_ID = 'G-M2VJDBEYN0'
-export const GOOGLE_TAG_GATEWAY_PATH = '/825i/'
-export const GOOGLE_TAG_GATEWAY_HEALTH_SCRIPT_URL = (
-  'https://www.googletagmanager.com/gtag/js'
+export const CLOUDFLARE_WEB_ANALYTICS_BEACON_URL = (
+  'https://static.cloudflareinsights.com/beacon.min.js'
 )
-export const GOOGLE_TAG_GATEWAY_HEALTH_COLLECT_URL = (
-  'https://www.google-analytics.com/g/s/collect'
+export const CLOUDFLARE_WEB_ANALYTICS_RUM_URL = (
+  'https://cloudflareinsights.com/cdn-cgi/rum'
 )
-export const GOOGLE_TAG_GATEWAY_INLINE_SCRIPT_HASHES = Object.freeze([
-  "'sha256-hVajfYfCCiKE0tyiHJsO6QZ7neDSGvNU29XVzmGcyAU='",
-  "'sha256-UxvldURLmbwK98B86I+nlncBxT8RepUWLzN0DTl03tk='",
-])
 
 export const YOUTUBE_SCRIPT_ORIGINS = Object.freeze([
   'https://www.youtube.com',

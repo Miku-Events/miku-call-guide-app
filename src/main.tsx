@@ -6,9 +6,17 @@ import { Theme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
 import { LinkProvider } from '@astryxdesign/core/Link'
 import { HashRouterSkipLinkGuard } from './shared/layout/HashRouterSkipLinkGuard'
+import { initializeCloudflareWebAnalytics } from './shared/analytics/cloudflareWebAnalytics'
 import { preloadInitialCatalogRoute } from './features/catalog/preloadCatalogRoute'
 import './index.css'
 import App from './App.tsx'
+
+initializeCloudflareWebAnalytics({
+  document,
+  origin: window.location.origin,
+  productionRelease: import.meta.env.PROD,
+  token: import.meta.env.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN,
+})
 
 preloadInitialCatalogRoute()
 

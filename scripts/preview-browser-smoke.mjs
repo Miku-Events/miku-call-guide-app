@@ -7,15 +7,23 @@ import {
   requiredReleaseId,
 } from './post-deploy-smoke.mjs'
 import {
-  GOOGLE_TAG_GATEWAY_MEASUREMENT_ID,
-  GOOGLE_TAG_GATEWAY_PATH,
+  CLOUDFLARE_WEB_ANALYTICS_BEACON_URL,
+  CLOUDFLARE_WEB_ANALYTICS_RUM_URL,
 } from './static-csp-sources.mjs'
 
 const DEFAULT_DEPLOYMENT_PROPAGATION_ATTEMPTS = 25
 const DEFAULT_DEPLOYMENT_PROPAGATION_RETRY_DELAY_MS = 5_000
 const DEFAULT_BROWSER_PROPAGATION_DEADLINE_MS = 120_000
+const ANALYTICS_OBSERVATION_TIMEOUT_MS = 15_000
 const BROWSER_DEPLOYMENT_PROPAGATION_ERROR_CODE = 'BROWSER_DEPLOYMENT_PROPAGATION'
+const CLOUDFLARE_BEACON_TOKEN_PATTERN = /^[a-f0-9]{32}$/
 export const BROWSER_SMOKE_ROUTES = Object.freeze(['/', '/#/events', '/#/songs/39-music'])
+
+export function assertBuiltArtifactResponse(expected, delivered) {
+  if (!expected?.length || !Buffer.from(expected).equals(Buffer.from(delivered))) {
+    throw new Error('Browser response does not match the current built artifact')
+  }
+}
 
 export async function acknowledgeInitialSpoilerDisclaimer(page) {
   const dialog = page.getByRole('alertdialog', { name: '스포일러 안내' })
@@ -246,34 +254,188 @@ export function appAssetFailure(response, surfaceOrigin) {
   return `${url.href} returned HTTP ${status} with content-type ${contentType || '(missing)'}`
 }
 
-export function isGoogleTagGatewayMeasurementResponse({
-  method,
-  postData = '',
-  status,
-  url: rawUrl,
-}, surfaceOrigin) {
+function parsedUrl(rawUrl) {
   let url
   try {
     url = new URL(rawUrl)
   } catch {
+    return null
+  }
+  return url
+}
+
+function isGoogleAnalyticsHost(hostname) {
+  return hostname === 'google-analytics.com'
+    || hostname.endsWith('.google-analytics.com')
+    || hostname === 'googletagmanager.com'
+    || hostname.endsWith('.googletagmanager.com')
+}
+
+function isSuccessfulStatus(status) {
+  return Number.isInteger(status) && status >= 200 && status < 300
+}
+
+function hasPublicBeaconConfiguration(value) {
+  if (typeof value !== 'string' || value.length === 0) return false
+  try {
+    const configuration = JSON.parse(value)
+    return configuration !== null
+      && typeof configuration === 'object'
+      && !Array.isArray(configuration)
+      && Object.keys(configuration).length === 1
+      && typeof configuration.token === 'string'
+      && CLOUDFLARE_BEACON_TOKEN_PATTERN.test(configuration.token)
+  } catch {
     return false
   }
+}
+
+function isExactUrl(rawUrl, expectedUrl) {
+  const url = parsedUrl(rawUrl)
+  return url?.href === expectedUrl
+}
+
+function isExactRumUrl(rawUrl) {
+  return isExactUrl(rawUrl, CLOUDFLARE_WEB_ANALYTICS_RUM_URL)
+}
+
+function isCloudflareAnalyticsScriptUrl(rawUrl) {
+  const url = parsedUrl(rawUrl)
+  return url?.hostname === 'static.cloudflareinsights.com'
+}
+
+export function classifyAnalyticsRequest({ url: rawUrl }, surfaceOrigin) {
+  const url = parsedUrl(rawUrl)
+  if (!url) return null
   if (
-    url.origin !== surfaceOrigin
-    || !url.pathname.startsWith(GOOGLE_TAG_GATEWAY_PATH)
-    || method !== 'POST'
-    || status < 200
-    || status >= 300
+    isGoogleAnalyticsHost(url.hostname)
+    || (url.origin === surfaceOrigin && url.pathname.startsWith('/825i/ga/'))
   ) {
-    return false
+    return { kind: 'obsolete-google', url: url.href }
   }
-  const urlHasMeasurementId = url.searchParams.getAll('tid')
-    .includes(GOOGLE_TAG_GATEWAY_MEASUREMENT_ID)
-  const bodyHasMeasurementId = postData
-    .split(/\r?\n/)
-    .some((line) => new URLSearchParams(line).getAll('tid')
-      .includes(GOOGLE_TAG_GATEWAY_MEASUREMENT_ID))
-  return urlHasMeasurementId || bodyHasMeasurementId
+  if (url.hostname === 'static.cloudflareinsights.com') {
+    return {
+      kind: isExactUrl(url.href, CLOUDFLARE_WEB_ANALYTICS_BEACON_URL)
+        ? 'cloudflare-beacon'
+        : 'cloudflare-beacon-invalid',
+      url: url.href,
+    }
+  }
+  if (url.hostname === 'cloudflareinsights.com') {
+    return {
+      kind: isExactRumUrl(url.href) ? 'cloudflare-rum' : 'cloudflare-rum-invalid',
+      url: url.href,
+    }
+  }
+  return null
+}
+
+function describeAnalyticsObservation(observation) {
+  const status = observation.status === undefined ? '' : ` returned HTTP ${observation.status}`
+  const failure = observation.failure ? ' failed (CORS/CSP/network)' : ''
+  return `${observation.kind} ${observation.method || 'UNKNOWN'}${status}${failure}`
+}
+
+function analyticsCspViolations(cspViolations, surfaceOrigin) {
+  return cspViolations.filter((violation) => {
+    const blockedUrl = parsedUrl(violation?.blockedURI)
+    return blockedUrl !== null && classifyAnalyticsRequest({ url: blockedUrl.href }, surfaceOrigin) !== null
+  })
+}
+
+function isCloudflareAnalyticsObservation(observation) {
+  return observation.kind === 'cloudflare-beacon'
+    || observation.kind === 'cloudflare-beacon-invalid'
+    || observation.kind === 'cloudflare-rum'
+    || observation.kind === 'cloudflare-rum-invalid'
+}
+
+function successfulAnalyticsResponse(observation, { method, url, kind }) {
+  return observation.kind === kind
+    && observation.method === method
+    && observation.url === url
+    && observation.responseUrl === url
+    && !observation.failure
+    && isSuccessfulStatus(observation.status)
+}
+
+export function assertCloudflareWebAnalyticsContract({
+  cspViolations = [],
+  isPreview,
+  observations = [],
+  scripts = [],
+  surfaceOrigin,
+} = {}) {
+  const failures = []
+  const cloudflareScripts = scripts.filter((script) => isCloudflareAnalyticsScriptUrl(script?.src))
+  const obsoleteScripts = scripts.filter((script) => (
+    classifyAnalyticsRequest({ url: script?.src }, surfaceOrigin)?.kind === 'obsolete-google'
+  ))
+  const cloudflareObservations = observations.filter(isCloudflareAnalyticsObservation)
+  const obsoleteObservations = observations.filter((observation) => observation.kind === 'obsolete-google')
+
+  if (obsoleteScripts.length > 0 || obsoleteObservations.length > 0) {
+    failures.push('All surfaces must reject obsolete Google or Tag Gateway analytics activity')
+  }
+
+  if (isPreview) {
+    if (cloudflareScripts.length > 0 || cloudflareObservations.length > 0) {
+      failures.push('Preview must not attempt Cloudflare Web Analytics')
+    }
+  } else {
+    if (cloudflareScripts.length !== 1) {
+      failures.push(`Production must contain exactly one Cloudflare beacon script; found ${cloudflareScripts.length}`)
+    } else {
+      const [script] = cloudflareScripts
+      if (script.src !== CLOUDFLARE_WEB_ANALYTICS_BEACON_URL) {
+        failures.push(`Cloudflare beacon script must use ${CLOUDFLARE_WEB_ANALYTICS_BEACON_URL}`)
+      }
+      if (script.type !== 'module') {
+        failures.push('Cloudflare beacon script must have type=module')
+      }
+      if (!hasPublicBeaconConfiguration(script.dataCfBeacon)) {
+        failures.push('Cloudflare beacon script must carry a public data-cf-beacon token configuration')
+      }
+    }
+
+    for (const observation of cloudflareObservations) {
+      if (observation.kind.endsWith('-invalid')
+        || (observation.responseUrl && observation.responseUrl !== observation.url)) {
+        failures.push(`Cloudflare analytics used an unexpected endpoint: ${describeAnalyticsObservation(observation)}`)
+      } else if (observation.failure) {
+        failures.push(`Cloudflare analytics network failure: ${describeAnalyticsObservation(observation)}`)
+      } else if (observation.status !== undefined && !isSuccessfulStatus(observation.status)) {
+        failures.push(`Cloudflare analytics unsuccessful response: ${describeAnalyticsObservation(observation)}`)
+      } else if (observation.method !== (observation.kind === 'cloudflare-beacon' ? 'GET' : 'POST')) {
+        failures.push(`Cloudflare analytics unexpected method: ${describeAnalyticsObservation(observation)}`)
+      } else if (observation.status === undefined) {
+        failures.push(`Cloudflare analytics request did not complete: ${describeAnalyticsObservation(observation)}`)
+      }
+    }
+
+    if (!cloudflareObservations.some((observation) => successfulAnalyticsResponse(observation, {
+      kind: 'cloudflare-beacon',
+      method: 'GET',
+      url: CLOUDFLARE_WEB_ANALYTICS_BEACON_URL,
+    }))) {
+      failures.push('Cloudflare beacon script did not fetch successfully from its exact URL')
+    }
+    if (!cloudflareObservations.some((observation) => successfulAnalyticsResponse(observation, {
+      kind: 'cloudflare-rum',
+      method: 'POST',
+      url: CLOUDFLARE_WEB_ANALYTICS_RUM_URL,
+    }))) {
+      failures.push('Cloudflare Web Analytics did not send a successful POST to the exact RUM endpoint')
+    }
+  }
+
+  for (const violation of analyticsCspViolations(cspViolations, surfaceOrigin)) {
+    failures.push(`Analytics CSP violation: ${violation.effectiveDirective || 'unknown directive'}`)
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Cloudflare Web Analytics contract failed:\n${failures.map((failure) => `- ${failure}`).join('\n')}`)
+  }
 }
 
 export function initialDocumentDeliveryFailure(response, label) {
@@ -381,7 +543,7 @@ async function assertReleaseMarker(request, surfaceOrigin, expectedReleaseId, la
   }
 }
 
-async function runBrowserSmoke({
+export async function runBrowserSmoke({
   appOrigin,
   browserType = chromium,
   dataManifestUrl,
@@ -416,7 +578,18 @@ async function runBrowserSmoke({
     const cspViolations = []
     const pageErrors = []
     const assetFailures = []
-    let tagGatewayMeasurementSeen = false
+    const analyticsObservations = new Map()
+    const analyticsScriptSnapshots = []
+    const isAnalyticsPreview = requirePagesDev || normalizedSurfaceOrigin !== normalizedAppOrigin
+    let notifyAnalytics = () => {}
+    const observeAnalytics = (request) => {
+      const classification = classifyAnalyticsRequest({ url: request.url() }, normalizedSurfaceOrigin)
+      if (!classification) return null
+      if (!analyticsObservations.has(request)) {
+        analyticsObservations.set(request, { ...classification, method: request.method() })
+      }
+      return analyticsObservations.get(request)
+    }
     let firstAssetFailureState = null
     let resolveFirstAssetFailure
     const firstAssetFailure = new Promise((resolve) => {
@@ -431,25 +604,34 @@ async function runBrowserSmoke({
       }
     }
     page.on('console', (message) => {
-      consoleDiagnostics.push({ type: message.type(), text: message.text() })
+      consoleDiagnostics.push({ type: message.type(), text: message.text().replace(/\b[a-f0-9]{32}\b/gi, '[redacted beacon token]') })
     })
     page.on('pageerror', (error) => pageErrors.push(error.message))
+    page.on('request', (request) => {
+      observeAnalytics(request)
+      notifyAnalytics()
+    })
     page.on('response', (response) => {
       const request = response.request()
-      if (isGoogleTagGatewayMeasurementResponse({
-        method: request.method(),
-        postData: request.postData() || '',
-        status: response.status(),
-        url: response.url(),
-      }, normalizedSurfaceOrigin)) {
-        tagGatewayMeasurementSeen = true
+      const observation = observeAnalytics(request)
+      if (observation) {
+        observation.responseUrl = response.url()
+        observation.responseStatus = response.status()
       }
       recordAssetFailure(
         appAssetFailure(response, normalizedSurfaceOrigin),
         response.status() === 404,
       )
     })
+    page.on('requestfinished', (request) => {
+      const observation = observeAnalytics(request)
+      if (observation) observation.status = observation.responseStatus
+      notifyAnalytics()
+    })
     page.on('requestfailed', (request) => {
+      const observation = observeAnalytics(request)
+      if (observation) observation.failure = request.failure()?.errorText || 'network failure'
+      notifyAnalytics()
       let url
       try {
         url = new URL(request.url())
@@ -488,10 +670,30 @@ async function runBrowserSmoke({
     try {
       for (const [index, route] of BROWSER_SMOKE_ROUTES.entries()) {
         const separator = route.includes('?') ? '&' : '?'
-        const response = await page.goto(
-          `${normalizedSurfaceOrigin}${route}${separator}browser-smoke=${encodeURIComponent(normalizedReleaseId)}`,
-          { waitUntil: 'domcontentloaded' },
-        )
+        let response = null
+        if (index === 0) {
+          response = await page.goto(
+            `${normalizedSurfaceOrigin}${route}${separator}browser-smoke=${encodeURIComponent(normalizedReleaseId)}`,
+            { waitUntil: 'domcontentloaded' },
+          )
+        } else if (route === '/#/events') {
+          await page.getByRole('navigation', { name: 'Main navigation' })
+            .getByRole('link', { name: 'Events', exact: true }).click()
+          await page.waitForURL((url) => url.hash === '#/events')
+        } else {
+          await page.goBack()
+          await waitForRouteReady(page)
+          await assertRouteDataHealthy(page, '/')
+          await page.goForward()
+          await waitForRouteReady(page)
+          await assertRouteDataHealthy(page, '/#/events')
+          await page.getByRole('navigation', { name: 'Main navigation' })
+            .getByRole('link', { name: 'Catalog', exact: true }).click()
+          await assertRouteDataHealthy(page, '/')
+          const songLink = page.locator('a.catalog-song-card[href="#/songs/39-music"]')
+          await songLink.click()
+          await page.waitForURL((url) => url.hash === '#/songs/39-music')
+        }
         const routeLabel = `${surfaceLabel} route ${route}`
         const navigationOptions = { requireResponse: index === 0 }
         const initialDeliveryFailure = index === 0
@@ -551,6 +753,11 @@ async function runBrowserSmoke({
           return violations
         })
         cspViolations.push(...routeViolations.map((violation) => ({ route, ...violation })))
+        analyticsScriptSnapshots.push(await page.evaluate(() => Array.from(document.scripts, (script) => ({
+          src: script.src,
+          type: script.type,
+          dataCfBeacon: script.getAttribute('data-cf-beacon'),
+        }))))
       }
     } catch (error) {
       const state = await browserFailureState(page)
@@ -574,11 +781,21 @@ async function runBrowserSmoke({
         : Error
       throw new Failure(`Browser smoke asset failures:\n${assetFailures.join('\n')}`)
     }
-    assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
-    if (!requirePagesDev && !tagGatewayMeasurementSeen) {
-      throw new Error(
-        `Google Tag Gateway did not send a successful first-party measurement through ${GOOGLE_TAG_GATEWAY_PATH}`,
-      )
+    if (!isAnalyticsPreview) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, ANALYTICS_OBSERVATION_TIMEOUT_MS)
+        notifyAnalytics = () => {
+          const observations = [...analyticsObservations.values()]
+          const failed = observations.some((item) => item.failure || item.kind.endsWith('-invalid') || item.kind === 'obsolete-google')
+          const completed = observations.length > 0 && observations.every((item) => item.status !== undefined)
+          const rumSeen = observations.some((item) => item.kind === 'cloudflare-rum' && item.status !== undefined)
+          if (failed || (completed && rumSeen)) {
+            clearTimeout(timer)
+            resolve()
+          }
+        }
+        notifyAnalytics()
+      })
     }
     await assertReleaseMarker(
       context.request,
@@ -586,6 +803,17 @@ async function runBrowserSmoke({
       normalizedReleaseId,
       surfaceLabel,
     )
+    analyticsScriptSnapshots.push(await page.evaluate(() => Array.from(document.scripts, (script) => ({
+      src: script.src, type: script.type, dataCfBeacon: script.getAttribute('data-cf-beacon'),
+    }))))
+    cspViolations.push(...await page.evaluate(() => globalThis.__mikuPreviewCspViolations || []))
+    for (const scripts of analyticsScriptSnapshots) {
+      assertCloudflareWebAnalyticsContract({
+        cspViolations, isPreview: isAnalyticsPreview, observations: [...analyticsObservations.values()],
+        scripts, surfaceOrigin: normalizedSurfaceOrigin,
+      })
+    }
+    assertNoBrowserSecurityErrors({ cspViolations, pageErrors })
 
     return {
       callbackUrl: `${normalizedAppOrigin}/api/auth/github/callback`,

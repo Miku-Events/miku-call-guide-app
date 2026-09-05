@@ -50,3 +50,4 @@ coverage
 .agents
 graphify-out
 .wrangler
+.omo

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
 async function deploymentWorkflow() {
@@ -42,6 +43,46 @@ describe('production deployment workflow', () => {
     expect(workflow).toContain('if [[ "$PRODUCTION_RELEASE" != "true" ]]; then')
     expect(previewJob).toContain(`    if: ${releaseExpression}`)
     expect(deployJob).toContain(`    if: ${releaseExpression}`)
+  })
+
+  it.each([
+    ['refs/heads/main', 'push', true],
+    ['refs/heads/main', 'workflow_dispatch', true],
+    ['refs/pull/123/merge', 'pull_request', false],
+    ['refs/heads/main', 'pull_request', false],
+    ['refs/heads/feature', 'push', false],
+    ['refs/heads/feature', 'workflow_dispatch', false],
+    ['refs/heads/main', 'schedule', false],
+  ])('limits public Web Analytics token supply for %s / %s (release: %s)', async (ref, eventName, release) => {
+    const workflow = await deploymentWorkflow()
+    const qualityJob = workflow.slice(
+      workflow.indexOf('\n  quality:'),
+      workflow.indexOf('\n  compatibility:'),
+    )
+    const configureStep = qualityJob.slice(
+      qualityJob.indexOf('name: Configure frontend build'),
+      qualityJob.indexOf('\n      - name: Run quality checks and build'),
+    )
+    const buildStep = qualityJob.slice(
+      qualityJob.indexOf('name: Run quality checks and build'),
+      qualityJob.indexOf('\n      - name: Build Pages Functions'),
+    )
+
+    const expressions = [
+      configureStep.match(/^\s*PRODUCTION_WEB_ANALYTICS_TOKEN: \$\{\{ (.+) \}\}$/m)?.[1],
+      buildStep.match(/^\s*VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN: \$\{\{ (.+) \}\}$/m)?.[1],
+    ]
+    const publicToken = '0123456789abcdef0123456789abcdef'
+    for (const expression of expressions) {
+      expect(expression).toBeTypeOf('string')
+      expect(runInNewContext(expression, {
+        github: { ref, event_name: eventName },
+        vars: { VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN: publicToken },
+      })).toBe(release ? publicToken : '')
+    }
+    expect(configureStep).toContain('node scripts/validate-production-build-env.mjs >> "$GITHUB_ENV"')
+    expect(configureStep).not.toContain('VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN=')
+    expect(buildStep).toContain('run: npm run check')
   })
 
   it('cancels superseded PR runs but never cancels an active release', async () => {
