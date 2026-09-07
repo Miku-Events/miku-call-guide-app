@@ -50,6 +50,7 @@ const scenarios = [
   ['production-success', false, null],
   ['preview-clean', true, null],
   ['preview-auto-injected', true, null],
+  ['preview-rum-rejected', true, null],
   ['preview-network-attempt', true, /network failure/],
   ['rum-network-failure', false, /network failure/],
   ['rum-http-failure', false, /unsuccessful response/],
@@ -111,7 +112,7 @@ for (const [name, isPreview, expectedError] of scenarios) {
               ` })
             }
             if (url.origin === 'https://cloudflareinsights.com') {
-              if (name === 'rum-network-failure') return route.abort('failed')
+              if (name === 'rum-network-failure' || name === 'preview-rum-rejected') return route.abort('failed')
               return route.fulfill({ status: name === 'rum-http-failure' ? 503 : 200, contentType: 'application/json',
                 headers: { 'access-control-allow-origin': name === 'rum-cors-failure' ? 'https://wrong-origin.invalid' : '*' }, body: '{}' })
             }

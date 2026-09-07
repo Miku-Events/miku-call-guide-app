@@ -22,6 +22,7 @@ import {
 
 const cloudflareBeaconUrl = 'https://static.cloudflareinsights.com/beacon.min.js'
 const cloudflareRumUrl = 'https://cloudflareinsights.com/cdn-cgi/rum'
+const firstPartyRumUrl = 'https://miku.sekai.today/cdn-cgi/rum'
 const publicBeaconConfiguration = JSON.stringify({ token: 'a'.repeat(32) })
 
 function cloudflareBeaconScript(overrides = {}) {
@@ -273,6 +274,72 @@ describe('preview browser smoke diagnostics', () => {
           url: cloudflareBeaconUrl,
         }),
         analyticsObservation(),
+      ],
+      scripts: [cloudflareBeaconScript()],
+      surfaceOrigin: 'https://miku.sekai.today',
+    })).not.toThrow()
+  })
+
+  it('accepts the known hash-preview RUM rejection after the injected beacon loads', () => {
+    expect(() => assertCloudflareWebAnalyticsContract({
+      isPreview: true,
+      observations: [
+        analyticsObservation({
+          kind: 'cloudflare-beacon',
+          method: 'GET',
+          responseUrl: cloudflareBeaconUrl,
+          status: 200,
+          url: cloudflareBeaconUrl,
+        }),
+        analyticsObservation({
+          failure: 'net::ERR_FAILED',
+          responseUrl: undefined,
+          status: undefined,
+        }),
+      ],
+      scripts: [cloudflareBeaconScript()],
+      surfaceOrigin: 'https://preview-123.miku-call-guide-app.pages.dev',
+    })).not.toThrow()
+  })
+
+  it('does not hide a redirected RUM failure on preview', () => {
+    expect(() => assertCloudflareWebAnalyticsContract({
+      isPreview: true,
+      observations: [
+        analyticsObservation({
+          kind: 'cloudflare-beacon',
+          method: 'GET',
+          responseUrl: cloudflareBeaconUrl,
+          status: 200,
+          url: cloudflareBeaconUrl,
+        }),
+        analyticsObservation({
+          failure: 'net::ERR_FAILED',
+          responseUrl: 'https://unexpected.example/rum',
+          status: undefined,
+        }),
+      ],
+      scripts: [cloudflareBeaconScript()],
+      surfaceOrigin: 'https://preview-123.miku-call-guide-app.pages.dev',
+    })).toThrow(/unexpected endpoint/i)
+  })
+
+  it('accepts Pages automatic analytics through the first-party production endpoint', () => {
+    expect(classifyAnalyticsRequest(
+      { method: 'POST', url: firstPartyRumUrl },
+      'https://miku.sekai.today',
+    )).toMatchObject({ kind: 'cloudflare-rum' })
+    expect(() => assertCloudflareWebAnalyticsContract({
+      isPreview: false,
+      observations: [
+        analyticsObservation({
+          kind: 'cloudflare-beacon',
+          method: 'GET',
+          responseUrl: cloudflareBeaconUrl,
+          status: 200,
+          url: cloudflareBeaconUrl,
+        }),
+        analyticsObservation({ responseUrl: firstPartyRumUrl, url: firstPartyRumUrl }),
       ],
       scripts: [cloudflareBeaconScript()],
       surfaceOrigin: 'https://miku.sekai.today',

@@ -295,8 +295,14 @@ function isExactUrl(rawUrl, expectedUrl) {
   return url?.href === expectedUrl
 }
 
-function isExactRumUrl(rawUrl) {
+function firstPartyRumUrl(surfaceOrigin) {
+  const origin = parsedUrl(surfaceOrigin)
+  return origin ? new URL('/cdn-cgi/rum', origin).href : ''
+}
+
+function isExactRumUrl(rawUrl, surfaceOrigin) {
   return isExactUrl(rawUrl, CLOUDFLARE_WEB_ANALYTICS_RUM_URL)
+    || isExactUrl(rawUrl, firstPartyRumUrl(surfaceOrigin))
 }
 
 function isCloudflareAnalyticsScriptUrl(rawUrl) {
@@ -321,9 +327,12 @@ export function classifyAnalyticsRequest({ url: rawUrl }, surfaceOrigin) {
       url: url.href,
     }
   }
-  if (url.hostname === 'cloudflareinsights.com') {
+  if (
+    url.hostname === 'cloudflareinsights.com'
+    || (url.origin === surfaceOrigin && url.pathname.startsWith('/cdn-cgi/rum'))
+  ) {
     return {
-      kind: isExactRumUrl(url.href) ? 'cloudflare-rum' : 'cloudflare-rum-invalid',
+      kind: isExactRumUrl(url.href, surfaceOrigin) ? 'cloudflare-rum' : 'cloudflare-rum-invalid',
       url: url.href,
     }
   }
@@ -395,6 +404,14 @@ export function assertCloudflareWebAnalyticsContract({
     }
 
     for (const observation of cloudflareObservations) {
+      if (
+        isPreview
+        && observation.kind === 'cloudflare-rum'
+        && observation.method === 'POST'
+        && observation.failure
+        && observation.responseUrl === undefined
+        && observation.status === undefined
+      ) continue
       if (observation.kind.endsWith('-invalid')
         || (observation.responseUrl && observation.responseUrl !== observation.url)) {
         failures.push(`Cloudflare analytics used an unexpected endpoint: ${describeAnalyticsObservation(observation)}`)
@@ -416,12 +433,14 @@ export function assertCloudflareWebAnalyticsContract({
     }))) {
       failures.push('Cloudflare beacon script did not fetch successfully from its exact URL')
     }
-    if (!cloudflareObservations.some((observation) => successfulAnalyticsResponse(observation, {
-      kind: 'cloudflare-rum',
-      method: 'POST',
-      url: CLOUDFLARE_WEB_ANALYTICS_RUM_URL,
-    }))) {
-      failures.push('Cloudflare Web Analytics did not send a successful POST to the exact RUM endpoint')
+    const rumUrls = [
+      CLOUDFLARE_WEB_ANALYTICS_RUM_URL,
+      firstPartyRumUrl(surfaceOrigin),
+    ].filter(Boolean)
+    if (!isPreview && !rumUrls.some((url) => cloudflareObservations.some((observation) => (
+      successfulAnalyticsResponse(observation, { kind: 'cloudflare-rum', method: 'POST', url })
+    )))) {
+      failures.push('Cloudflare Web Analytics did not send a successful POST to a supported RUM endpoint')
     }
   }
 
