@@ -18,12 +18,9 @@
 
 - [ ] production Turnstile hostname과 GitHub OAuth callback을 `miku.sekai.today`로 제한합니다.
 - [ ] GitHub App은 private data 저장소 하나에 Contents/PR/Issues write와 Metadata read만 가집니다.
-- [ ] 분석 수집 수동 전환 전에 정식 사이트의 공개 토큰을 발급받거나 확인합니다.
-- [ ] 이 앱의 기존 Google·게이트웨이 주입을 끕니다.
-- [ ] Pages one-click 및 겹치는 자동 주입을 끕니다.
-- [ ] `miku.sekai.today`만 대상으로 Cloudflare Web Analytics 수동 설정을 등록합니다.
-- [ ] production release에만 연결되는 공개 repository variable `VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN`에 정식 사이트의 공개 토큰을 설정합니다.
-- [ ] 배포한 뒤 preview에는 beacon이 생성되지 않고 production에는 정확히 1개의 manual beacon script와 성공한 RUM POST가 최소 1회 발생하는지 확인합니다.
+- [x] 이 앱의 기존 Google·게이트웨이 주입을 끕니다.
+- [ ] 기존 Pages 프로젝트의 Web Analytics 자동 등록을 사용합니다. 앱 코드나 GitHub 변수에 분석 토큰을 추가하지 않습니다.
+- [ ] 배포 후 production의 자동 beacon 1개와 성공한 RUM POST를 확인합니다. Preview에도 Pages가 자동 삽입할 수 있으므로 같은 수집·중복 검사를 적용합니다.
 
 위 순서는 외부 사전 조건과 검증 절차이며, 저장소 변경은 Cloudflare Dashboard 설정을 변경하지 않습니다.
 `miku.sekai.today` 외 다른 subdomain은 범위 밖입니다.

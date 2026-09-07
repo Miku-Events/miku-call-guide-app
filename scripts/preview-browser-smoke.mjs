@@ -378,20 +378,16 @@ export function assertCloudflareWebAnalyticsContract({
     failures.push('All surfaces must reject obsolete Google or Tag Gateway analytics activity')
   }
 
-  if (isPreview) {
-    if (cloudflareScripts.length > 0 || cloudflareObservations.length > 0) {
-      failures.push('Preview must not attempt Cloudflare Web Analytics')
-    }
-  } else {
+  if (!isPreview || cloudflareScripts.length > 0 || cloudflareObservations.length > 0) {
     if (cloudflareScripts.length !== 1) {
-      failures.push(`Production must contain exactly one Cloudflare beacon script; found ${cloudflareScripts.length}`)
+      failures.push(`Pages must contain exactly one Cloudflare beacon script; found ${cloudflareScripts.length}`)
     } else {
       const [script] = cloudflareScripts
       if (script.src !== CLOUDFLARE_WEB_ANALYTICS_BEACON_URL) {
         failures.push(`Cloudflare beacon script must use ${CLOUDFLARE_WEB_ANALYTICS_BEACON_URL}`)
       }
-      if (script.type !== 'module') {
-        failures.push('Cloudflare beacon script must have type=module')
+      if (script.type !== '' && script.type !== 'text/javascript') {
+        failures.push('Cloudflare beacon script must use the Pages classic script format')
       }
       if (!hasPublicBeaconConfiguration(script.dataCfBeacon)) {
         failures.push('Cloudflare beacon script must carry a public data-cf-beacon token configuration')
@@ -781,7 +777,7 @@ export async function runBrowserSmoke({
         : Error
       throw new Failure(`Browser smoke asset failures:\n${assetFailures.join('\n')}`)
     }
-    if (!isAnalyticsPreview) {
+    if (!isAnalyticsPreview || analyticsObservations.size > 0) {
       await new Promise((resolve) => {
         const timer = setTimeout(resolve, ANALYTICS_OBSERVATION_TIMEOUT_MS)
         notifyAnalytics = () => {

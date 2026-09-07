@@ -28,7 +28,7 @@ function cloudflareBeaconScript(overrides = {}) {
   return {
     dataCfBeacon: publicBeaconConfiguration,
     src: cloudflareBeaconUrl,
-    type: 'module',
+    type: '',
     ...overrides,
   }
 }
@@ -261,9 +261,9 @@ describe('preview browser smoke diagnostics', () => {
     ), 'https://miku.sekai.today')).toBe('')
   })
 
-  it('requires one public Cloudflare module beacon plus successful exact script and RUM traffic in production', () => {
+  it.each([false, true])('accepts a Pages-injected beacon with successful traffic (preview: %s)', (isPreview) => {
     expect(() => assertCloudflareWebAnalyticsContract({
-      isPreview: false,
+      isPreview,
       observations: [
         analyticsObservation({
           kind: 'cloudflare-beacon',
@@ -282,7 +282,7 @@ describe('preview browser smoke diagnostics', () => {
   it.each([
     ['a missing beacon element', []],
     ['duplicate beacon elements', [cloudflareBeaconScript(), cloudflareBeaconScript()]],
-    ['a non-module beacon element', [cloudflareBeaconScript({ type: 'text/javascript' })]],
+    ['a non-executable beacon element', [cloudflareBeaconScript({ type: 'application/json' })]],
     ['a beacon without public configuration', [cloudflareBeaconScript({ dataCfBeacon: '' })]],
     ...[
       ['array', ['a'.repeat(32)]],
@@ -342,7 +342,7 @@ describe('preview browser smoke diagnostics', () => {
     })).toThrow(/Cloudflare Web Analytics contract/i)
   })
 
-  it('rejects any Cloudflare analytics script or request attempt on preview, including failures', () => {
+  it('rejects failed analytics attempts on preview', () => {
     expect(() => assertCloudflareWebAnalyticsContract({
       isPreview: true,
       observations: [analyticsObservation({
@@ -355,7 +355,7 @@ describe('preview browser smoke diagnostics', () => {
       })],
       scripts: [],
       surfaceOrigin: 'https://preview-123.miku-call-guide-app.pages.dev',
-    })).toThrow(/Preview must not attempt Cloudflare Web Analytics/i)
+    })).toThrow(/Cloudflare Web Analytics contract/i)
   })
 
   it.each([

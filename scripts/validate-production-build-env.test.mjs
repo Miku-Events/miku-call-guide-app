@@ -11,7 +11,6 @@ const validEnvironment = {
   appOrigin: PRODUCTION_APP_ORIGIN,
   dataManifestUrl: PRODUCTION_DATA_MANIFEST_URL,
   turnstileSiteKey: '0x4AAAAAAABbCcDdEeFfGgHh',
-  webAnalyticsToken: 'bc40a2d1b5834453aba85c1b9a3054da',
 }
 
 const officialTurnstileTestSiteKeys = [
@@ -27,7 +26,6 @@ describe('validateProductionBuildEnv', () => {
     ['appOrigin', 'VITE_APP_ORIGIN'],
     ['dataManifestUrl', 'VITE_DATA_MANIFEST_URL'],
     ['turnstileSiteKey', 'VITE_CLOUDFLARE_TURNSTILE_SITE_KEY'],
-    ['webAnalyticsToken', 'VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN'],
   ])('requires %s', (field, name) => {
     expect(() => validateProductionBuildEnv({
       ...validEnvironment,
@@ -92,25 +90,11 @@ describe('validateProductionBuildEnv', () => {
     })).toThrow(message)
   })
 
-  it.each([
-    ['a non-string value', 42, 'must be a string'],
-    ['a placeholder', 'YOUR_WEB_ANALYTICS_TOKEN', 'cannot contain YOUR_'],
-    ['a line break', `${validEnvironment.webAnalyticsToken}\n`, 'must be a single-line value'],
-    ['an arbitrary value', 'invalid-token', 'must be a 32 character lowercase hexadecimal token'],
-    ['an uppercase value', validEnvironment.webAnalyticsToken.toUpperCase(), 'must be a 32 character lowercase hexadecimal token'],
-    ['a short value', validEnvironment.webAnalyticsToken.slice(1), 'must be a 32 character lowercase hexadecimal token'],
-  ])('rejects %s as a production Cloudflare Web Analytics token', (_label, webAnalyticsToken, message) => {
-    expect(() => validateProductionBuildEnv({
-      ...validEnvironment,
-      webAnalyticsToken,
-    })).toThrow(`VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN ${message}`)
-  })
-
-  it('permits an absent Web Analytics token outside a production release', () => {
+  it('skips production configuration outside a production release', () => {
     expect(validateProductionBuildEnv({ productionRelease: false })).toBeNull()
   })
 
-  it('does not print the Web Analytics token during a release validation', async () => {
+  it('validates a release without a build-time analytics token', async () => {
     const { stderr, stdout } = await executeFile(
       process.execPath,
       ['scripts/validate-production-build-env.mjs'],
@@ -120,13 +104,11 @@ describe('validateProductionBuildEnv', () => {
           PRODUCTION_DATA_MANIFEST_URL: validEnvironment.dataManifestUrl,
           PRODUCTION_RELEASE: 'true',
           PRODUCTION_TURNSTILE_SITE_KEY: validEnvironment.turnstileSiteKey,
-          PRODUCTION_WEB_ANALYTICS_TOKEN: validEnvironment.webAnalyticsToken,
         },
       },
     )
 
     expect(stderr).toBe('')
-    expect(stdout).not.toContain(validEnvironment.webAnalyticsToken)
     expect(stdout).toContain(`VITE_APP_ORIGIN=${validEnvironment.appOrigin}`)
   })
 

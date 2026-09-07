@@ -20,11 +20,11 @@ const build = spawnSync('npm run build', {
     VITE_DATA_MANIFEST_URL: manifestUrl,
     VITE_SUBMISSION_API_URL: '',
     VITE_RELEASE_ID: releaseId,
-    VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN: publicToken,
   },
 })
 assert.equal(build.status, 0, 'Current artifact build failed (build output withheld to protect environment values)')
 const builtHtml = await readFile(new URL('../dist/index.html', import.meta.url))
+const pagesHtml = Buffer.from(builtHtml.toString().replace('</body>', `<script defer src="${beaconUrl}" data-cf-beacon='${JSON.stringify({ token: publicToken })}'></script></body>`))
 const builtHeaders = await readFile(new URL('../dist/_headers', import.meta.url), 'utf8')
 const builtRelease = JSON.parse(await readFile(new URL('../dist/release.json', import.meta.url), 'utf8'))
 assert.equal(builtRelease.releaseId, releaseId)
@@ -49,7 +49,8 @@ const datasets = new Map([
 const scenarios = [
   ['production-success', false, null],
   ['preview-clean', true, null],
-  ['preview-network-attempt', true, /Preview must not attempt/],
+  ['preview-auto-injected', true, null],
+  ['preview-network-attempt', true, /network failure/],
   ['rum-network-failure', false, /network failure/],
   ['rum-http-failure', false, /unsuccessful response/],
   ['rum-cors-failure', false, /network failure/],
@@ -67,6 +68,7 @@ const scenarios = [
 const results = []
 for (const [name, isPreview, expectedError] of scenarios) {
   const surfaceOrigin = isPreview ? 'https://12345678.smoke.pages.dev' : appOrigin
+  const deliveredHtml = name === 'preview-clean' || name === 'legacy-google' ? builtHtml : pagesHtml
   const requests = []
   const navigation = []
   const responses = []
@@ -82,7 +84,7 @@ for (const [name, isPreview, expectedError] of scenarios) {
         async close() { await browser.close(); closed = true },
         async newContext() {
           const context = await browser.newContext()
-          if (name === 'preview-network-attempt' || name === 'legacy-google') {
+          if (name === 'legacy-google') {
             await context.addInitScript(({ source }) => {
               document.addEventListener('DOMContentLoaded', () => {
                 const injected = document.createElement('script')
@@ -121,8 +123,8 @@ for (const [name, isPreview, expectedError] of scenarios) {
             if (url.origin === surfaceOrigin) {
               assert.equal(url.pathname.includes('..'), false)
               assert.ok(builtFiles.has(url.pathname), `Unexpected app asset: ${url.pathname}`)
-              const body = builtFiles.get(url.pathname)
-              if (url.pathname === '/') servedBuiltDocument = body.equals(builtHtml)
+              const body = url.pathname === '/' ? deliveredHtml : builtFiles.get(url.pathname)
+              if (url.pathname === '/') servedBuiltDocument = body.equals(deliveredHtml)
               if (url.pathname.startsWith('/assets/')) assetHashes.set(url.pathname, createHash('sha256').update(body).digest('hex'))
               const extension = url.pathname.match(/\.[a-z]+$/)?.[0]
               return route.fulfill({ body, headers: staticHeaders, contentType: contentTypes[extension] || 'text/html; charset=utf-8' })
@@ -149,7 +151,7 @@ for (const [name, isPreview, expectedError] of scenarios) {
                 const url = new URL(target)
                 url.searchParams.set('mockPlayer', '1')
                 const response = await goto(url.href, options)
-                assertBuiltArtifactResponse(builtHtml, await response.body())
+                assertBuiltArtifactResponse(deliveredHtml, await response.body())
                 if (interrupted) controller.abort(new Error('interrupted'))
                 return response
               }
@@ -189,4 +191,4 @@ for (const [name, isPreview, expectedError] of scenarios) {
   results.push({ name, passed: true, browserClosed: closed, builtDocument: servedBuiltDocument, fixtureEventObserved, navigation, responses, requestCount: requests.length, outcome: expectedError ? 'rejected' : 'accepted' })
 }
 assert.ok(assetHashes.size > 3, 'Real lazy-route assets loaded')
-process.stdout.write(`${JSON.stringify({ harness: 'current Vite built artifact; real loader/UI; provider/data requests intercepted', buildExitCode: build.status, buildCount: 1, indexSha256: createHash('sha256').update(builtHtml).digest('hex'), assetHashes: Object.fromEntries(assetHashes), results }, null, 2)}\n`)
+process.stdout.write(`${JSON.stringify({ harness: 'current Vite built artifact with Pages-style injection; real UI; provider/data requests intercepted', buildExitCode: build.status, buildCount: 1, indexSha256: createHash('sha256').update(builtHtml).digest('hex'), assetHashes: Object.fromEntries(assetHashes), results }, null, 2)}\n`)

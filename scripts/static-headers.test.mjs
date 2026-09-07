@@ -44,7 +44,7 @@ describe('static Cloudflare Pages headers', () => {
     expect(headers).toContain('https://fonts.gstatic.com')
   })
 
-  it('allows only the Cloudflare Web Analytics manual beacon and RUM endpoint', () => {
+  it('allows only the Cloudflare Web Analytics beacon and RUM endpoint', () => {
     const headers = generateStaticHeaders(environment)
     const scripts = directive(headers, 'script-src')
     const connections = directive(headers, 'connect-src')

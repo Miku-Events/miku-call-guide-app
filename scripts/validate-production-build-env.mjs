@@ -2,7 +2,6 @@ import { pathToFileURL } from 'node:url'
 import { PRODUCTION_APP_ORIGIN } from '../functions/_lib/productionHostname.js'
 
 const PRODUCTION_DATA_MANIFEST_URL = 'https://miku-call-guide-data.pages.dev/manifest.json'
-const cloudflareWebAnalyticsTokenPattern = /^[a-f0-9]{32}$/
 const officialTurnstileTestSiteKeys = new Set([
   '1x00000000000000000000AA',
   '2x00000000000000000000AB',
@@ -35,7 +34,6 @@ export function validateProductionBuildEnv(environment) {
     PRODUCTION_DATA_MANIFEST_URL,
   )
   const turnstileSiteKey = environment.turnstileSiteKey
-  const webAnalyticsToken = environment.webAnalyticsToken
 
   if (turnstileSiteKey === undefined || turnstileSiteKey === null || turnstileSiteKey === '') {
     throw new Error('VITE_CLOUDFLARE_TURNSTILE_SITE_KEY is required')
@@ -58,25 +56,7 @@ export function validateProductionBuildEnv(environment) {
     )
   }
 
-  if (webAnalyticsToken === undefined || webAnalyticsToken === null || webAnalyticsToken === '') {
-    throw new Error('VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN is required')
-  }
-  if (typeof webAnalyticsToken !== 'string') {
-    throw new Error('VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN must be a string')
-  }
-  if (/YOUR_/i.test(webAnalyticsToken)) {
-    throw new Error('VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN cannot contain YOUR_')
-  }
-  if (/\r|\n/.test(webAnalyticsToken)) {
-    throw new Error('VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN must be a single-line value')
-  }
-  if (!cloudflareWebAnalyticsTokenPattern.test(webAnalyticsToken)) {
-    throw new Error(
-      'VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN must be a 32 character lowercase hexadecimal token',
-    )
-  }
-
-  return { appOrigin, dataManifestUrl, turnstileSiteKey, webAnalyticsToken }
+  return { appOrigin, dataManifestUrl, turnstileSiteKey }
 }
 
 const isDirectExecution = process.argv[1]
@@ -88,7 +68,6 @@ if (isDirectExecution) {
       appOrigin: process.env.PRODUCTION_APP_ORIGIN,
       dataManifestUrl: process.env.PRODUCTION_DATA_MANIFEST_URL,
       turnstileSiteKey: process.env.PRODUCTION_TURNSTILE_SITE_KEY,
-      webAnalyticsToken: process.env.PRODUCTION_WEB_ANALYTICS_TOKEN,
       productionRelease: process.env.PRODUCTION_RELEASE === 'true',
     })
     if (environment === null) process.exitCode = 0
