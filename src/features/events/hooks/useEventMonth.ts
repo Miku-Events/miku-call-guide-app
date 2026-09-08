@@ -44,12 +44,6 @@ export function useEventMonth(
     const identity = JSON.stringify([calendarIndex.url, calendarIndex.data.dataVersion, visibleMonth])
 
     const controller = new AbortController()
-    Promise.resolve().then(() => {
-      if (!controller.signal.aborted) {
-        setIsLoading(true)
-      }
-    })
-
     const availableMonths = calendarIndex.data.availableMonths
     const dataVersion = calendarIndex.data.dataVersion
     const indexUrl = calendarIndex.url
@@ -86,7 +80,12 @@ export function useEventMonth(
       }
     }
 
-    void execute()
+    Promise.resolve().then(() => {
+      if (!controller.signal.aborted) {
+        setIsLoading(true)
+        void execute()
+      }
+    })
 
     return () => {
       controller.abort()

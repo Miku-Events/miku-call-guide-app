@@ -11,6 +11,15 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-21T12:00:00+09:00'))
 })
 
+test('[EVT-D-02] finishes loading when the current month has no published data', { tag: '@desktop' }, async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-07T12:00:00+09:00'))
+  await page.goto('/?mockPlayer=1#/events')
+
+  const calendar = page.locator('.event-calendar-panel')
+  await expect(calendar).toHaveAttribute('aria-busy', 'false')
+  await expect(calendar.getByRole('status')).toHaveCount(0)
+})
+
 test('[EVT-D-01] navigates dates, filters, months, and safe event details', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
 

@@ -15,7 +15,7 @@ const numbered = (prefix: string, count: number, audience: E2EAudience): E2EScen
 export const E2E_SCENARIOS: readonly E2EScenario[] = Object.freeze([
   ...numbered('CAT-D', 4, 'desktop'),
   ...numbered('CAT-M', 2, 'mobile'),
-  ...numbered('EVT-D', 1, 'desktop'),
+  ...numbered('EVT-D', 2, 'desktop'),
   ...numbered('EVT-M', 2, 'mobile'),
   ...numbered('PLY-D', 9, 'desktop'),
   ...numbered('PLY-M', 5, 'mobile'),
