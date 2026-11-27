@@ -21,7 +21,7 @@ export function AccessibleAppShell({ children, className, topNav }: AccessibleAp
         data-testid="skip-to-content"
         href={`#${APP_SHELL_MAIN_ID}`}
       >
-        Skip to content
+        본문으로 건너뛰기
       </a>
       {topNav}
       <main

@@ -118,7 +118,7 @@ export function EventDetailSheet({
       </button>
       <div className="event-detail-heading">
         <div>
-          <p>Selected day</p>
+          <p>선택한 날짜</p>
           <h2 id="event-detail-heading">{selectedDate ? formatDateLabel(selectedDate) : '날짜를 선택하세요'}</h2>
         </div>
         <div className="event-detail-heading-actions">
@@ -202,8 +202,8 @@ export function EventDetailSheet({
                       {eventPlatformLabels[link.platform]}
                     </a>
                   ))}
-                  {detail?.links.official ? <a href={detail.links.official} rel="noreferrer" target="_blank">Official</a> : null}
-                  {detail?.links.ticket ? <a href={detail.links.ticket} rel="noreferrer" target="_blank">Ticket</a> : null}
+                  {detail?.links.official ? <a href={detail.links.official} rel="noreferrer" target="_blank">공식 사이트</a> : null}
+                  {detail?.links.ticket ? <a href={detail.links.ticket} rel="noreferrer" target="_blank">티켓</a> : null}
                 </div>
                 {!submissionReadOnly ? (
                   <Button

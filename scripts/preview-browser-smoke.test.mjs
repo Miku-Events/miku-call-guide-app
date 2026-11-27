@@ -22,7 +22,7 @@ import {
 
 const cloudflareBeaconUrl = 'https://static.cloudflareinsights.com/beacon.min.js'
 const cloudflareRumUrl = 'https://cloudflareinsights.com/cdn-cgi/rum'
-const firstPartyRumUrl = 'https://miku.sekai.today/cdn-cgi/rum'
+const firstPartyRumUrl = 'https://miku.sekai.day/cdn-cgi/rum'
 const publicBeaconConfiguration = JSON.stringify({ token: 'a'.repeat(32) })
 
 function cloudflareBeaconScript(overrides = {}) {
@@ -80,7 +80,7 @@ describe('preview browser smoke diagnostics', () => {
         analyticsObservation(),
         analyticsObservation({ responseUrl: 'https://unexpected.example/rum' }),
       ],
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })).toThrow(/unexpected endpoint/i)
   })
 
@@ -110,9 +110,9 @@ describe('preview browser smoke diagnostics', () => {
 
     await acknowledgeInitialSpoilerDisclaimer({ getByRole })
 
-    expect(getByRole).toHaveBeenCalledWith('alertdialog', { name: '스포일러 안내' })
+    expect(getByRole).toHaveBeenCalledWith('alertdialog', { name: '공연 전에 잠깐만요' })
     expect(waitFor).toHaveBeenNthCalledWith(1, { state: 'visible' })
-    expect(dialogGetByRole).toHaveBeenCalledWith('button', { name: '확인하고 계속하기' })
+    expect(dialogGetByRole).toHaveBeenCalledWith('button', { name: '알겠어요, 둘러볼게요' })
     expect(click).toHaveBeenCalledOnce()
     expect(waitFor).toHaveBeenNthCalledWith(2, { state: 'detached' })
   })
@@ -187,24 +187,24 @@ describe('preview browser smoke diagnostics', () => {
       releaseId: 'a'.repeat(40),
       routes: BROWSER_SMOKE_ROUTES,
       surfaceLabel: 'Production',
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })
 
     expect(report).toContain('console diagnostics: 1')
     expect(report).toContain('[warning] third-party warning')
-    expect(report).toContain('production: https://miku.sekai.today')
+    expect(report).toContain('production: https://miku.sekai.day')
   })
 
   it('accepts a 200 navigation that stays on the requested custom origin', () => {
     const response = {
       status: () => 200,
-      url: () => 'https://miku.sekai.today/',
+      url: () => 'https://miku.sekai.day/',
     }
 
     expect(() => assertSurfaceNavigation(
       response,
-      'https://miku.sekai.today/#/events',
-      'https://miku.sekai.today',
+      'https://miku.sekai.day/#/events',
+      'https://miku.sekai.day',
       'Production route /#/events',
     )).not.toThrow()
   })
@@ -212,8 +212,8 @@ describe('preview browser smoke diagnostics', () => {
   it('accepts a same-document hash navigation without an HTTP response', () => {
     expect(() => assertSurfaceNavigation(
       null,
-      'https://miku.sekai.today/#/songs/39-music',
-      'https://miku.sekai.today',
+      'https://miku.sekai.day/#/songs/39-music',
+      'https://miku.sekai.day',
       'Production route /#/songs/39-music',
       { requireResponse: false },
     )).not.toThrow()
@@ -222,44 +222,44 @@ describe('preview browser smoke diagnostics', () => {
   it('still requires an HTTP response for the initial document navigation', () => {
     expect(() => assertSurfaceNavigation(
       null,
-      'https://miku.sekai.today/',
-      'https://miku.sekai.today',
+      'https://miku.sekai.day/',
+      'https://miku.sekai.day',
       'Production root',
     )).toThrow(/did not return a navigation response/i)
   })
 
   it.each([
     ['a JavaScript chunk served as HTML', assetResponse(
-      'https://miku.sekai.today/assets/CatalogPage-old.js',
+      'https://miku.sekai.day/assets/CatalogPage-old.js',
       200,
       'text/html; charset=utf-8',
     )],
     ['a missing stylesheet', assetResponse(
-      'https://miku.sekai.today/assets/index-old.css',
+      'https://miku.sekai.day/assets/index-old.css',
       404,
       'text/html; charset=utf-8',
     )],
   ])('reports %s before a semantic bootstrap timeout', (_label, response) => {
-    expect(appAssetFailure(response, 'https://miku.sekai.today'))
+    expect(appAssetFailure(response, 'https://miku.sekai.day'))
       .toMatch(/HTTP (?:200|404).*content-type text\/html/i)
   })
 
   it('accepts correctly typed app assets and ignores third-party scripts', () => {
     expect(appAssetFailure(assetResponse(
-      'https://miku.sekai.today/assets/index.js',
+      'https://miku.sekai.day/assets/index.js',
       200,
       'text/javascript; charset=utf-8',
-    ), 'https://miku.sekai.today')).toBe('')
+    ), 'https://miku.sekai.day')).toBe('')
     expect(appAssetFailure(assetResponse(
-      'https://miku.sekai.today/assets/index.js',
+      'https://miku.sekai.day/assets/index.js',
       304,
       '',
-    ), 'https://miku.sekai.today')).toBe('')
+    ), 'https://miku.sekai.day')).toBe('')
     expect(appAssetFailure(assetResponse(
       'https://www.youtube.com/iframe_api',
       200,
       'application/javascript',
-    ), 'https://miku.sekai.today')).toBe('')
+    ), 'https://miku.sekai.day')).toBe('')
   })
 
   it.each([false, true])('accepts a Pages-injected beacon with successful traffic (preview: %s)', (isPreview) => {
@@ -276,7 +276,7 @@ describe('preview browser smoke diagnostics', () => {
         analyticsObservation(),
       ],
       scripts: [cloudflareBeaconScript()],
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })).not.toThrow()
   })
 
@@ -327,7 +327,7 @@ describe('preview browser smoke diagnostics', () => {
   it('accepts Pages automatic analytics through the first-party production endpoint', () => {
     expect(classifyAnalyticsRequest(
       { method: 'POST', url: firstPartyRumUrl },
-      'https://miku.sekai.today',
+      'https://miku.sekai.day',
     )).toMatchObject({ kind: 'cloudflare-rum' })
     expect(() => assertCloudflareWebAnalyticsContract({
       isPreview: false,
@@ -342,7 +342,7 @@ describe('preview browser smoke diagnostics', () => {
         analyticsObservation({ responseUrl: firstPartyRumUrl, url: firstPartyRumUrl }),
       ],
       scripts: [cloudflareBeaconScript()],
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })).not.toThrow()
   })
 
@@ -376,7 +376,7 @@ describe('preview browser smoke diagnostics', () => {
         analyticsObservation(),
       ],
       scripts,
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })).toThrow(/Cloudflare Web Analytics contract/i)
   })
 
@@ -405,7 +405,7 @@ describe('preview browser smoke diagnostics', () => {
         rumObservation,
       ],
       scripts: [cloudflareBeaconScript()],
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })).toThrow(/Cloudflare Web Analytics contract/i)
   })
 
@@ -428,9 +428,9 @@ describe('preview browser smoke diagnostics', () => {
   it.each([
     ['a Google Analytics host', 'https://www.google-analytics.com/g/collect?v=2'],
     ['a Google Tag Manager host', 'https://www.googletagmanager.com/gtag/js?id=G-OLD'],
-    ['the retired first-party Google Tag Gateway', 'https://miku.sekai.today/825i/ga/g/c'],
+    ['the retired first-party Google Tag Gateway', 'https://miku.sekai.day/825i/ga/g/c'],
   ])('classifies obsolete analytics activity from %s', (_label, url) => {
-    expect(classifyAnalyticsRequest({ method: 'POST', url }, 'https://miku.sekai.today'))
+    expect(classifyAnalyticsRequest({ method: 'POST', url }, 'https://miku.sekai.day'))
       .toMatchObject({ kind: 'obsolete-google' })
     expect(() => assertCloudflareWebAnalyticsContract({
       isPreview: false,
@@ -443,7 +443,7 @@ describe('preview browser smoke diagnostics', () => {
         url,
       }],
       scripts: [cloudflareBeaconScript()],
-      surfaceOrigin: 'https://miku.sekai.today',
+      surfaceOrigin: 'https://miku.sekai.day',
     })).toThrow(/obsolete Google or Tag Gateway analytics activity/i)
   })
 
@@ -506,14 +506,14 @@ describe('preview browser smoke diagnostics', () => {
   })
 
   it.each([
-    ['a redirect response', { status: () => 308, url: () => 'https://miku.sekai.today/' }, 'https://miku.sekai.today/', /HTTP 308/i],
+    ['a redirect response', { status: () => 308, url: () => 'https://miku.sekai.day/' }, 'https://miku.sekai.day/', /HTTP 308/i],
     ['a response on another origin', { status: () => 200, url: () => 'https://miku-call-guide-app.pages.dev/' }, 'https://miku-call-guide-app.pages.dev/', /left requested origin/i],
-    ['a client-side origin change', { status: () => 200, url: () => 'https://miku.sekai.today/' }, 'https://miku-call-guide-app.pages.dev/', /left requested origin/i],
+    ['a client-side origin change', { status: () => 200, url: () => 'https://miku.sekai.day/' }, 'https://miku-call-guide-app.pages.dev/', /left requested origin/i],
   ])('rejects %s', (_label, response, pageUrl, expected) => {
     expect(() => assertSurfaceNavigation(
       response,
       pageUrl,
-      'https://miku.sekai.today',
+      'https://miku.sekai.day',
       'Production root',
     )).toThrow(expected)
   })

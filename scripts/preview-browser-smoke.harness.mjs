@@ -6,7 +6,7 @@ import { chromium } from '@playwright/test'
 import { assertBuiltArtifactResponse, runBrowserSmoke } from './preview-browser-smoke.mjs'
 import { callGuideManifest, eventCalendarIndex, eventCalendarMayMonth, eventCalendarMonth, rootManifest, song } from '../tests/fixtures/data.ts'
 
-const appOrigin = 'https://miku.sekai.today'
+const appOrigin = 'https://miku.sekai.day'
 const manifestUrl = 'https://data.miku-events.dev/manifest.json'
 const releaseId = randomBytes(20).toString('hex')
 const publicToken = randomBytes(16).toString('hex')

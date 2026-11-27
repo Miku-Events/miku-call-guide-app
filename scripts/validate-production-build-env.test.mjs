@@ -35,10 +35,10 @@ describe('validateProductionBuildEnv', () => {
 
   it.each([
     'https://alternate-miku-call-guide-app.pages.dev',
-    'http://miku.sekai.today',
-    ' https://miku.sekai.today',
-    'https://miku.sekai.today/',
-    'https://miku.sekai.today/app',
+    'http://miku.sekai.day',
+    ' https://miku.sekai.day',
+    'https://miku.sekai.day/',
+    'https://miku.sekai.day/app',
   ])('requires the exact production app origin instead of %s', (appOrigin) => {
     expect(() => validateProductionBuildEnv({
       ...validEnvironment,

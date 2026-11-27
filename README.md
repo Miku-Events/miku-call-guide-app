@@ -3,7 +3,7 @@
 하츠네 미쿠 곡의 가사와 콜을 YouTube 재생 시점에 맞춰 연습하고,
 공연과 티켓팅 일정을 확인하는 웹앱입니다.
 
-[miku.sekai.today에서 보기](https://miku.sekai.today)
+[miku.sekai.day에서 보기](https://miku.sekai.day)
 
 관련 권리자와 제휴하거나 공식 승인을 받은 서비스가 아닌 비공식 팬 프로젝트입니다.
 
