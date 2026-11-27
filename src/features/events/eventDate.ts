@@ -42,3 +42,27 @@ export function calendarWeeks(calendarDays: string[]): string[][] {
   }
   return weeks
 }
+
+function monthIndex(month: string): number {
+  const [year, monthNumber] = month.split('-').map(Number)
+  return year * 12 + (monthNumber - 1)
+}
+
+/** Closest month that has published events, preferring the upcoming one on a tie. */
+export function nearestAvailableMonth(availableMonths: readonly string[], fromMonth: string): string | null {
+  const origin = monthIndex(fromMonth)
+  let best: string | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const month of availableMonths) {
+    if (month === fromMonth) {
+      continue
+    }
+    const offset = monthIndex(month) - origin
+    const distance = Math.abs(offset)
+    if (distance < bestDistance || (distance === bestDistance && offset > 0)) {
+      best = month
+      bestDistance = distance
+    }
+  }
+  return best
+}

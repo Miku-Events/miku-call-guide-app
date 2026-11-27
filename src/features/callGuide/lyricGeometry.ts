@@ -9,7 +9,8 @@ export interface CallMarkerLayout {
   endPoint?: { left: number; top: number }
 }
 
-export const callMarkerStackStepPx = 24
+/** Vertical step between stacked call labels; matches the active label's rendered height plus a gap. */
+export const callMarkerStackStepPx = 34
 
 export interface RowSplit {
   startIdx: number

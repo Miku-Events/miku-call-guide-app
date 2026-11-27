@@ -66,7 +66,7 @@ export const SongCard = memo(function SongCard({
         <h2>{entry.title}</h2>
         <p>{entry.artist}</p>
         <div className="catalog-card-action">
-          <span>Practice</span>
+          <span>콜 연습하기</span>
           <ArrowRight size={16} aria-hidden="true" />
         </div>
       </div>

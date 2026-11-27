@@ -161,7 +161,7 @@ describe('EventSubmitDialog recovery', () => {
     expect(alert).toHaveTextContent('보안 검증을 다시 완료한 뒤 재시도해 주세요')
     expect(screen.getByRole('dialog')).toContainElement(alert)
     expect(props.setSubmissionSuccess).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'PR 요청' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '제보 보내기' })).toBeDisabled()
     expect(harness.latestResetNonce).toBe(1)
   })
 
@@ -186,7 +186,7 @@ describe('EventSubmitDialog recovery', () => {
 
     await waitFor(() => {
       expect(props.setSubmissionSuccess).toHaveBeenCalledWith(
-        'PR 생성 요청이 접수되었습니다: https://github.test/pull/42',
+        '일정 제보를 보냈어요: https://github.test/pull/42',
       )
     })
     expect(props.setDialog).toHaveBeenCalledWith(null)

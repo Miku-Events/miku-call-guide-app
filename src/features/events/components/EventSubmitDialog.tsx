@@ -188,7 +188,7 @@ export function EventSubmitDialog({
         if (submissionGeneration !== dialogGenerationRef.current) {
           return { success: false, ignored: true }
         }
-        const replayLabel = result.replayed ? '기존 PR 요청을 확인했습니다' : 'PR 생성 요청이 접수되었습니다'
+        const replayLabel = result.replayed ? '이미 보낸 제보를 확인했어요' : '일정 제보를 보냈어요'
         setSubmissionSuccess(result.url ? `${replayLabel}: ${result.url}` : `${replayLabel}.`)
         closeDialog()
         return { success: true }
@@ -320,15 +320,18 @@ export function EventSubmitDialog({
                   htmlName="title"
                   isRequired
                 />
-                <TextInput
-                  label="영문 식별자 (URL ID / Slug)"
-                  description="영문 소문자, 숫자, 하이픈(-)만 사용 가능하며 앞뒤 하이픈은 사용할 수 없습니다."
-                  placeholder="예: magical-mirai-2026-hamamatsu"
-                  value={addForm.slug}
-                  onChange={(val) => setAddForm((prev) => ({ ...prev, slug: val }))}
-                  htmlName="slug"
-                  isOptional
-                />
+                <details className="event-advanced-fields">
+                  <summary>주소용 영문 ID 직접 정하기</summary>
+                  <TextInput
+                    label="주소용 영문 ID"
+                    description="비워 두면 제목과 날짜로 자동으로 만들어요. 영문 소문자, 숫자, 하이픈(-)만 쓸 수 있어요."
+                    placeholder="예: magical-mirai-2026-hamamatsu"
+                    value={addForm.slug}
+                    onChange={(val) => setAddForm((prev) => ({ ...prev, slug: val }))}
+                    htmlName="slug"
+                    isOptional
+                  />
+                </details>
                 <Selector
                   label="종류"
                   options={eventTypeSelectorOptions}
@@ -425,7 +428,7 @@ export function EventSubmitDialog({
                 <div className="mt-4 flex flex-col gap-4">
                   <div className="event-attribution-consent">
                     <CheckboxInput
-                      description="GitHub login은 비공개 data 저장소의 PR 또는 Issue에만 기록되며 이벤트 YAML에는 저장되지 않습니다."
+                      description="GitHub 아이디는 비공개 데이터 저장소의 검토 기록에만 남고, 공개되는 일정 데이터에는 저장되지 않아요."
                       htmlName="attributionConsent"
                       isRequired
                       label="제출 내용과 GitHub 계정 표시 및 개인정보 처리에 동의합니다."
@@ -440,7 +443,7 @@ export function EventSubmitDialog({
                     resetNonce={turnstileResetNonce}
                   />
                   <Button
-                    label="PR 요청"
+                    label="제보 보내기"
                     icon={<Send size={16} aria-hidden="true" />}
                     type="submit"
                     variant="primary"
@@ -481,7 +484,7 @@ export function EventSubmitDialog({
                 <div className="mt-4 flex flex-col gap-4">
                   <div className="event-attribution-consent">
                     <CheckboxInput
-                      description="GitHub login은 비공개 data 저장소의 PR 또는 Issue에만 기록되며 이벤트 YAML에는 저장되지 않습니다."
+                      description="GitHub 아이디는 비공개 데이터 저장소의 검토 기록에만 남고, 공개되는 일정 데이터에는 저장되지 않아요."
                       htmlName="attributionConsent"
                       isRequired
                       label="제출 내용과 GitHub 계정 표시 및 개인정보 처리에 동의합니다."
@@ -496,7 +499,7 @@ export function EventSubmitDialog({
                     resetNonce={turnstileResetNonce}
                   />
                   <Button
-                    label="Issue 생성"
+                    label="수정 요청 보내기"
                     icon={<Send size={16} aria-hidden="true" />}
                     type="submit"
                     variant="primary"
