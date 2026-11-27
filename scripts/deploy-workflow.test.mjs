@@ -220,7 +220,7 @@ describe('production deployment workflow', () => {
       wranglerConfig(),
     ])
     const wranglerAction =
-      'cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0'
+      'cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3'
     const expectedFunctionCommand =
       'wrangler pages functions build functions --outdir node_modules/.tmp/pages-functions-build --compatibility-date 2024-09-23 --compatibility-flags nodejs_compat'
     const qualityJob = workflow.slice(
