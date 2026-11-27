@@ -227,11 +227,6 @@ export function CatalogPage() {
       activeNav="catalog"
       className="catalog-shell"
       height="auto"
-      kicker="Call Guide Library"
-      summaryItems={[
-        { icon: <ListMusic size={14} aria-hidden="true" />, label: 'Songs', value: songCount },
-        { label: 'Shown', value: resultCount },
-      ]}
       title="콜 가이드"
       toolbar={
         <div className="flex items-center gap-4 w-full flex-wrap">
@@ -242,13 +237,13 @@ export function CatalogPage() {
               isLabelHidden
               value={query}
               onChange={(val) => setQuery(val)}
-              placeholder="Search title, artist, call summary, tag"
+              placeholder="곡명, 아티스트, 콜로 검색"
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               startIcon={Search as any}
               hasClear
             />
           </div>
-          <div className="flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]" aria-label="Catalog view">
+          <div className="flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]" aria-label="곡 목록 보기 방식" role="group">
             <button
               type="button"
               data-active={viewMode === 'songs' ? 'true' : 'false'}
@@ -273,7 +268,7 @@ export function CatalogPage() {
               }`}
             >
               <CalendarDays size={16} aria-hidden="true" />
-              <span>Events</span>
+              <span>공연별</span>
             </button>
           </div>
         </div>

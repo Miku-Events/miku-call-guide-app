@@ -43,7 +43,7 @@ const STRONG_SECRET = 'miku-call-guide-test-secret-32-bytes-minimum'
 const GLOBAL_SECRET = 'global-test-secret-that-is-also-long-enough'
 const CODE_VERIFIER = 'v'.repeat(43)
 const TEST_ORIGIN = 'https://app.example.test'
-const CUSTOM_ORIGIN = 'https://miku.sekai.today'
+const CUSTOM_ORIGIN = 'https://miku.sekai.day'
 const CALLBACK_URI = `${TEST_ORIGIN}/api/auth/github/callback`
 
 const testEnv: ApiEnvironment = {
@@ -435,7 +435,7 @@ describe('OAuth callback', () => {
 
     await startHandler(createRequest({
       env: productionEnv,
-      url: 'http://miku.sekai.today/api/auth/github/start',
+      url: 'http://miku.sekai.day/api/auth/github/start',
     }), response)
 
     expect(response.statusCode).toBe(403)

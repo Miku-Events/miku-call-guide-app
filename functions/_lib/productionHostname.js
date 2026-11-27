@@ -1,7 +1,7 @@
 const reservedHostnameTlds = new Set(['localhost', 'example', 'invalid', 'test'])
 const reservedExampleHostnames = ['example.com', 'example.net', 'example.org']
 
-export const PRODUCTION_APP_ORIGIN = 'https://miku.sekai.today'
+export const PRODUCTION_APP_ORIGIN = 'https://miku.sekai.day'
 
 function canonicalSecureHostname(value) {
   if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) {

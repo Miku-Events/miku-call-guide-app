@@ -50,8 +50,8 @@ test('[CAT-D-01] renders the catalog navigation, filters, and practice cards', {
   await page.goto('/?mockPlayer=1')
 
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Catalog' }).first()).toHaveAttribute('data-active', 'true')
-  await expect(page.getByRole('link', { name: 'Events' }).first()).toHaveAttribute('data-active', 'false')
+  await expect(page.getByRole('link', { name: '곡 목록' }).first()).toHaveAttribute('data-active', 'true')
+  await expect(page.getByRole('link', { name: '일정' }).first()).toHaveAttribute('data-active', 'false')
   await expect(page.getByRole('button', { name: /Reload/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '다시 시도' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '전체' })).toHaveAttribute('data-active', 'true')
@@ -59,7 +59,7 @@ test('[CAT-D-01] renders the catalog navigation, filters, and practice cards', {
   const songCard = page.locator('.catalog-song-card', { hasText: '퓨처 라이트 샘플' })
   await expect(songCard).toBeVisible()
   await expect(songCard).toContainText('하츠네 미쿠 팬 샘플')
-  await expect(songCard).toContainText('Practice')
+  await expect(songCard).toContainText('콜 연습하기')
   await expect(songCard).not.toContainText('published')
   await expect(songCard).not.toContainText('M7lc1UVf-VE')
   await expect(songCard).not.toContainText('iAU1LmhtCSw')
@@ -113,8 +113,8 @@ test('[CAT-M-01] keeps the catalog usable and contained on a touch viewport', { 
 
   await expectPageContained(page)
 
-  await page.getByRole('link', { name: 'Events' }).first().click()
-  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+  await page.getByRole('link', { name: '일정' }).first().click()
+  await expect(page.getByRole('heading', { name: '공연 · 티켓 일정' })).toBeVisible()
   await expectBrowserRootScrollRestored(page)
 })
 

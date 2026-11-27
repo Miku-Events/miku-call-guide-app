@@ -211,7 +211,7 @@ test('[PLY-M-01] contains the mobile player, video, lyrics, and touch controls',
     page.locator('.call-guide-sticky-frame, .player-shell, .live-lyrics-panel'),
   )
 
-  await page.getByRole('link', { name: 'Catalog' }).click()
+  await page.getByRole('link', { name: '곡 목록' }).click()
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
   await expectBrowserRootScrollReady(page, page.locator('.catalog-content-panel'))

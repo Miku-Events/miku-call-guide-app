@@ -11,7 +11,7 @@ describe('submission environment classification', () => {
   })
 
   it.each([
-    'miku.sekai.today',
+    'miku.sekai.day',
     'localhost',
     'pages.dev.example.test',
   ])('does not classify %s as a Pages preview', (hostname) => {

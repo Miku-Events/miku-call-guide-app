@@ -144,14 +144,14 @@ test('[A11-D-02] keeps submission errors inside the dialog and announces only su
     ;(window as TurnstileHarnessWindow).__completeTurnstile('first-token')
   })
 
-  const submitButton = page.getByRole('button', { name: 'PR 요청' })
+  const submitButton = page.getByRole('button', { name: '제보 보내기' })
   await expect(submitButton).toBeEnabled()
   await submitButton.click()
 
   const dialogError = dialog.locator('.event-dialog-error[role="alert"]')
   await expect(dialogError).toContainText('요청을 제출하지 못했습니다.')
   await expect(dialogError).toContainText('보안 검증을 다시 완료한 뒤 재시도해 주세요.')
-  const pageSuccessStatus = page.getByRole('status').filter({ hasText: 'PR 생성 요청이 접수되었습니다' })
+  const pageSuccessStatus = page.getByRole('status').filter({ hasText: '일정 제보를 보냈어요' })
   await expect(pageSuccessStatus).toHaveCount(0)
   await expect(dialog.getByText('보안 검증을 다시 완료해 주세요.')).toBeVisible()
   await expect(submitButton).toBeDisabled()
@@ -163,7 +163,7 @@ test('[A11-D-02] keeps submission errors inside the dialog and announces only su
   await submitButton.click()
 
   await expect(dialog).not.toBeVisible()
-  await expect(pageSuccessStatus).toContainText('PR 생성 요청이 접수되었습니다')
+  await expect(pageSuccessStatus).toContainText('일정 제보를 보냈어요')
   expect(submissionAttempts).toBe(2)
   expect(idempotencyKeys[0]).toMatch(/^[0-9a-f-]{36}$/)
   expect(idempotencyKeys[1]).toBe(idempotencyKeys[0])
@@ -216,7 +216,7 @@ test('[A11-D-03] announces delayed month and detail loading with aria-busy', { t
 
 test('[A11-D-04] uses the skip link without replacing the HashRouter route', { tag: '@desktop' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1#/events')
-  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '공연 · 티켓 일정' })).toBeVisible()
 
   const originalHash = await page.evaluate(() => window.location.hash)
   const skipLink = page.getByTestId('skip-to-content')
@@ -224,7 +224,7 @@ test('[A11-D-04] uses the skip link without replacing the HashRouter route', { t
   await expect(skipLink).toBeVisible()
   await skipLink.click()
 
-  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '공연 · 티켓 일정' })).toBeVisible()
   expect(await page.evaluate(() => window.location.hash)).toBe(originalHash)
   await expect.poll(() => page.getByRole('main').evaluate((main) => main === document.activeElement)).toBe(true)
 })
@@ -356,7 +356,7 @@ test('[A11-M-02] reflows event controls at a 200 percent zoom-equivalent width a
     document.documentElement.style.fontSize = '200%'
   })
 
-  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '공연 · 티켓 일정' })).toBeVisible()
   const addEventButton = page.getByRole('button', { name: '일정 추가' })
   const today = page.locator('.event-day-cell[data-date="2026-05-21"]')
   await expect(addEventButton).toBeVisible()

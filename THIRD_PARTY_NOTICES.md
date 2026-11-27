@@ -43,7 +43,7 @@ though they are not runtime entries in `package.json`.
 | Package | Version | License |
 |---|---:|---|
 | `tailwindcss` | 4.3.3 | MIT |
-| `vite` | 8.2.0 | MIT |
+| `vite` | 8.4.0 | MIT |
 <!-- build-output-dependencies:end -->
 
 The Vite module-preload runtime embedded in the JavaScript output is covered by the Vite MIT

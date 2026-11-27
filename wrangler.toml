@@ -20,7 +20,7 @@ GITHUB_DATA_BASE_BRANCH = "main"
 
 [env.production.vars]
 APP_ENV = "production"
-APP_ORIGIN = "https://miku.sekai.today"
+APP_ORIGIN = "https://miku.sekai.day"
 SUBMISSION_WRITES_ENABLED = "true"
 GITHUB_DATA_OWNER = "Miku-Events"
 GITHUB_DATA_REPO = "miku-call-guide-data"

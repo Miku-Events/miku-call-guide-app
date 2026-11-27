@@ -18,22 +18,26 @@ export function CountdownOverlay({ schedule, store }: CountdownOverlayProps) {
   )
   const snapshot = useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot)
 
-  if (snapshot === null) {
-    return null
-  }
-
-  const digit = countdownDigitFromSnapshot(snapshot)
+  const digit = snapshot === null ? null : countdownDigitFromSnapshot(snapshot)
 
   return (
-    <div
-      aria-label={`카운트다운 ${digit}`}
-      aria-live="off"
-      className="lyric-countdown"
-      role="timer"
-    >
-      <span aria-hidden="true" className="lyric-countdown-number" key={snapshot}>
-        {digit}
-      </span>
-    </div>
+    <>
+      {/* Persistent so assistive tech hears the lead-in; a region mounted with its text is often skipped. */}
+      <p aria-live="assertive" className="sr-only" data-testid="countdown-announcement">
+        {digit === null ? '' : String(digit)}
+      </p>
+      {digit === null ? null : (
+        <div
+          aria-label={`카운트다운 ${digit}`}
+          aria-live="off"
+          className="lyric-countdown"
+          role="timer"
+        >
+          <span aria-hidden="true" className="lyric-countdown-number" key={snapshot}>
+            {digit}
+          </span>
+        </div>
+      )}
+    </>
   )
 }

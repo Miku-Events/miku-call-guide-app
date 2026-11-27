@@ -26,16 +26,7 @@ export function PageShellSkeleton() {
         <LayoutContent aria-busy data-testid="page-shell-loading-content">
           <p className="sr-only" role="status">페이지를 불러오는 중입니다.</p>
           <div className="app-heading-row px-4">
-            <div>
-              <div className="mb-1.5">
-                <Skeleton width={80} height="0.8rem" radius={1} />
-              </div>
-              <Skeleton width={180} height="2.2rem" radius={1} />
-            </div>
-            <div className="app-summary-strip flex gap-2">
-              <Skeleton width={90} height="1.8rem" radius={2} />
-              <Skeleton width={90} height="1.8rem" radius={2} />
-            </div>
+            <Skeleton width={180} height="2.2rem" radius={1} />
           </div>
 
           <div className="app-toolbar flex gap-3 h-11 mx-4 my-2">
