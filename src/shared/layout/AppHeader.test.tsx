@@ -18,7 +18,7 @@ describe('AppHeader', () => {
     expect(brand).toHaveAttribute('href', '#/')
     expect(brand.querySelector('.app-brand-label')).toHaveTextContent('Miku Call Guide')
 
-    const link = screen.getByRole('link', { name: 'GitHub Repository' })
+    const link = screen.getByRole('link', { name: 'GitHub 저장소' })
     expect(link.tagName).toBe('A')
     expect(link).toHaveAttribute('href', 'https://github.com/Miku-Events/miku-call-guide-app')
     expect(within(link).queryAllByRole('button')).toHaveLength(0)
@@ -31,14 +31,14 @@ describe('AppHeader', () => {
 
     render(<AppHeader activeNav="practice" />)
 
-    expect(screen.getByRole('link', { name: 'Catalog' })).toHaveAttribute('href', '#/')
-    expect(screen.getByRole('link', { name: 'Catalog' })).toHaveAttribute('data-active', 'false')
-    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', '#/events')
-    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('data-active', 'false')
-    expect(screen.getByRole('link', { name: 'Practice' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '곡 목록' })).toHaveAttribute('href', '#/')
+    expect(screen.getByRole('link', { name: '곡 목록' })).toHaveAttribute('data-active', 'false')
+    expect(screen.getByRole('link', { name: '일정' })).toHaveAttribute('href', '#/events')
+    expect(screen.getByRole('link', { name: '일정' })).toHaveAttribute('data-active', 'false')
+    expect(screen.getByRole('link', { name: '콜 연습' })).toHaveAttribute(
       'href',
       '#/songs/future-light-sample',
     )
-    expect(screen.getByRole('link', { name: 'Practice' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: '콜 연습' })).toHaveAttribute('aria-current', 'page')
   })
 })

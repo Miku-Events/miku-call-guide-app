@@ -3,24 +3,15 @@ import { AppShell } from '@astryxdesign/core/AppShell'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout'
 import { Toolbar } from '@astryxdesign/core/Toolbar'
-import { Card } from '@astryxdesign/core/Card'
 import { AppHeader } from './AppHeader'
 
 type AppPageNavKey = 'catalog' | 'events' | 'privacy'
-
-interface SummaryItem {
-  icon?: ReactNode
-  label: string
-  value: string | number
-}
 
 interface AppPageShellProps {
   activeNav: AppPageNavKey
   children: ReactNode
   className?: string
   height?: 'auto' | 'fill'
-  kicker: string
-  summaryItems: SummaryItem[]
   title: string
   toolbar?: ReactNode
 }
@@ -57,8 +48,6 @@ export function AppPageShell({
   children,
   className,
   height = 'fill',
-  kicker,
-  summaryItems,
   title,
   toolbar,
 }: AppPageShellProps) {
@@ -81,37 +70,15 @@ export function AppPageShell({
     >
       <Layout className="app-main" aria-labelledby={titleId} height={height}>
         <LayoutHeader className="px-4">
-          <div className="app-heading-row flex justify-between items-end w-full">
-            <div>
-              <p className="app-kicker">{kicker}</p>
-              <h1 id={titleId}>{title}</h1>
-            </div>
-            <div className="app-summary-strip flex gap-2" aria-label={`${title} summary`}>
-              {summaryItems.map((item) => {
-                const innerContent = (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] font-semibold">
-                      {item.icon}
-                      <span>{item.label}</span>
-                    </div>
-                    <strong className="text-lg text-[var(--color-text-teal)] mt-1">{item.value}</strong>
-                  </div>
-                )
-
-                return (
-                  <Card key={item.label} className="app-summary-item flex flex-col p-3 min-w-[7rem]">
-                    {innerContent}
-                  </Card>
-                )
-              })}
-            </div>
+          <div className="app-heading-row">
+            <h1 id={titleId}>{title}</h1>
           </div>
         </LayoutHeader>
 
         {toolbar && (
           <div className="mx-4 my-2 app-toolbar">
             <Toolbar
-              label="Page actions"
+              label="페이지 도구"
               startContent={toolbar}
             />
           </div>

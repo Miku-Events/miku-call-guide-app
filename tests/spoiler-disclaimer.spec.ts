@@ -27,10 +27,10 @@ test('[SPO-M-01] gates fresh touch visits accessibly and starts loading only aft
   await page.goto('/?mockPlayer=1', { waitUntil: 'domcontentloaded' })
 
   const dialog = page.getByRole('alertdialog')
-  const continueButton = dialog.getByRole('button', { name: '확인하고 계속하기' })
+  const continueButton = dialog.getByRole('button', { name: '알겠어요, 둘러볼게요' })
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('heading', { name: '스포일러 안내' })).toBeVisible()
-  await expect(dialog).toContainText('공연과 관련된 스포일러가 포함될 수 있습니다')
+  await expect(dialog.getByRole('heading', { name: '공연 전에 잠깐만요' })).toBeVisible()
+  await expect(dialog).toContainText('다가오는 공연이나 지금 열리고 있는 공연의 스포일러가 있을 수 있어요')
   await expect(continueButton).toBeVisible()
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toHaveCount(0)
   await expect(page.locator('.catalog-song-card')).toHaveCount(0)
@@ -64,7 +64,7 @@ test('[SPO-D-01] cannot be dismissed with Escape or a backdrop click', { tag: '@
   await page.goto('/?mockPlayer=1')
 
   const dialog = page.getByRole('alertdialog')
-  const continueButton = dialog.getByRole('button', { name: '확인하고 계속하기' })
+  const continueButton = dialog.getByRole('button', { name: '알겠어요, 둘러볼게요' })
   await expect(dialog).toBeVisible()
   await expect(continueButton).toBeFocused()
 
@@ -84,7 +84,7 @@ test('[SPO-D-02] persists confirmation and does not show the disclaimer after re
   await page.goto('/?mockPlayer=1')
 
   const dialog = page.getByRole('alertdialog')
-  await dialog.getByRole('button', { name: '확인하고 계속하기' }).click()
+  await dialog.getByRole('button', { name: '알겠어요, 둘러볼게요' }).click()
 
   await expect(dialog).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()
@@ -104,7 +104,7 @@ test('[SPO-D-03] gates a direct song deep link and resumes the original route af
   await expect(page.getByRole('alertdialog')).toBeVisible()
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toHaveCount(0)
 
-  await page.getByRole('button', { name: '확인하고 계속하기' }).click()
+  await page.getByRole('button', { name: '알겠어요, 둘러볼게요' }).click()
 
   await expect(page).toHaveURL(/#\/songs\/future-light-sample$/)
   await expect(page.getByRole('heading', { name: '퓨처 라이트 샘플' })).toBeVisible()
@@ -122,7 +122,7 @@ test('[SPO-D-04] continues for the current visit but asks again after a storage 
   }, SPOILER_DISCLAIMER_STORAGE_KEY)
 
   await page.goto('/?mockPlayer=1')
-  await page.getByRole('button', { name: '확인하고 계속하기' }).click()
+  await page.getByRole('button', { name: '알겠어요, 둘러볼게요' }).click()
 
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '콜 가이드' })).toBeVisible()

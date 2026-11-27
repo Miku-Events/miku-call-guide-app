@@ -28,10 +28,12 @@ import { useEventCalendarIndex } from './hooks/useEventCalendarIndex'
 import { useEventDetails } from './hooks/useEventDetails'
 import { useEventMonth } from './hooks/useEventMonth'
 import { CalendarGrid } from './components/CalendarGrid'
+import { EventAgendaList } from './components/EventAgendaList'
+import { EventMonthEmptyState } from './components/EventMonthEmptyState'
 import { EventDetailSheet } from './components/EventDetailSheet'
 import { EventSubmitDialog } from './components/EventSubmitDialog'
 import { Button } from '@astryxdesign/core/Button'
-import { buildCalendarDays, calendarWeeks, formatMonthLabel } from './eventDate'
+import { buildCalendarDays, calendarWeeks, formatMonthLabel, nearestAvailableMonth } from './eventDate'
 import type { EventDialogState } from './eventDialog'
 import { eventTypePresentation, normalizeEventTypePriority } from './eventTypes'
 
@@ -52,6 +54,7 @@ export function EventCalendarPage() {
   const {
     closeEventDetail,
     detailExpanded,
+    goToMonth,
     moveMonth,
     openDateDetail,
     resetSelection,
@@ -87,7 +90,7 @@ export function EventCalendarPage() {
   }, [calendarRef, visibleMonth])
 
   useEffect(() => {
-    document.title = '이벤트 캘린더 - 하츠네 미쿠 콜 가이드'
+    document.title = '공연 · 티켓 일정 - 하츠네 미쿠 콜 가이드'
   }, [])
 
   // Event computations
@@ -103,6 +106,10 @@ export function EventCalendarPage() {
     return [...visibleEvents].sort((eventA, eventB) => compareCalendarEvents(eventTypePriority, eventA, eventB))
   }, [eventTypePriority, monthResult, typeFilter])
 
+  const nearestMonthWithEvents = useMemo(
+    () => nearestAvailableMonth(calendarIndex?.data.availableMonths ?? [], visibleMonth),
+    [calendarIndex?.data.availableMonths, visibleMonth],
+  )
   const calendarDays = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth])
   const weeks = useMemo(() => calendarWeeks(calendarDays), [calendarDays])
   const eventsByDate = useMemo(() => buildEventsByDate(filteredEvents), [filteredEvents])
@@ -130,17 +137,12 @@ export function EventCalendarPage() {
     <AppPageShell
       activeNav="events"
       className="event-shell"
-      kicker="Schedule Board"
-      summaryItems={[
-        { label: 'Months', value: calendarIndex?.data.availableMonths.length ?? 0 },
-        { label: 'This month', value: monthResult?.data.events.length ?? 0 },
-      ]}
-      title="Event Calendar"
+      title="공연 · 티켓 일정"
       toolbar={
-        <div className="flex items-center justify-between w-full flex-wrap gap-4">
+        <div className="event-toolbar flex items-center justify-between w-full flex-wrap gap-4">
           <div aria-label="월 이동" className="event-month-controls flex items-center gap-2" role="group">
             <Button
-              label="Previous month"
+              label="이전 달"
               isIconOnly
               onClick={() => moveMonth(-1)}
               icon={<ChevronLeft size={18} aria-hidden="true" />}
@@ -148,14 +150,14 @@ export function EventCalendarPage() {
             />
             <strong className="text-md min-w-[7rem] text-center">{formatMonthLabel(visibleMonth)}</strong>
             <Button
-              label="Next month"
+              label="다음 달"
               isIconOnly
               onClick={() => moveMonth(1)}
               icon={<ChevronRight size={18} aria-hidden="true" />}
               variant="ghost"
             />
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="event-toolbar-actions flex items-center gap-4 flex-wrap">
             <div
               aria-label="이벤트 종류 필터"
               className="event-type-filters flex items-center bg-[var(--color-background-raised)] border border-[var(--color-border-subtle)] p-0.5 rounded-[var(--radius-element)]"
@@ -172,7 +174,7 @@ export function EventCalendarPage() {
                     : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-background-hover)]'
                 }`}
               >
-                <span>All</span>
+                <span>전체</span>
               </button>
               {availableTypes.map((type) => (
                 <button
@@ -246,11 +248,20 @@ export function EventCalendarPage() {
         </StatusBanner>
       ) : null}
 
+      {!isCalendarLoading && !activeError && filteredEvents.length === 0 ? (
+        <EventMonthEmptyState
+          hasTypeFilter={typeFilter !== 'all' && (monthResult?.data.events.length ?? 0) > 0}
+          nearestMonth={nearestMonthWithEvents}
+          onClearFilter={() => setTypeFilter('all')}
+          onGoToMonth={goToMonth}
+        />
+      ) : null}
+
       <div className="event-calendar-layout" data-detail-expanded={Boolean(selectedDate) && detailExpanded}>
         <section
           aria-busy={isCalendarLoading}
           className="event-calendar-panel"
-          aria-label="Monthly event calendar"
+          aria-label="월간 일정 달력"
           data-dragging={calendarIsDragging}
           data-scrollable={calendarCanDrag}
           ref={calendarRef}
@@ -270,6 +281,15 @@ export function EventCalendarPage() {
             weeks={weeks}
           />
         </section>
+
+        {!isCalendarLoading ? (
+          <EventAgendaList
+            events={filteredEvents}
+            openDateDetail={openDateDetail}
+            selectedDate={selectedDate}
+            visibleMonth={visibleMonth}
+          />
+        ) : null}
 
         <EventDetailSheet
           detailExpanded={detailExpanded}

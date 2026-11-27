@@ -30,13 +30,13 @@ export const callKindPriority: Record<CallKind, number> = {
 
 export const callKindLegend: Record<CallKind, { label: string }> = {
   chant: {
-    label: 'Voice',
+    label: '함성',
   },
   penlight: {
-    label: 'Penlight',
+    label: '펜라이트',
   },
   custom: {
-    label: 'Custom',
+    label: '동작',
   },
 }
 

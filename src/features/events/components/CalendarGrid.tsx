@@ -42,13 +42,13 @@ export function CalendarGrid({
     <>
       <div className="event-weekdays" aria-hidden="true">
         {[
-          ['Sun', 'sunday'],
-          ['Mon', 'weekday'],
-          ['Tue', 'weekday'],
-          ['Wed', 'weekday'],
-          ['Thu', 'weekday'],
-          ['Fri', 'weekday'],
-          ['Sat', 'saturday'],
+          ['일', 'sunday'],
+          ['월', 'weekday'],
+          ['화', 'weekday'],
+          ['수', 'weekday'],
+          ['목', 'weekday'],
+          ['금', 'weekday'],
+          ['토', 'saturday'],
         ].map(([day, dayKind]) => (
           <span data-day-kind={dayKind} key={day}>
             {day}
@@ -94,7 +94,7 @@ export function CalendarGrid({
                 )
               })}
               {weekBars.length > 0 ? (
-                <div className="event-span-bars" aria-hidden={isCompact || undefined} aria-label="Calendar events">
+                <div className="event-span-bars" aria-hidden={isCompact || undefined} aria-label="일정">
                   {weekBars.map((segment) => {
                     const title = localizedText(segment.event.title, 'ko', ['ja', 'en'])
                     const barStyle = {
