@@ -22,10 +22,10 @@ Versions reflect `package-lock.json` at the time this notice was updated.
 | `js-tokens` | 4.0.0 | MIT |
 | `loose-envify` | 1.4.0 | MIT |
 | `lucide-react` | 1.44.0 | ISC |
-| `react` | 19.2.8 | MIT |
-| `react-dom` | 19.2.8 | MIT |
+| `react` | 19.3.1 | MIT |
+| `react-dom` | 19.3.1 | MIT |
 | `react-router` | 8.3.0 | MIT |
-| `scheduler` | 0.27.0 | MIT |
+| `scheduler` | 0.28.0 | MIT |
 | `styleq` | 0.2.1 | MIT |
 <!-- runtime-dependencies:end -->
 
