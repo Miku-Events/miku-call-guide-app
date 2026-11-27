@@ -313,7 +313,7 @@ describe('CatalogPage randomized display order', () => {
     })
     expect(renderedSongTitles()).toEqual(['Beta', 'Gamma', 'Alpha'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Events' }))
+    fireEvent.click(screen.getByRole('button', { name: '공연별' }))
     fireEvent.click(screen.getByRole('button', { name: /Event.*2곡 수록/ }))
     expect(renderedSongTitles()).toEqual(['Beta', 'Alpha'])
 

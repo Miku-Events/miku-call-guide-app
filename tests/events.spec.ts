@@ -24,13 +24,13 @@ test('[EVT-D-01] navigates dates, filters, months, and safe event details', { ta
   await page.goto('/?mockPlayer=1#/events')
 
   await expect(page).toHaveURL(/#\/events$/)
-  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '공연 · 티켓 일정' })).toBeVisible()
   await expect(page.locator('.event-month-controls')).toContainText('2026년 5월')
   await expect(page.getByRole('button', { name: '일정 추가' })).toBeVisible()
 
-  const allFilter = page.getByRole('button', { name: 'All' })
-  const popupFilter = page.getByRole('button', { name: 'Popup' })
-  const concertFilter = page.getByRole('button', { name: 'Concert' })
+  const allFilter = page.getByRole('button', { name: '전체', exact: true })
+  const popupFilter = page.getByRole('button', { name: '팝업', exact: true })
+  const concertFilter = page.getByRole('button', { name: '공연', exact: true })
   await expect(allFilter).toHaveAttribute('aria-pressed', 'true')
   await expect(popupFilter).toHaveAttribute('aria-pressed', 'false')
   await expect(concertFilter).toHaveAttribute('aria-pressed', 'false')
@@ -53,7 +53,7 @@ test('[EVT-D-01] navigates dates, filters, months, and safe event details', { ta
   await expect(mayDetail).toContainText('오전 10:00 - 오후 08:00')
   await expect(mayDetail.locator('.event-x-embed')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Next month' }).click()
+  await page.getByRole('button', { name: '다음 달' }).click()
   await expect(page.locator('.event-month-controls')).toContainText('2026년 6월')
 
   await page.locator('.event-day-cell[data-date="2026-06-01"]').click()
@@ -76,11 +76,11 @@ test('[EVT-D-01] navigates dates, filters, months, and safe event details', { ta
 
 test('[EVT-M-01] supports the event filter and detail journey with touch', { tag: '@mobile' }, async ({ page }) => {
   await page.goto('/?mockPlayer=1')
-  await page.getByRole('link', { name: 'Events' }).first().tap()
+  await page.getByRole('link', { name: '일정' }).first().tap()
 
   await expect(page).toHaveURL(/#\/events$/)
-  await expect(page.getByRole('heading', { name: 'Event Calendar' })).toBeVisible()
-  const popupFilter = page.getByRole('button', { name: 'Popup' })
+  await expect(page.getByRole('heading', { name: '공연 · 티켓 일정' })).toBeVisible()
+  const popupFilter = page.getByRole('button', { name: '팝업', exact: true })
   await popupFilter.tap()
   await expect(popupFilter).toHaveAttribute('aria-pressed', 'true')
 
@@ -104,7 +104,7 @@ test('[EVT-M-02] keeps the 320px event path contained with touch-sized controls'
   })
   await page.goto('/?mockPlayer=1')
 
-  await page.getByRole('button', { name: 'Events' }).tap()
+  await page.getByRole('button', { name: '공연별' }).tap()
   const catalogPanel = page.locator('.catalog-content-panel')
   const eventGrid = catalogPanel.locator('.catalog-event-grid')
   const eventCards = eventGrid.locator('.catalog-event-folder-card')
@@ -115,16 +115,16 @@ test('[EVT-M-02] keeps the 320px event path contained with touch-sized controls'
   await expectLocatorMinTouchTarget(eventCards)
   await expectPageContained(page)
 
-  await page.getByRole('link', { name: 'Events' }).first().tap()
+  await page.getByRole('link', { name: '일정' }).first().tap()
   await expect(page).toHaveURL(/#\/events$/)
 
   const today = page.locator('.event-day-cell[data-date="2026-05-21"]')
   await expect(today).toBeVisible()
   const targets = [
-    page.getByRole('button', { name: 'Previous month' }),
-    page.getByRole('button', { name: 'Next month' }),
-    page.getByRole('button', { name: 'All' }),
-    page.getByRole('button', { name: 'Popup' }),
+    page.getByRole('button', { name: '이전 달' }),
+    page.getByRole('button', { name: '다음 달' }),
+    page.getByRole('button', { name: '전체', exact: true }),
+    page.getByRole('button', { name: '팝업', exact: true }),
     page.getByRole('button', { name: '일정 추가' }),
     today,
   ]

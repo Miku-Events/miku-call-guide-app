@@ -7,16 +7,16 @@ export const eventTypePresentation: Record<EventType, {
   shortLabel: string
   color: EventTokenColor
 }> = {
-  concert: { label: 'Concert', shortLabel: 'Concert', color: 'pink' },
+  concert: { label: '공연', shortLabel: '공연', color: 'pink' },
   dj: { label: 'DJ', shortLabel: 'DJ', color: 'purple' },
-  popup: { label: 'Popup', shortLabel: 'Popup', color: 'orange' },
-  ticketApplication: { label: 'Ticket apply', shortLabel: 'Ticket', color: 'blue' },
-  ticketGeneralSale: { label: 'General sale', shortLabel: 'General sale', color: 'blue' },
-  livestream: { label: 'Livestream', shortLabel: 'Livestream', color: 'cyan' },
-  exhibition: { label: 'Exhibition', shortLabel: 'Exhibition', color: 'yellow' },
-  collaboration: { label: 'Collab', shortLabel: 'Collab', color: 'teal' },
-  announcement: { label: 'Notice', shortLabel: 'Notice', color: 'red' },
-  other: { label: 'Other', shortLabel: 'Other', color: 'gray' },
+  popup: { label: '팝업 스토어', shortLabel: '팝업', color: 'orange' },
+  ticketApplication: { label: '티켓 응모', shortLabel: '티켓', color: 'blue' },
+  ticketGeneralSale: { label: '일반 판매', shortLabel: '일반 판매', color: 'blue' },
+  livestream: { label: '생중계', shortLabel: '생중계', color: 'cyan' },
+  exhibition: { label: '전시', shortLabel: '전시', color: 'yellow' },
+  collaboration: { label: '콜라보', shortLabel: '콜라보', color: 'teal' },
+  announcement: { label: '공지', shortLabel: '공지', color: 'red' },
+  other: { label: '기타', shortLabel: '기타', color: 'gray' },
 }
 
 export const defaultEventTypePriority: EventType[] = [

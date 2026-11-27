@@ -66,7 +66,7 @@ describe('local and release scripts', () => {
     expect(manifest.devDependencies.typescript).toBe('~6.0.2')
     expect(lockfile.packages['node_modules/typescript'].version).toBe('6.0.3')
     expect(manifest.devDependencies['typescript-eslint']).toBe('^8.65.0')
-    expect(lockfile.packages['node_modules/typescript-eslint'].version).toBe('8.65.0')
+    expect(lockfile.packages['node_modules/typescript-eslint'].version).toBe('8.74.0')
     expect(manifest.devDependencies['@types/node']).toBe('^26.1.2')
   })
 
@@ -79,10 +79,10 @@ describe('local and release scripts', () => {
     expect(manifest.allowScripts).toEqual({
       '@astryxdesign/cli@0.2.0': true,
       '@astryxdesign/core@0.2.0': true,
-      'esbuild@0.28.1': true,
+      'esbuild@0.28.2': true,
       'fsevents@2.3.2': false,
       'fsevents@2.3.3': false,
-      'workerd@1.20260730.1': true,
+      'workerd@1.20261127.1': true,
     })
 
     for (const entry of Object.keys(manifest.allowScripts)) {

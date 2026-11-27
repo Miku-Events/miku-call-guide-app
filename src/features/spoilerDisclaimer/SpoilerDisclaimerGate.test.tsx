@@ -62,33 +62,33 @@ describe('SpoilerDisclaimerGate', () => {
   it('renders only the required disclaimer before acknowledgement', () => {
     renderGate()
 
-    const dialog = screen.getByRole('alertdialog', { name: '스포일러 안내' })
-    const confirmButton = screen.getByRole('button', { name: '확인하고 계속하기' })
+    const dialog = screen.getByRole('alertdialog', { name: '공연 전에 잠깐만요' })
+    const confirmButton = screen.getByRole('button', { name: '알겠어요, 둘러볼게요' })
 
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(dialog).toHaveAttribute('open')
     expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
     expect(
-      screen.getByText(/스포일러 노출을 줄이기 위해 카탈로그 첫 화면의 곡 목록은 무작위/)
-    ).toHaveTextContent(/곡 자체가 스포일러로 느껴질 수 있으니/)
+      screen.getByText(/첫 화면의 곡 목록은 무작위로 섞어서/)
+    ).toHaveTextContent(/세트리스트가 짐작될 수 있으니/)
     expect(confirmButton).toHaveFocus()
   })
 
   it('cannot be dismissed with Escape or a backdrop click', () => {
     renderGate()
-    const dialog = screen.getByRole('alertdialog', { name: '스포일러 안내' })
+    const dialog = screen.getByRole('alertdialog', { name: '공연 전에 잠깐만요' })
 
     fireEvent.keyDown(dialog, { key: 'Escape' })
     fireEvent.click(dialog)
 
-    expect(screen.getByRole('alertdialog', { name: '스포일러 안내' })).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog', { name: '공연 전에 잠깐만요' })).toBeInTheDocument()
     expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
   })
 
   it('stores acknowledgement and unlocks the current visit', () => {
     renderGate()
 
-    fireEvent.click(screen.getByRole('button', { name: '확인하고 계속하기' }))
+    fireEvent.click(screen.getByRole('button', { name: '알겠어요, 둘러볼게요' }))
 
     expect(window.localStorage.getItem(SPOILER_DISCLAIMER_STORAGE_KEY)).toBe(
       SPOILER_DISCLAIMER_ACKNOWLEDGED_VALUE
@@ -111,7 +111,7 @@ describe('SpoilerDisclaimerGate', () => {
     window.localStorage.setItem(SPOILER_DISCLAIMER_STORAGE_KEY, 'true')
     renderGate()
 
-    expect(screen.getByRole('alertdialog', { name: '스포일러 안내' })).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog', { name: '공연 전에 잠깐만요' })).toBeInTheDocument()
     expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
   })
 
@@ -121,9 +121,9 @@ describe('SpoilerDisclaimerGate', () => {
     })
     renderGate()
 
-    expect(screen.getByRole('alertdialog', { name: '스포일러 안내' })).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog', { name: '공연 전에 잠깐만요' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '확인하고 계속하기' }))
+    fireEvent.click(screen.getByRole('button', { name: '알겠어요, 둘러볼게요' }))
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     expect(screen.getByTestId('protected-content')).toBeInTheDocument()

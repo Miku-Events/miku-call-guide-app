@@ -34,57 +34,113 @@ function isLineBreakGrapheme(value: string): boolean {
   return value === '\n' || value === '\r'
 }
 
-function renderLyricTokensForMeasure(tokens: GraphemeToken[]) {
+interface LyricRenderEntry {
+  node: ReactNode
+  /** The entry closes a phrase: it ends in whitespace or is an explicit line break. */
+  endsPhrase: boolean
+  /** Explicit line breaks stay outside phrase wrappers so they can force a new row. */
+  isLineBreak: boolean
+}
+
+function endsWithWhitespace(graphemes: GraphemeToken['graphemes']): boolean {
+  const last = graphemes[graphemes.length - 1]
+  return last !== undefined && /^\s+$/u.test(last.value)
+}
+
+/**
+ * Wraps runs of word tokens between spaces in a `.lyric-phrase`, so a row
+ * breaks at the lyric's own phrase gaps (e.g. 「言葉  僕は」) before it breaks
+ * inside a phrase. A phrase wider than the row still wraps at word tokens.
+ */
+function groupIntoPhrases(entries: LyricRenderEntry[], keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = []
+  let phrase: ReactNode[] = []
+  const flushPhrase = () => {
+    if (phrase.length === 0) {
+      return
+    }
+    nodes.push(
+      <span className="lyric-phrase" key={`${keyPrefix}-phrase-${nodes.length}`}>
+        {phrase}
+      </span>,
+    )
+    phrase = []
+  }
+
+  for (const entry of entries) {
+    if (entry.isLineBreak) {
+      flushPhrase()
+      nodes.push(entry.node)
+      continue
+    }
+    phrase.push(entry.node)
+    if (entry.endsPhrase) {
+      flushPhrase()
+    }
+  }
+  flushPhrase()
+  return nodes
+}
+
+function renderLyricTokensForMeasure(tokens: GraphemeToken[]) {
+  const entries: LyricRenderEntry[] = []
   tokens.forEach((token, tokenIndex) => {
     let chunk: GraphemeToken['graphemes'] = []
     const flushChunk = () => {
       if (chunk.length === 0) {
         return
       }
-      nodes.push(
-        <span
-          className="lyric-token-measure"
-          data-measure-start={chunk[0].index}
-          data-measure-end={chunk[chunk.length - 1].index}
-          data-whitespace={token.isWhitespaceOnly}
-          key={`measure-${token.text}-${tokenIndex}-${chunk[0].index}`}
-        >
-          {chunk.map((grapheme) => (
-            <span
-              className="grapheme-measure"
-              data-grapheme-index-measure={grapheme.index}
-              key={`measure-${grapheme.value}-${grapheme.index}`}
-            >
-              {grapheme.value}
-            </span>
-          ))}
-        </span>,
-      )
+      entries.push({
+        endsPhrase: endsWithWhitespace(chunk),
+        isLineBreak: false,
+        node: (
+          <span
+            className="lyric-token-measure"
+            data-measure-start={chunk[0].index}
+            data-measure-end={chunk[chunk.length - 1].index}
+            data-whitespace={token.isWhitespaceOnly}
+            key={`measure-${token.text}-${tokenIndex}-${chunk[0].index}`}
+          >
+            {chunk.map((grapheme) => (
+              <span
+                className="grapheme-measure"
+                data-grapheme-index-measure={grapheme.index}
+                key={`measure-${grapheme.value}-${grapheme.index}`}
+              >
+                {grapheme.value}
+              </span>
+            ))}
+          </span>
+        ),
+      })
       chunk = []
     }
     token.graphemes.forEach((grapheme) => {
       if (isLineBreakGrapheme(grapheme.value)) {
         flushChunk()
-        nodes.push(
-          <span
-            aria-hidden="true"
-            className="lyric-line-break"
-            data-grapheme-index-measure={grapheme.index}
-            key={`measure-line-break-${grapheme.index}`}
-          />,
-        )
+        entries.push({
+          endsPhrase: true,
+          isLineBreak: true,
+          node: (
+            <span
+              aria-hidden="true"
+              className="lyric-line-break"
+              data-grapheme-index-measure={grapheme.index}
+              key={`measure-line-break-${grapheme.index}`}
+            />
+          ),
+        })
       } else {
         chunk.push(grapheme)
       }
     })
     flushChunk()
   })
-  return nodes
+  return groupIntoPhrases(entries, 'measure')
 }
 
 function renderLyricTokensForRow(tokens: GraphemeToken[], startIdx: number, endIdx: number) {
-  const nodes: ReactNode[] = []
+  const entries: LyricRenderEntry[] = []
   tokens.forEach((token, tokenIndex) => {
     const rowGraphemes = token.graphemes.filter((item) => item.index >= startIdx && item.index <= endIdx)
     if (rowGraphemes.length === 0) {
@@ -95,39 +151,47 @@ function renderLyricTokensForRow(tokens: GraphemeToken[], startIdx: number, endI
       if (chunk.length === 0) {
         return
       }
-      nodes.push(
-        <span
-          className="lyric-token"
-          data-whitespace={token.isWhitespaceOnly}
-          key={`${token.text}-${tokenIndex}-${chunk[0].index}`}
-        >
-          {chunk.map((grapheme) => (
-            <span className="grapheme" data-grapheme-index={grapheme.index} key={`${grapheme.value}-${grapheme.index}`}>
-              {grapheme.value}
-            </span>
-          ))}
-        </span>,
-      )
+      entries.push({
+        endsPhrase: endsWithWhitespace(chunk),
+        isLineBreak: false,
+        node: (
+          <span
+            className="lyric-token"
+            data-whitespace={token.isWhitespaceOnly}
+            key={`${token.text}-${tokenIndex}-${chunk[0].index}`}
+          >
+            {chunk.map((grapheme) => (
+              <span className="grapheme" data-grapheme-index={grapheme.index} key={`${grapheme.value}-${grapheme.index}`}>
+                {grapheme.value}
+              </span>
+            ))}
+          </span>
+        ),
+      })
       chunk = []
     }
     rowGraphemes.forEach((grapheme) => {
       if (isLineBreakGrapheme(grapheme.value)) {
         flushChunk()
-        nodes.push(
-          <span
-            aria-hidden="true"
-            className="lyric-line-break"
-            data-grapheme-index={grapheme.index}
-            key={`line-break-${grapheme.index}`}
-          />,
-        )
+        entries.push({
+          endsPhrase: true,
+          isLineBreak: true,
+          node: (
+            <span
+              aria-hidden="true"
+              className="lyric-line-break"
+              data-grapheme-index={grapheme.index}
+              key={`line-break-${grapheme.index}`}
+            />
+          ),
+        })
       } else {
         chunk.push(grapheme)
       }
     })
     flushChunk()
   })
-  return nodes
+  return groupIntoPhrases(entries, `row-${startIdx}`)
 }
 
 function LyricLineComponent({
@@ -175,6 +239,27 @@ function LyricLineComponent({
     }
     return rowIndex
   }, [lyricTokens, rowSplits])
+
+  /** True when an active range drawn from an earlier row continues into this row. */
+  const rangeContinuesIntoRow = (lane: 'above' | 'below', rowIndex: number) => {
+    const row = rowSplits[rowIndex]
+    if (!active || rowIndex === 0 || !row) {
+      return false
+    }
+    return (lane === 'above' ? aboveCalls : belowCalls).some((call) => {
+      if (!call.markers.range.enabled) {
+        return false
+      }
+      const start = call.anchor.rangeStartChar ?? call.anchor.pointChar
+      const end = call.anchor.rangeEndChar ?? call.anchor.pointChar
+      return getCallRowIndexForRender(call.anchor.pointChar) < rowIndex && Math.max(start, end) >= row.startIdx
+    })
+  }
+
+  const renderRangeSpacer = (lane: 'above' | 'below', rowIndex: number) =>
+    rangeContinuesIntoRow(lane, rowIndex)
+      ? <div aria-hidden="true" className="call-range-spacer" data-lane={lane} />
+      : null
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!interactive || (event.key !== 'Enter' && event.key !== ' ')) {
@@ -233,9 +318,9 @@ function LyricLineComponent({
             const rowBelowCalls = belowCalls.filter((call) => getCallRowIndexForRender(call.anchor.pointChar) === rowIndex)
             return (
               <div className="lyric-row-wrap" data-row-index={rowIndex} key={`${row.startIdx}-${row.endIdx}`}>
-                {renderCallLane('above', rowAboveCalls, rowIndex)}
+                {renderCallLane('above', rowAboveCalls, rowIndex) ?? renderRangeSpacer('above', rowIndex)}
                 <p className="lyric-original">{renderLyricTokensForRow(lyricTokens, row.startIdx, row.endIdx)}</p>
-                {renderCallLane('below', rowBelowCalls, rowIndex)}
+                {renderCallLane('below', rowBelowCalls, rowIndex) ?? renderRangeSpacer('below', rowIndex)}
               </div>
             )
           })}
