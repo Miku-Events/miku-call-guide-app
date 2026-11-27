@@ -1,4 +1,4 @@
-import { AlertTriangle, CircleAlert, ListMusic } from 'lucide-react'
+import { AlertTriangle, CircleAlert, Megaphone } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router'
 import './callGuide.css'
@@ -18,8 +18,10 @@ import { YouTubePlayer } from '../player/YouTubePlayer'
 import {
   callKindLegend,
   callKindsInSong,
+  groupCallsByLineId,
   normalizedCallKind,
 } from './callPositioning'
+import { orderedCallsForDisplay } from './lyricGeometry'
 import { buildCountdownSchedule, countdownStartForLyric } from './countdownSchedule'
 import { LyricList } from './LyricList'
 import { AppHeader } from '../../shared/layout/AppHeader'
@@ -52,6 +54,8 @@ export function CallGuidePage() {
     songResult: LoadResult<SongGuide>
   } | null>(null)
   const [playbackSnapshot, setPlaybackSnapshot] = useState<PlaybackBoundarySnapshot | null>(null)
+  // Remembers the last sung line so the "next call" strip stays correct between lines.
+  const [lastActiveLineId, setLastActiveLineId] = useState<string | null>(null)
   const [playbackTimeStore] = useState(() => createPlaybackTimeStore())
   const [seekRequest, setSeekRequest] = useState<{ id: number; timeMs: number } | null>(null)
   const [loadError, setLoadError] = useState<{
@@ -144,6 +148,7 @@ export function CallGuidePage() {
           setLoaded({ requestKey, manifestResult: loadedManifest, songResult: loadedSong })
           playbackTimeStore.set(initialPlaybackMs)
           setPlaybackSnapshot(initialSnapshot)
+          setLastActiveLineId(initialSnapshot.activeLineId)
           setSeekRequest(null)
           setLoadError(null)
         }
@@ -190,6 +195,26 @@ export function CallGuidePage() {
   const globalCalls = playbackSnapshot?.globalCalls ?? []
   const callLegendKinds = useMemo(() => (song ? callKindsInSong(song.callEvents) : []), [song])
   const countdownSchedule = useMemo(() => (song ? buildCountdownSchedule(song) : []), [song])
+  const callsByLineId = useMemo(() => (song ? groupCallsByLineId(song.callEvents) : null), [song])
+  const upcomingCall = useMemo(() => {
+    if (!song || !callsByLineId) {
+      return null
+    }
+    const anchorLineId = activeLine?.id ?? lastActiveLineId
+    const anchorIndex = anchorLineId ? song.lyrics.findIndex((line) => line.id === anchorLineId) : -1
+    // The current line's calls are "now"; otherwise look ahead from the line after the last one sung.
+    const searchFrom = activeLine ? anchorIndex : anchorIndex + 1
+    for (let index = Math.max(0, searchFrom); index < song.lyrics.length; index += 1) {
+      const calls = callsByLineId.get(song.lyrics[index].id)
+      if (calls && calls.length > 0) {
+        return {
+          isNow: Boolean(activeLine) && index === anchorIndex,
+          text: localizedText(orderedCallsForDisplay(calls)[0].text, song.display.defaultCallLanguage, ['ko', 'ja', 'romaji', 'en']),
+        }
+      }
+    }
+    return null
+  }, [activeLine, callsByLineId, lastActiveLineId, song])
 
   const publishPlaybackTime = useCallback((timeMs: number) => {
     playbackTimeStore.set(timeMs)
@@ -205,6 +230,9 @@ export function CallGuidePage() {
 
     playbackSnapshotRef.current = nextSnapshot
     setPlaybackSnapshot(nextSnapshot)
+    if (nextSnapshot.activeLineId) {
+      setLastActiveLineId(nextSnapshot.activeLineId)
+    }
   }, [playbackTimeStore])
   
   const seekToLine = useCallback((line: LyricLine) => {
@@ -280,7 +308,6 @@ export function CallGuidePage() {
               <section className="player-video-panel">
                 <div className="player-video-stack flex flex-col gap-4">
                   <div className="player-title-block">
-                    <p className="app-kicker">Call Guide Practice</p>
                     <h1 className="text-2xl font-bold m-0">{localizedText(song.metadata.title, 'ko', ['ja', 'en'])}</h1>
                     <span className="text-sm text-[var(--color-text-secondary)]">{localizedText(song.metadata.artist, 'ko', ['ja', 'en'])}</span>
                   </div>
@@ -294,17 +321,19 @@ export function CallGuidePage() {
                       videoId={song.youtube.videoId}
                     />
                   </div>
-                  <div className="player-active-meta flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                    <ListMusic size={17} aria-hidden="true" />
-                    <span>{activeLine ? activeLine.id : 'No active lyric line'}</span>
+                  <div className="player-active-meta" data-state={upcomingCall?.isNow ? 'now' : 'next'}>
+                    <Megaphone size={17} aria-hidden="true" />
+                    <span className="player-active-meta-label">{upcomingCall?.isNow ? '지금 콜' : '다음 콜'}</span>
+                    <span className="player-active-meta-call">{upcomingCall ? upcomingCall.text : '남은 콜이 없어요'}</span>
                   </div>
                 </div>
               </section>
 
               <section className="live-lyrics-panel" id="lyrics-practice-section" tabIndex={-1}>
                 {callLegendKinds.length > 0 ? (
+                  <div className="call-legend-row flex items-center gap-2">
                   <aside aria-label="콜 타입 안내" className="call-kind-legend">
-                    <span className="call-kind-legend-title">Legend</span>
+                    <span className="call-kind-legend-title">콜 종류</span>
                     <div className="call-kind-legend-items">
                       {callLegendKinds.map((kind) => {
                         const legend = callKindLegend[kind]
@@ -320,6 +349,15 @@ export function CallGuidePage() {
                       })}
                     </div>
                   </aside>
+                  <details className="call-reading-guide">
+                    <summary className="flex min-h-touch-target items-center rounded-[var(--radius-element)] border px-3 text-sm font-semibold">읽는 법</summary>
+                    <ul>
+                      <li><strong>↑ ↓</strong> 화살표가 가리키는 글자에서 콜을 외쳐요. 위 칸은 가사 위, 아래 칸은 가사 아래 콜이에요.</li>
+                      <li><strong>┌ ┐</strong> 괄호로 묶인 구간 동안 콜을 이어서 외쳐요.</li>
+                      <li><strong>가사 누르기</strong> 그 줄로 이동해 3·2·1 카운트다운 뒤에 시작해요.</li>
+                    </ul>
+                  </details>
+                  </div>
                 ) : null}
                 {globalCalls.length > 0 ? (
                   <div className="global-call-banner">

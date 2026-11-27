@@ -107,9 +107,6 @@ describe('player layout CSS contracts', () => {
     expectDeclaration(appToolbar, 'display', 'grid')
     expectDeclaration(appToolbar, 'border-radius', 'var(--radius-element)')
 
-    const appSummaryItem = getBlock(css, '.app-summary-item {')
-    expectDeclaration(appSummaryItem, 'border-radius', 'var(--radius-element)')
-
     const appStatusBanner = getBlock(css, '.app-status-banner {')
     expectDeclaration(appStatusBanner, 'display', 'flex')
     expectDeclaration(appStatusBanner, 'border-radius', 'var(--radius-element)')
@@ -286,7 +283,7 @@ describe('player layout CSS contracts', () => {
   it('keeps countdown input-transparent and collapses its motion for reduced-motion users', () => {
     const countdown = getBlock(css, '.lyric-countdown')
     expectDeclaration(countdown, 'position', 'absolute')
-    expectDeclaration(countdown, 'top', '50%')
+    expectDeclaration(countdown, 'top', '0.75rem')
     expectDeclaration(countdown, 'left', '50%')
     expectDeclaration(countdown, 'pointer-events', 'none')
 

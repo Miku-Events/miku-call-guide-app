@@ -28,6 +28,25 @@ describe('CountdownOverlay', () => {
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
   })
 
+  it('announces each digit through a live region that stays mounted', () => {
+    const store = createPlaybackTimeStore(5999)
+    render(<CountdownOverlay schedule={schedule} store={store} />)
+
+    const announcement = screen.getByTestId('countdown-announcement')
+    expect(announcement).toHaveAttribute('aria-live', 'assertive')
+    expect(announcement).toHaveTextContent('')
+
+    act(() => store.set(6000))
+    expect(announcement).toHaveTextContent('3')
+
+    act(() => store.set(10000))
+    expect(announcement).toHaveTextContent('1')
+
+    act(() => store.set(12000))
+    expect(screen.getByTestId('countdown-announcement')).toBe(announcement)
+    expect(announcement).toHaveTextContent('')
+  })
+
   it('keeps the displayed digit fixed when playback time is paused', () => {
     const store = createPlaybackTimeStore(7000)
     render(<CountdownOverlay schedule={schedule} store={store} />)

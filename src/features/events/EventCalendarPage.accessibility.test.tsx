@@ -144,8 +144,8 @@ describe('EventCalendarPage accessibility', () => {
     render(<EventCalendarPage />)
 
     const filters = await screen.findByRole('group', { name: '이벤트 종류 필터' })
-    const all = screen.getByRole('button', { name: 'All' })
-    const concert = screen.getByRole('button', { name: 'Concert' })
+    const all = screen.getByRole('button', { name: '전체' })
+    const concert = screen.getByRole('button', { name: '공연' })
     expect(filters).toContainElement(all)
     expect(all).toHaveAttribute('aria-pressed', 'true')
     expect(concert).toHaveAttribute('aria-pressed', 'false')
@@ -159,7 +159,7 @@ describe('EventCalendarPage accessibility', () => {
     harness.monthLoading = true
     render(<EventCalendarPage />)
 
-    const calendar = screen.getByRole('region', { name: 'Monthly event calendar' })
+    const calendar = screen.getByRole('region', { name: '월간 일정 달력' })
     expect(calendar).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByRole('status')).toHaveTextContent('달력 데이터를 불러오는 중')
 
@@ -176,7 +176,7 @@ describe('EventCalendarPage accessibility', () => {
     render(<EventCalendarPage />)
 
     await screen.findByRole('group', { name: '이벤트 종류 필터' })
-    expect(screen.getByRole('region', { name: 'Monthly event calendar' })).toHaveAttribute(
+    expect(screen.getByRole('region', { name: '월간 일정 달력' })).toHaveAttribute(
       'aria-busy',
       'true',
     )

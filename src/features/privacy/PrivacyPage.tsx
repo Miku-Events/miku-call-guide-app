@@ -12,8 +12,6 @@ export function PrivacyPage() {
       activeNav="privacy"
       className="privacy-shell"
       height="auto"
-      kicker="Privacy"
-      summaryItems={[]}
       title="개인정보 처리 안내"
     >
       <article className="privacy-content">

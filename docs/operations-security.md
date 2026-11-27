@@ -16,14 +16,14 @@
 
 ## 외부 서비스
 
-- [ ] production Turnstile hostname과 GitHub OAuth callback을 `miku.sekai.today`로 제한합니다.
+- [ ] production Turnstile hostname과 GitHub OAuth callback을 `miku.sekai.day`로 제한합니다.
 - [ ] GitHub App은 private data 저장소 하나에 Contents/PR/Issues write와 Metadata read만 가집니다.
 - [x] 이 앱의 기존 Google·게이트웨이 주입을 끕니다.
 - [ ] 기존 Pages 프로젝트의 Web Analytics 자동 등록을 사용합니다. 앱 코드나 GitHub 변수에 분석 토큰을 추가하지 않습니다.
 - [ ] 배포 후 production의 자동 beacon 1개와 성공한 RUM POST를 확인합니다. Preview에도 Pages가 자동 삽입할 수 있으므로 같은 수집·중복 검사를 적용합니다.
 
 위 순서는 외부 사전 조건과 검증 절차이며, 저장소 변경은 Cloudflare Dashboard 설정을 변경하지 않습니다.
-`miku.sekai.today` 외 다른 subdomain은 범위 밖입니다.
+`miku.sekai.day` 외 다른 subdomain은 범위 밖입니다.
 
 ## 남용 대응
 

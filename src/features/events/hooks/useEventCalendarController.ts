@@ -46,9 +46,15 @@ export function useEventCalendarController() {
     resetSelection()
   }, [resetSelection])
 
+  const goToMonth = useCallback((month: string) => {
+    setVisibleMonth(month)
+    resetSelection()
+  }, [resetSelection])
+
   return {
     closeEventDetail,
     detailExpanded,
+    goToMonth,
     moveMonth,
     openDateDetail,
     resetSelection,

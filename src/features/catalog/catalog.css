@@ -97,30 +97,6 @@
   border-top-color: transparent;
 }
 
-.catalog-shell .app-summary-strip {
-  gap: 0.4rem;
-}
-
-.catalog-shell .app-summary-item {
-  min-width: 4.6rem;
-  gap: 0.08rem;
-  padding: 0.42rem 0.55rem;
-}
-
-.catalog-shell .app-summary-item span {
-  font-size: 0.66rem;
-}
-
-.catalog-shell .app-summary-item strong {
-  margin-top: 0.04rem;
-  font-size: 0.86rem;
-}
-
-.catalog-shell .app-summary-item svg {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
 .catalog-content-layout {
   display: block;
 }

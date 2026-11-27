@@ -61,13 +61,12 @@ export function SpoilerDisclaimerGate({ children }: SpoilerDisclaimerGateProps) 
             <LayoutContent isScrollable={false}>
               <VStack gap={3}>
                 <Heading id={TITLE_ID} level={1}>
-                  스포일러 안내
+                  공연 전에 잠깐만요
                 </Heading>
                 <Text as="p" display="block" id={DESCRIPTION_ID}>
-                  이 앱에는 개최 예정이거나 개최 중인 공연과 관련된 스포일러가 포함될 수
-                  있습니다. 스포일러 노출을 줄이기 위해 카탈로그 첫 화면의 곡 목록은 무작위
-                  순서로 표시하지만, 경우에 따라 목록에 포함된 곡 자체가 스포일러로 느껴질 수
-                  있으니 이용에 주의해 주세요.
+                  다가오는 공연이나 지금 열리고 있는 공연의 스포일러가 있을 수 있어요. 첫
+                  화면의 곡 목록은 무작위로 섞어서 보여 드리지만, 목록에 있는 곡만 보고도
+                  세트리스트가 짐작될 수 있으니 조심해 주세요.
                 </Text>
               </VStack>
             </LayoutContent>
@@ -77,7 +76,7 @@ export function SpoilerDisclaimerGate({ children }: SpoilerDisclaimerGateProps) 
               <Button
                 className="spoiler-disclaimer-confirm"
                 data-autofocus
-                label="확인하고 계속하기"
+                label="알겠어요, 둘러볼게요"
                 onClick={acknowledge}
                 variant="primary"
               />

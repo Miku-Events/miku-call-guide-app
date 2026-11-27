@@ -27,12 +27,12 @@ export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
     <div className="flex items-center gap-3">
       {(activeNav === 'catalog' || activeNav === 'events' || activeNav === 'privacy') && (
         <a
-          aria-label="GitHub Repository"
+          aria-label="GitHub 저장소"
           href="https://github.com/Miku-Events/miku-call-guide-app"
           className="app-github-link"
           rel="noopener noreferrer"
           target="_blank"
-          title="GitHub Repository"
+          title="GitHub 저장소"
         >
           <GitHubMarkIcon size={20} />
         </a>
@@ -53,7 +53,7 @@ export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
           <span className="app-brand-label">Miku Call Guide</span>
         </a>
 
-        <nav aria-label="Main navigation" className="flex min-w-0 items-center gap-1">
+        <nav aria-label="주 메뉴" className="flex min-w-0 items-center gap-1">
           <a
             aria-current={activeNav === 'catalog' ? 'page' : undefined}
             className={`${navItemClassName} ${activeNav === 'catalog' ? selectedNavItemClassName : inactiveNavItemClassName}`}
@@ -61,7 +61,7 @@ export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
             href="#/"
             style={activeNav === 'catalog' ? { color: '#050506' } : undefined}
           >
-            Catalog
+            곡 목록
           </a>
           <a
             aria-current={activeNav === 'events' ? 'page' : undefined}
@@ -70,7 +70,7 @@ export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
             href="#/events"
             style={activeNav === 'events' ? { color: '#050506' } : undefined}
           >
-            Events
+            일정
           </a>
           {isPlayer && (
             <a
@@ -80,7 +80,7 @@ export function AppHeader({ activeNav, endContent }: AppHeaderProps) {
               href={practiceHref}
               style={{ color: '#050506' }}
             >
-              Practice
+              콜 연습
             </a>
           )}
         </nav>

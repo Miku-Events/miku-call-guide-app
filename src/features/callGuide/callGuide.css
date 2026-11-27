@@ -65,16 +65,17 @@
   overflow: hidden;
 }
 
+/* Sits above the already-sung lines, so it never covers the line being counted into. */
 .lyric-countdown {
   position: absolute;
-  top: 50%;
+  top: 0.75rem;
   left: 50%;
   z-index: 3;
   display: grid;
-  width: clamp(5.5rem, 16vw, 7rem);
+  width: clamp(4.5rem, 12vw, 5.75rem);
   aspect-ratio: 1;
   place-items: center;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   border: 1px solid var(--player-outline);
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--player-surface-raised) 84%, transparent);
@@ -86,7 +87,7 @@
 
 .lyric-countdown-number {
   font-family: var(--font-display);
-  font-size: clamp(3rem, 10vw, 4.5rem);
+  font-size: clamp(2.5rem, 8vw, 3.6rem);
   font-weight: 900;
   line-height: 1;
   animation: countdown-pop 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -165,9 +166,6 @@
 }
 
 .lyric-line[data-active="true"] {
-  border-color: rgba(57, 197, 187, 0.35);
-  background: rgba(0, 146, 155, 0.12);
-  box-shadow: inset 3px 0 0 var(--app-accent);
   opacity: 1;
   animation: lyric-enter 0.3s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
 }
@@ -199,6 +197,15 @@
   width: 100%;
 }
 
+/*
+ * The hidden measure copy must share the rows' content width. Anchored to the
+ * line's padding box it measured a few px wider, so real rows overflowed and
+ * wrapped mid-word on narrow screens.
+ */
+.lyric-line-detail {
+  position: relative;
+}
+
 .call-lane {
   position: relative;
   min-height: calc(3.15rem + var(--call-lane-extra-stack, 0rem));
@@ -207,6 +214,11 @@
 
 .call-lane[data-lane="above"] {
   margin-bottom: 0.15rem;
+}
+
+/* Room for a range bar that continues from the previous row; it has no label of its own. */
+.call-range-spacer {
+  height: 1.35rem;
 }
 
 .call-lane[data-lane="below"] {
@@ -224,7 +236,6 @@
   gap: 0;
   overflow-wrap: normal;
   word-break: normal;
-  color: #111b1c;
   font-size: clamp(1.25rem, 1.1rem + 0.42vw, 1.75rem);
   font-weight: 780;
   line-height: 1.25;
@@ -276,19 +287,11 @@
   align-items: center;
   gap: 0.24rem;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(218, 60, 94, 0.2);
-  background: rgba(218, 60, 94, 0.1);
-  color: #8d1734;
+  border: 1px solid;
   padding: 0.18rem 0.48rem;
   font-size: 0.78rem;
   font-weight: 750;
   line-height: 1.15;
-}
-
-.call-preview-chip[data-lane="below"] {
-  border-color: rgba(0, 146, 155, 0.22);
-  background: rgba(0, 146, 155, 0.1);
-  color: #00666d;
 }
 
 .call-preview-arrow {
@@ -304,16 +307,7 @@
   white-space: nowrap;
 }
 
-.lyric-line[data-position="current"] .lyric-original {
-  font-size: clamp(1.75rem, 1.45rem + 0.9vw, 2.35rem);
-  justify-content: center;
-  row-gap: 0.9rem;
-  text-align: center;
-}
-
 .lyric-line[data-position="inactive"] .lyric-original {
-  color: #516162;
-  font-size: clamp(1.05rem, 0.95rem + 0.22vw, 1.3rem);
   font-weight: 720;
 }
 
@@ -322,7 +316,6 @@
   max-width: 100%;
   margin-bottom: 0;
   margin-top: 0.15rem;
-  color: #516162;
   font-size: 0.96rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -334,19 +327,19 @@
   margin-top: 2.85rem;
 }
 
-.lyric-line[data-position="current"] .lyric-pronunciation {
-  text-align: center;
-  color: #3d5152;
-  font-size: 1rem;
-}
-
 .lyric-line[data-position="current"][data-has-below-calls="true"] .lyric-pronunciation {
   margin-top: 3.25rem;
 }
 
-.lyric-line[data-position="inactive"] .lyric-pronunciation {
-  color: #899394;
-  font-size: 0.9rem;
+/* Keeps a space-delimited lyric phrase on one row when it fits; wraps at word tokens when it does not. */
+.lyric-phrase {
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  max-width: 100%;
+  min-width: 0;
+  row-gap: inherit;
 }
 
 .lyric-token {
@@ -388,13 +381,12 @@
 .global-call-item,
 .call-kind-legend-item {
   --call-color: #da3c5e;
-  --call-chip-bg: #fff1f4;
+  --call-fill: #ff8fa6;
+  --call-on-fill: #1a070c;
   --call-border: rgba(218, 60, 94, 0.25);
   --call-soft: rgba(218, 60, 94, 0.16);
-  --call-preview-color: #8d1734;
   --call-preview-bg: rgba(218, 60, 94, 0.1);
   --call-preview-border: rgba(218, 60, 94, 0.18);
-  --call-on-dark: #ffffff;
   --call-preview-on-dark: rgba(255, 210, 217, 0.9);
   --call-shadow: rgba(218, 60, 94, 0.35);
 }
@@ -406,13 +398,12 @@
 .global-call-item[data-kind="penlight"],
 .call-kind-legend-item[data-kind="penlight"] {
   --call-color: #38d6e8;
-  --call-chip-bg: #e8fbfd;
+  --call-fill: #7fe9f4;
+  --call-on-fill: #04181b;
   --call-border: rgba(56, 214, 232, 0.28);
   --call-soft: rgba(56, 214, 232, 0.16);
-  --call-preview-color: #087987;
   --call-preview-bg: rgba(56, 214, 232, 0.1);
   --call-preview-border: rgba(56, 214, 232, 0.2);
-  --call-on-dark: #061012;
   --call-preview-on-dark: rgba(196, 251, 255, 0.92);
   --call-shadow: rgba(56, 214, 232, 0.28);
 }
@@ -424,13 +415,12 @@
 .global-call-item[data-kind="custom"],
 .call-kind-legend-item[data-kind="custom"] {
   --call-color: #f4b35d;
-  --call-chip-bg: #fff7ec;
+  --call-fill: #ffcf8a;
+  --call-on-fill: #1d1204;
   --call-border: rgba(244, 179, 93, 0.3);
   --call-soft: rgba(244, 179, 93, 0.16);
-  --call-preview-color: #8a4f00;
   --call-preview-bg: rgba(244, 179, 93, 0.12);
   --call-preview-border: rgba(244, 179, 93, 0.22);
-  --call-on-dark: #15100a;
   --call-preview-on-dark: rgba(255, 226, 183, 0.92);
   --call-shadow: rgba(244, 179, 93, 0.28);
 }
@@ -464,7 +454,6 @@
   justify-content: center;
   border-radius: var(--radius-inner);
   border: 1px solid var(--call-border);
-  background: var(--call-chip-bg);
   padding: 0.2rem 0.45rem;
   overflow-wrap: anywhere;
   line-height: 1.15;
@@ -488,7 +477,6 @@
 .call-marker[data-variant="preview"] {
   z-index: 1;
   max-width: min(16rem, 100%);
-  color: var(--call-preview-color);
   font-size: 0.72rem;
   font-weight: 760;
   opacity: 0.86;
@@ -500,10 +488,6 @@
   color: currentColor;
   padding: 0.16rem 0.38rem;
   box-shadow: none;
-}
-
-.call-marker[data-variant="preview"][data-lane="below"] {
-  color: var(--call-preview-color);
 }
 
 .call-marker[data-variant="preview"][data-lane="below"] .call-marker-text {
@@ -673,14 +657,6 @@
   margin: 0;
 }
 
-.player-title-block p {
-  color: var(--app-accent);
-  font-size: 0.78rem;
-  font-weight: 850;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
 .player-title-block h1 {
   color: var(--player-text);
   font-size: clamp(1.8rem, 1.45rem + 1vw, 2.35rem);
@@ -712,10 +688,27 @@
 }
 
 .player-active-meta {
-  gap: 0.45rem;
-  color: var(--player-text-muted);
-  font-size: 0.88rem;
-  font-weight: 650;
+  gap: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--player-outline-soft);
+  border-radius: var(--radius-element);
+  color: var(--player-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.player-active-meta[data-state="now"] {
+  border-color: rgba(255, 143, 166, 0.45);
+  color: #ff8fa6;
+}
+
+.player-active-meta-call {
+  overflow: hidden;
+  color: var(--player-text);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
 }
 
 .live-lyrics-panel {
@@ -727,6 +720,49 @@
   background: rgba(17, 17, 19, 0.88);
   padding: 0.9rem 0.75rem;
   box-shadow: var(--shadow-high);
+}
+
+/* Legend and the "how to read calls" disclosure share one row. */
+.call-legend-row {
+  position: relative;
+  margin-bottom: 0.65rem;
+}
+
+.call-legend-row > .call-kind-legend {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0 !important;
+}
+
+.call-reading-guide summary {
+  border-color: var(--player-outline-soft);
+  color: var(--player-text-secondary);
+  list-style: none;
+  cursor: pointer;
+}
+
+.call-reading-guide summary:focus-visible {
+  outline: 2px solid var(--player-accent);
+}
+
+.call-reading-guide ul {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  inset-inline: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 0.85rem 1rem 0.85rem 2rem;
+  border: 1px solid var(--player-outline-soft);
+  border-radius: var(--radius-element);
+  color: var(--player-text-secondary);
+  background: #141417;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.call-reading-guide strong {
+  margin-right: 0.35rem;
+  color: var(--player-text);
 }
 
 .call-kind-legend {
@@ -745,8 +781,6 @@
   color: var(--player-text-muted);
   font-size: 0.68rem;
   font-weight: 850;
-  letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .call-kind-legend-items {
@@ -843,16 +877,17 @@
 
 .player-shell .lyric-original {
   color: rgba(244, 244, 245, 0.84);
+  font-family: var(--font-lyric);
   text-shadow: none;
 }
 
 .player-shell .lyric-line[data-position="current"] .lyric-original {
   justify-content: flex-start;
   color: var(--player-text);
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 1.45rem + 1.5vw, 2.85rem);
-  font-weight: 900;
-  line-height: 1.12;
+  font-family: var(--font-lyric);
+  font-size: clamp(1.85rem, 1.4rem + 1.2vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.14;
   row-gap: 1.45rem;
   text-align: left;
   text-shadow: none;
@@ -898,7 +933,7 @@
 }
 
 .player-shell .call-lane {
-  min-height: calc(3.35rem + var(--call-lane-extra-stack, 0rem));
+  min-height: calc(3.6rem + var(--call-lane-extra-stack, 0rem));
 }
 
 .player-shell .call-lane[data-lane="above"] {
@@ -906,10 +941,14 @@
 }
 
 .player-shell .call-marker {
+  max-width: min(26rem, 100%);
   color: var(--call-color);
+  font-size: clamp(1.05rem, 0.92rem + 0.4vw, 1.3rem);
+  line-height: 1.1;
 }
 
 .player-shell .call-marker-text {
+  padding: 0.28rem 0.6rem;
   border-width: 1px;
   border-style: solid;
   border-color: var(--call-border);
@@ -932,9 +971,28 @@
   background-color: rgba(22, 18, 10, 0.94);
 }
 
+/*
+ * Active calls are filled chips: the one solid, saturated shape in the line,
+ * so the cue to shout is found before the lyric is read. --call-fill is a light
+ * tint of each kind's hue under near-black text (every pair is above 7:1).
+ */
+.player-shell .call-marker[data-variant="active"] .call-marker-text {
+  border-color: var(--call-fill);
+  background: var(--call-fill);
+  color: var(--call-on-fill);
+  box-shadow: 0 0.4rem 1.1rem -0.55rem var(--call-shadow);
+}
+
+.player-shell .call-arrow[data-variant="active"],
+.player-shell .lyric-line .call-range,
+.player-shell .lyric-line .call-range-end-arrow {
+  color: var(--call-fill);
+}
+
 .player-shell .call-marker[data-variant="preview"] {
   color: var(--call-preview-on-dark);
-  opacity: 0.68;
+  font-size: clamp(0.85rem, 0.8rem + 0.15vw, 0.95rem);
+  opacity: 0.82;
 }
 
 .player-shell .call-marker[data-variant="preview"][data-lane="below"] {
@@ -956,6 +1014,7 @@
 
 .player-shell .call-arrow {
   color: var(--call-color);
+  font-size: 1.15rem;
   text-shadow: none;
 }
 
@@ -1084,7 +1143,7 @@
   }
 
   .player-shell .lyric-line[data-position="current"] .lyric-original {
-    font-size: clamp(2.2rem, 1.55rem + 1.45vw, 3.05rem);
+    font-size: clamp(1.95rem, 1.45rem + 1.15vw, 2.65rem);
   }
 }
 
@@ -1183,10 +1242,6 @@
   }
 
   /* Info Density Reduction */
-  .player-title-block p {
-    display: none !important;
-  }
-
   .player-title-block h1 {
     font-size: 1.25rem !important;
     font-weight: 800 !important;
@@ -1296,14 +1351,20 @@
     flex: 0 0 15%;
   }
 
+  /* The active line sits near the top here, so the countdown moves below it. */
+  .lyric-countdown {
+    top: auto;
+    bottom: 0.75rem;
+  }
+
   .player-shell .lyric-list::after {
     flex: 0 0 50%;
   }
 
   /* Compact typography & lane spaces on mobile */
   .player-shell .lyric-line[data-position="current"] .lyric-original {
-    font-size: clamp(1.72rem, 1.35rem + 1vw, 2rem) !important;
-    font-weight: 900 !important;
+    font-size: clamp(1.6rem, 1.3rem + 0.9vw, 1.85rem) !important;
+    font-weight: 800 !important;
   }
 
   .player-shell .lyric-line[data-position="inactive"] .lyric-original {
@@ -1321,16 +1382,20 @@
   }
 
   .player-shell .call-lane {
-    min-height: calc(2.15rem + var(--call-lane-extra-stack, 0rem)) !important;
+    min-height: calc(2.85rem + var(--call-lane-extra-stack, 0rem)) !important;
   }
 
   .player-shell .call-marker-text {
-    padding: 0.14rem 0.34rem !important;
-    font-size: 0.7rem !important;
+    padding: 0.22rem 0.5rem !important;
+    font-size: 1rem !important;
+  }
+
+  .player-shell .call-marker[data-variant="preview"] .call-marker-text {
+    font-size: 0.82rem !important;
   }
 
   .player-shell .call-arrow {
-    font-size: 0.78rem !important;
+    font-size: 1rem !important;
   }
 }
 
@@ -1382,7 +1447,7 @@
   }
 
   .player-shell .lyric-line[data-position="current"] .lyric-original {
-    font-size: clamp(1.72rem, 1.35rem + 1vw, 2rem) !important;
+    font-size: clamp(1.6rem, 1.3rem + 0.9vw, 1.85rem) !important;
   }
 
   .player-shell .lyric-line[data-position="inactive"] .lyric-original {
