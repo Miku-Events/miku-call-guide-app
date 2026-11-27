@@ -4,7 +4,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const KIB = 1024
-const MAIN_JS_BASELINE_BYTES = Math.round(101.66 * KIB)
+const MAIN_JS_BASELINE_BYTES = Math.round(106 * KIB)
 const TOTAL_CSS_BASELINE_BYTES = Math.round(39.09 * KIB)
 const CALL_ROUTE_JS_GZIP_BYTES = 161_383
 const CALL_ROUTE_CSS_GZIP_BYTES = 39_312

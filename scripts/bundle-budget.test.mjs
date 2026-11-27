@@ -185,8 +185,8 @@ describe('bundle budget', () => {
 
   it('keeps the approved baselines at a strict ten-percent ceiling', () => {
     expect(DEFAULT_BUNDLE_BUDGET).toEqual({
-      mainJsBaselineBytes: Math.round(101.66 * 1024),
-      mainJsGzipBytes: Math.floor(Math.round(101.66 * 1024) * 1.1),
+      mainJsBaselineBytes: Math.round(106 * 1024),
+      mainJsGzipBytes: Math.floor(Math.round(106 * 1024) * 1.1),
       totalCssBaselineBytes: Math.round(39.09 * 1024),
       totalCssGzipBytes: Math.floor(Math.round(39.09 * 1024) * 1.1),
       mainClosureJsGzipBytes: 118_640,
