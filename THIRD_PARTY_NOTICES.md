@@ -21,7 +21,7 @@ Versions reflect `package-lock.json` at the time this notice was updated.
 | `invariant` | 2.2.4 | MIT |
 | `js-tokens` | 4.0.0 | MIT |
 | `loose-envify` | 1.4.0 | MIT |
-| `lucide-react` | 1.28.0 | ISC |
+| `lucide-react` | 1.44.0 | ISC |
 | `react` | 19.2.8 | MIT |
 | `react-dom` | 19.2.8 | MIT |
 | `react-router` | 8.3.0 | MIT |

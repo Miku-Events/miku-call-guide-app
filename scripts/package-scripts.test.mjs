@@ -67,7 +67,7 @@ describe('local and release scripts', () => {
     expect(lockfile.packages['node_modules/typescript'].version).toBe('6.0.3')
     expect(manifest.devDependencies['typescript-eslint']).toBe('^8.65.0')
     expect(lockfile.packages['node_modules/typescript-eslint'].version).toBe('8.74.0')
-    expect(manifest.devDependencies['@types/node']).toBe('^26.1.2')
+    expect(manifest.devDependencies['@types/node']).toBe('^26.5.1')
   })
 
   it('reviews every install script used by the locked dependency graph', async () => {
