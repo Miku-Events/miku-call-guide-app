@@ -307,7 +307,7 @@ describe('production deployment workflow', () => {
     expect(wrangler).toContain('SUBMISSION_WRITES_ENABLED = "false"')
     expect(wrangler).toContain('[env.production.vars]')
     expect(wrangler).toContain('APP_ENV = "production"')
-    expect(wrangler).toContain('APP_ORIGIN = "https://miku.sekai.today"')
+    expect(wrangler).toContain('APP_ORIGIN = "https://miku.sekai.day"')
     expect(wrangler).toContain('SUBMISSION_WRITES_ENABLED = "true"')
     expect(wrangler).not.toContain('TURNSTILE_EXPECTED_HOSTNAME')
   })

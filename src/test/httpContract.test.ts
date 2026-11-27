@@ -61,7 +61,7 @@ describe('Pages API handler contract', () => {
   })
 
   it('allows production CORS only on the exact canonical request origin', async () => {
-    const canonicalOrigin = 'https://miku.sekai.today'
+    const canonicalOrigin = 'https://miku.sekai.day'
     const allowed = await handler(context(new Request(`${canonicalOrigin}/api/test`, {
       body: '{}',
       headers: { 'content-type': 'application/json', origin: canonicalOrigin },

@@ -6,7 +6,7 @@ import { onRequest } from '../../functions/_middleware.js'
 
 describe('Pages static delivery middleware', () => {
   it.each([
-    'https://miku.sekai.today/',
+    'https://miku.sekai.day/',
     'https://miku-call-guide-app.pages.dev/',
     'https://future-custom-domain.example.dev/?source=custom',
   ])('serves HTML on the requested origin %s without redirecting', async (url) => {
@@ -35,7 +35,7 @@ describe('Pages static delivery middleware', () => {
 
     await expect(onRequest({
       next,
-      request: new Request('https://miku.sekai.today/api/ready'),
+      request: new Request('https://miku.sekai.day/api/ready'),
     })).resolves.toBe(expected)
     expect(next).toHaveBeenCalledOnce()
   })
@@ -47,7 +47,7 @@ describe('Pages static delivery middleware', () => {
         status: 404,
         statusText: 'Not Found',
       }),
-      request: new Request('https://miku.sekai.today/assets/missing.js'),
+      request: new Request('https://miku.sekai.day/assets/missing.js'),
     })
 
     expect(response.status).toBe(404)
