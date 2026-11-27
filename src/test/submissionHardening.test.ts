@@ -181,16 +181,16 @@ describe('write boundary and idempotency', () => {
   it('redirects only the exact production pages.dev hostname with path and query intact', async () => {
     const next = vi.fn(async () => new Response('static'))
     const redirected = await middleware({
-      env: { APP_ENV: 'production', APP_ORIGIN: 'https://miku.sekai.today' },
+      env: { APP_ENV: 'production', APP_ORIGIN: 'https://miku.sekai.day' },
       next,
       request: new Request('https://miku-call-guide-app.pages.dev/events?month=8'),
     })
     expect(redirected.status).toBe(308)
-    expect(redirected.headers.get('location')).toBe('https://miku.sekai.today/events?month=8')
+    expect(redirected.headers.get('location')).toBe('https://miku.sekai.day/events?month=8')
     expect(next).not.toHaveBeenCalled()
 
     const immutable = await middleware({
-      env: { APP_ENV: 'production', APP_ORIGIN: 'https://miku.sekai.today' },
+      env: { APP_ENV: 'production', APP_ORIGIN: 'https://miku.sekai.day' },
       next,
       request: new Request('https://abc123.miku-call-guide-app.pages.dev/events?month=8'),
     })
@@ -250,11 +250,11 @@ describe('write boundary and idempotency', () => {
       const response = await createHandler()({
         env: {
           APP_ENV: 'production',
-          APP_ORIGIN: 'https://miku.sekai.today',
+          APP_ORIGIN: 'https://miku.sekai.day',
           SUBMISSION_WRITES_ENABLED: 'false',
         },
         params,
-        request: new Request('https://miku.sekai.today/api/events/write', {
+        request: new Request('https://miku.sekai.day/api/events/write', {
           body: '{',
           headers: { 'content-type': 'text/plain' },
           method: 'POST',
@@ -274,7 +274,7 @@ describe('write boundary and idempotency', () => {
       const response = await createSubmissionHandler({ readSession })({
         env: {
           APP_ENV: 'production',
-          APP_ORIGIN: 'https://miku.sekai.today',
+          APP_ORIGIN: 'https://miku.sekai.day',
           SUBMISSION_WRITES_ENABLED: 'true',
         },
         params: {},
@@ -283,7 +283,7 @@ describe('write boundary and idempotency', () => {
           headers: {
             'content-length': String((16 * 1024) + 1),
             'content-type': 'application/json',
-            origin: 'https://miku.sekai.today',
+            origin: 'https://miku.sekai.day',
           },
           method: 'POST',
         }),
@@ -298,15 +298,15 @@ describe('write boundary and idempotency', () => {
 
   it.each([
     ['pages.dev host', 'https://miku-call-guide-app.pages.dev', 'https://miku-call-guide-app.pages.dev'],
-    ['missing Origin', 'https://miku.sekai.today', undefined],
-    ['foreign Origin', 'https://miku.sekai.today', 'https://evil.example'],
+    ['missing Origin', 'https://miku.sekai.day', undefined],
+    ['foreign Origin', 'https://miku.sekai.day', 'https://evil.example'],
   ])('rejects production %s before session access', async (_label, origin, headerOrigin) => {
     const readSession = vi.fn()
     const handler = createSubmissionHandler({ readSession })
     const response = await handler({
       env: {
         APP_ENV: 'production',
-        APP_ORIGIN: 'https://miku.sekai.today',
+        APP_ORIGIN: 'https://miku.sekai.day',
         SUBMISSION_WRITES_ENABLED: 'true',
       },
       params: {},

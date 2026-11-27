@@ -20,7 +20,7 @@ function toPem(buffer: ArrayBuffer) {
 async function productionEnvironment(privateKey = pkcs8PrivateKeyPem) {
   return {
     APP_ENV: 'production',
-    APP_ORIGIN: 'https://miku.sekai.today',
+    APP_ORIGIN: 'https://miku.sekai.day',
     CLOUDFLARE_TURNSTILE_SECRET_KEY: '0x4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     GITHUB_APP_ID: '123456',
     GITHUB_APP_INSTALLATION_ID: '987654',
@@ -146,7 +146,7 @@ describe('production readiness endpoint', () => {
 
   it.each([
     'https://miku-call-guide-app.pages.dev',
-    'https://miku.sekai.today',
+    'https://miku.sekai.day',
     'https://next-custom-domain.example',
   ])('is independent of the deployment request origin %s', async (origin) => {
     const response = await requestReadiness(await productionEnvironment(), origin)

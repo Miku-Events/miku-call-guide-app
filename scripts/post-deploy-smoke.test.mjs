@@ -572,7 +572,7 @@ describe('post-deploy smoke', () => {
     ['Secure', validOauthCookie.replace('; Secure', '')],
     ['HttpOnly', validOauthCookie.replace('; HttpOnly', '')],
     ['Path=/', validOauthCookie.replace('; Path=/', '')],
-    ['host-only scope', `${validOauthCookie}; Domain=miku.sekai.today`],
+    ['host-only scope', `${validOauthCookie}; Domain=miku.sekai.day`],
   ])('requires the live OAuth cookie to preserve %s', async (_attribute, invalidCookie) => {
     const fetchMock = vi.fn(async (url) => (
       String(url) === oauthStartUrl(appOrigin)
@@ -586,7 +586,7 @@ describe('post-deploy smoke', () => {
 
   it('requires every live logout cookie to use Path=/ and host-only scope', async () => {
     const invalidCookies = validLogoutCookies.map((cookie, index) => (
-      index === 0 ? cookie.replace('; Path=/', '; Domain=miku.sekai.today') : cookie
+      index === 0 ? cookie.replace('; Path=/', '; Domain=miku.sekai.day') : cookie
     ))
     const fetchMock = vi.fn(async (url) => (
       String(url) === `${appOrigin}/api/auth/logout`
