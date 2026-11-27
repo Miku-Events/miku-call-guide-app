@@ -992,20 +992,21 @@ dialog.event-dialog-backdrop::backdrop {
 
   .event-calendar-panel {
     height: auto;
-    overflow: visible;
-    padding: 0.3rem;
+    overflow-x: auto;
+    padding: 0.15rem;
     scrollbar-gutter: auto;
   }
 
+  /* Seven 44px cells: phones this narrow scroll inside the calendar instead of shrinking touch targets. */
   .event-calendar-grid,
   .event-weekdays {
-    min-width: 0;
+    min-width: 20rem;
   }
 
   .event-calendar-grid,
   .event-week-row,
   .event-weekdays {
-    gap: 0.18rem;
+    gap: 0.12rem;
   }
 
   .event-weekdays {
