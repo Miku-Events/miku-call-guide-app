@@ -110,9 +110,9 @@ describe('preview browser smoke diagnostics', () => {
 
     await acknowledgeInitialSpoilerDisclaimer({ getByRole })
 
-    expect(getByRole).toHaveBeenCalledWith('alertdialog', { name: '스포일러 안내' })
+    expect(getByRole).toHaveBeenCalledWith('alertdialog', { name: '공연 전에 잠깐만요' })
     expect(waitFor).toHaveBeenNthCalledWith(1, { state: 'visible' })
-    expect(dialogGetByRole).toHaveBeenCalledWith('button', { name: '확인하고 계속하기' })
+    expect(dialogGetByRole).toHaveBeenCalledWith('button', { name: '알겠어요, 둘러볼게요' })
     expect(click).toHaveBeenCalledOnce()
     expect(waitFor).toHaveBeenNthCalledWith(2, { state: 'detached' })
   })

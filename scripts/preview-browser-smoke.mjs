@@ -26,10 +26,10 @@ export function assertBuiltArtifactResponse(expected, delivered) {
 }
 
 export async function acknowledgeInitialSpoilerDisclaimer(page) {
-  const dialog = page.getByRole('alertdialog', { name: '스포일러 안내' })
+  const dialog = page.getByRole('alertdialog', { name: '공연 전에 잠깐만요' })
 
   await dialog.waitFor({ state: 'visible' })
-  await dialog.getByRole('button', { name: '확인하고 계속하기' }).click()
+  await dialog.getByRole('button', { name: '알겠어요, 둘러볼게요' }).click()
   await dialog.waitFor({ state: 'detached' })
 }
 
@@ -692,8 +692,8 @@ export async function runBrowserSmoke({
             { waitUntil: 'domcontentloaded' },
           )
         } else if (route === '/#/events') {
-          await page.getByRole('navigation', { name: 'Main navigation' })
-            .getByRole('link', { name: 'Events', exact: true }).click()
+          await page.getByRole('navigation', { name: '주 메뉴' })
+            .getByRole('link', { name: '일정', exact: true }).click()
           await page.waitForURL((url) => url.hash === '#/events')
         } else {
           await page.goBack()
@@ -702,8 +702,8 @@ export async function runBrowserSmoke({
           await page.goForward()
           await waitForRouteReady(page)
           await assertRouteDataHealthy(page, '/#/events')
-          await page.getByRole('navigation', { name: 'Main navigation' })
-            .getByRole('link', { name: 'Catalog', exact: true }).click()
+          await page.getByRole('navigation', { name: '주 메뉴' })
+            .getByRole('link', { name: '곡 목록', exact: true }).click()
           await assertRouteDataHealthy(page, '/')
           const songLink = page.locator('a.catalog-song-card[href="#/songs/39-music"]')
           await songLink.click()
